@@ -1,9 +1,10 @@
 use std::{marker::PhantomData, ptr::NonNull};
 
+use crate::raw::RawExt;
 use crate::{Result, check_api_call, ffi, logical_type::LogicalTypeID};
 
 use super::{
-    Arena, DuckDBBytes, HasDuckDBBytes, OwnedVectorElement, StorageKind, TypeMetadata, Unknown, Vector, VectorElement,
+    Arena, DuckDBBytes, HasChildren, HasDuckDBBytes, OwnedVectorElement, StorageKind, Unknown, Vector, VectorElement,
     WritableVectorElement, not_flat, not_writable, out_of_bounds,
 };
 
@@ -89,8 +90,12 @@ impl<'writer, T: VectorElement> VectorWriter<'writer, T> {
         if borrowed.storage_kind() != StorageKind::Flat {
             return Err(not_flat());
         }
-        let validity = borrowed.writable_validity()?;
-        let data = borrowed.view.as_ref().ok_or_else(not_flat)?.view.data.cast_mut();
+
+        // Allocating the writable mask can replace the validity pointer of the cached view.
+        borrowed.view.take();
+        let validity = check_api_call!(ffi::duckdb_v2_vector_flat_get_validity_mutable, borrowed.raw(), RET)?;
+        let data = check_api_call!(ffi::duckdb_v2_vector_get_data_mutable, borrowed.raw(), RET)?;
+
         Ok(Self {
             vector,
             validity,
@@ -98,65 +103,6 @@ impl<'writer, T: VectorElement> VectorWriter<'writer, T> {
             child_writers: None,
             _borrow: PhantomData,
         })
-    }
-
-    fn prepare_children(&mut self) -> Result<()> {
-        // STRUCT fields have one row per parent row, and ARRAY children a fixed count per row.
-        let child_len = match self.metadata() {
-            TypeMetadata::Struct => Some(self.len()),
-            TypeMetadata::Array { size } => Some(
-                self.len()
-                    .checked_mul(size)
-                    .ok_or_else(|| crate::Error::invalid_input("Array child length overflow"))?,
-            ),
-            _ => None,
-        };
-        let prepared = match self.vector_mut().children_collection_mut() {
-            Some(children) => children
-                .cached_iter_mut()?
-                .map(|child| {
-                    if let Some(len) = child_len
-                        && child.len() != len
-                    {
-                        child.set_size(len)?;
-                    }
-                    // SAFETY: the iterator yields disjoint children, invalidated before any reshaping.
-                    unsafe { VectorWriter::from_raw(NonNull::from(child).cast()) }
-                })
-                .collect::<Result<Vec<_>>>()?,
-            None => Vec::new(),
-        };
-        self.child_writers = Some(prepared);
-        Ok(())
-    }
-
-    /// Write a borrowed field through its cached child writer.
-    ///
-    /// # Safety
-    /// The child must be validated as `U`, with `index` in bounds and a fixed type.
-    #[doc(hidden)]
-    #[inline]
-    pub unsafe fn write_child_ref_unchecked<U: OwnedVectorElement + 'writer>(
-        &mut self,
-        child_index: usize,
-        index: usize,
-        value: Option<&U>,
-    ) -> Result<()> {
-        // SAFETY: the caller guarantees the child's type and row bounds.
-        unsafe { U::write_ref(self.child_writer_unchecked::<U>(child_index)?, index, value) }
-    }
-
-    #[inline]
-    pub(crate) unsafe fn child_writer_unchecked<U: VectorElement + 'writer>(
-        &mut self,
-        child_index: usize,
-    ) -> Result<&mut VectorWriter<'writer, U>> {
-        if self.child_writers.is_none() {
-            self.prepare_children()?;
-        }
-        let child = &mut self.child_writers.as_mut().expect("child writers are prepared")[child_index];
-        // SAFETY: the caller guarantees that this child was validated as U.
-        Ok(unsafe { child.cast_unchecked() })
     }
 
     #[inline]
@@ -280,30 +226,16 @@ impl<'writer, T: VectorElement> VectorWriter<'writer, T> {
         Ok(())
     }
 
-    pub(crate) fn metadata(&self) -> TypeMetadata {
-        self.vector().metadata()
-    }
-
-    pub(crate) fn children(&self) -> Option<&crate::data_chunk::VectorCollection> {
-        self.vector().children()
-    }
-
-    pub(crate) fn child_offset_cell(&self) -> &std::cell::Cell<usize> {
-        self.vector().child_offset_cell()
-    }
-
-    pub(crate) fn children_collection_mut(&mut self) -> Option<&mut crate::data_chunk::VectorCollection> {
-        self.vector_mut().children_collection_mut()
-    }
-
     pub(crate) fn set_null_slow(&mut self, index: usize) -> Result<()> {
-        self.vector_mut().set_null_slow(index)?;
-        self.refresh_buffers()
+        let result = self.vector_mut().set_null_slow(index);
+        self.refresh_buffers()?;
+        result
     }
 
     pub(crate) fn write_value_slow(&mut self, index: usize, value: crate::value::Value) -> Result<()> {
-        self.vector_mut().write_value_slow(index, value)?;
-        self.refresh_buffers()
+        let result = self.vector_mut().write_value_slow(index, value);
+        self.refresh_buffers()?;
+        result
     }
 
     #[inline(always)]
@@ -316,15 +248,65 @@ impl<'writer, T: VectorElement> VectorWriter<'writer, T> {
         Ok(())
     }
 
-    fn vector(&self) -> &Vector<'writer, T> {
+    pub(crate) fn vector(&self) -> &Vector<'writer, T> {
         // SAFETY: construction retains the vector's borrow, and this reference cannot outlive self.
         unsafe { self.vector.as_ref() }
     }
 
-    fn vector_mut(&mut self) -> &mut Vector<'writer, T> {
+    pub(crate) fn vector_mut(&mut self) -> &mut Vector<'writer, T> {
         self.child_writers = None;
         // SAFETY: cached descendant pointers are gone before borrowing the vector for mutation.
         unsafe { self.vector.as_mut() }
+    }
+}
+
+impl<'writer, T: HasChildren> VectorWriter<'writer, T> {
+    fn prepare_children(&mut self) -> Result<()> {
+        let child_len = T::child_len(self)?;
+        let prepared = match self.vector_mut().children_collection_mut() {
+            Some(children) => children
+                .cached_iter_mut()?
+                .map(|child| {
+                    if child.len() != child_len {
+                        child.set_size(child_len)?;
+                    }
+                    // SAFETY: the iterator yields disjoint children, invalidated before any reshaping.
+                    unsafe { VectorWriter::from_raw(NonNull::from(child).cast()) }
+                })
+                .collect::<Result<Vec<_>>>()?,
+            None => Vec::new(),
+        };
+        self.child_writers = Some(prepared);
+        Ok(())
+    }
+
+    /// Write a borrowed field through its cached child writer.
+    ///
+    /// # Safety
+    /// The child must be validated as `U`, with `index` in bounds and a fixed type.
+    #[doc(hidden)]
+    #[inline]
+    pub unsafe fn write_child_ref_unchecked<U: OwnedVectorElement + 'writer>(
+        &mut self,
+        child_index: usize,
+        index: usize,
+        value: Option<&U>,
+    ) -> Result<()> {
+        // SAFETY: the caller guarantees the child's type and row bounds.
+        unsafe { U::write_ref(self.child_writer_unchecked::<U>(child_index)?, index, value) }
+    }
+
+    #[inline]
+    pub(crate) unsafe fn child_writer_unchecked<U: VectorElement + 'writer>(
+        &mut self,
+        child_index: usize,
+    ) -> Result<&mut VectorWriter<'writer, U>> {
+        if self.child_writers.is_none() {
+            self.prepare_children()?;
+        }
+        let child = &mut self.child_writers.as_mut().expect("child writers are prepared")[child_index];
+        // SAFETY: the caller guarantees that this child was validated as U.
+        Ok(unsafe { child.cast_unchecked() })
     }
 }
 
@@ -378,11 +360,12 @@ impl<T: OwnedVectorElement> VectorWriter<'_, T> {
 impl<T: VectorElement> VectorWriter<'_, T> {
     #[inline]
     fn refresh_buffers(&mut self) -> Result<()> {
-        let vector = self.vector_mut();
-        let validity = vector.writable_validity()?;
-        let data = vector.view.as_ref().ok_or_else(not_flat)?.view.data.cast_mut();
-        self.validity = validity;
-        self.data = data;
+        self.validity = check_api_call!(
+            ffi::duckdb_v2_vector_flat_get_validity_mutable,
+            self.vector().raw(),
+            RET
+        )?;
+        self.data = check_api_call!(ffi::duckdb_v2_vector_get_data_mutable, self.vector().raw(), RET)?;
         Ok(())
     }
 

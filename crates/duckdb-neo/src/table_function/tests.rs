@@ -836,3 +836,69 @@ fn test_table_function_claim_batch() -> Result<()> {
     assert!(error.message.contains("cannot claim batch 3"), "{error}");
     Ok(())
 }
+
+#[test]
+fn test_table_function_list_output_child_starts_empty() -> Result<()> {
+    use crate::types::List;
+
+    #[derive(Default)]
+    struct Pairs(Arc<Mutex<Vec<(usize, usize)>>>);
+
+    impl TableFunctionCallbacks for Pairs {
+        type BindData = ();
+        type GlobalState = AtomicUsize;
+        type LocalState = ();
+
+        fn bind(&self, context: &Context, _: Vec<BindArgument>, bind_handle: BindFunctionHandle<'_>) -> Result<()> {
+            bind_handle.add_result_column("l", &List::<i32>::logical_type(context)?)?;
+            Ok(())
+        }
+
+        fn init_global_state(
+            &self,
+            _: &(),
+            _: &Context,
+            _: InitColumnData<'_>,
+        ) -> Result<(Option<AtomicUsize>, Option<usize>)> {
+            Ok((Some(AtomicUsize::new(0)), Some(1)))
+        }
+
+        fn exec(
+            &self,
+            _: &(),
+            global_state: Option<&AtomicUsize>,
+            _: Option<&mut ()>,
+            _: &Context,
+            mut output: DataChunkRef<'_>,
+            _: ExecColumnInfo<'_>,
+        ) -> Result<()> {
+            let call = global_state.unwrap().fetch_add(1, Ordering::SeqCst);
+            let mut vector = output.get_vector_at_mut::<List<i32>>(0)?;
+            let child_len = vector.children().unwrap().get_untyped_vector_at(0)?.len();
+            self.0.lock().unwrap().push((child_len, vector.child_offset()));
+            let rows = if call < 3 { 2048 } else { 0 };
+            vector.set_size(rows)?;
+            // SAFETY: every row writes two elements.
+            unsafe { vector.set_child_size(2 * rows)? };
+            let mut writer = vector.writer()?;
+            for row in 0..rows {
+                let value = (call * 2048 + row) as i32;
+                writer.set(row, Some(List(vec![Some(value), Some(value)])))?;
+            }
+            Ok(())
+        }
+    }
+
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let pairs = Pairs::default();
+    let entries = pairs.0.clone();
+    TableFunctionBuilder::new("pairs", SignatureBuilder::new(), pairs).register(&conn)?;
+    let mut result = conn.query("SELECT sum(list_sum(l))::BIGINT FROM pairs()", Parameters::None)?;
+    let chunk = result.next_chunk()?.unwrap();
+    let expected = 2 * (0..3 * 2048_i64).sum::<i64>();
+    assert_eq!(chunk.get_vector_at::<i64>(0)?.reader()?.get(0)?, Some(&expected));
+    let entries = entries.lock().unwrap().clone();
+    assert!(entries.iter().all(|&entry| entry == (0, 0)), "{entries:?}");
+    Ok(())
+}

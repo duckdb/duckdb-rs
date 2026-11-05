@@ -12,7 +12,7 @@ use crate::{
     error::Error,
     logical_type::{LogicalType, LogicalTypeID},
     value::{Value, ValueInput},
-    vector::{OwnedVectorElement, Vector, VectorElement, VectorWriter, WritableVectorElement},
+    vector::{HasChildren, OwnedVectorElement, Vector, VectorElement, VectorWriter, WritableVectorElement},
 };
 
 /// DuckDB's physical list entry: a range of elements in the child vector.
@@ -46,8 +46,12 @@ impl ListIndex {
 /// DuckDB reads the whole child, so every element below its size must be written before the
 /// vector is read. When the total is unknown, size for an upper bound, write the rows, then trim
 /// to [`Vector::child_offset`] with another `set_child_size` call, which keeps written elements.
-/// A failed row write takes no elements, but skipping ahead with [`Vector::set_child_offset`]
-/// leaves a gap that must be written or trimmed away.
+/// A failed row write takes no elements at its own level, though nested levels keep the elements
+/// it wrote before failing. Skipping ahead with [`Vector::set_child_offset`] leaves a gap that
+/// must be written or trimmed away.
+///
+/// [`Vector::write_value_slow`] appends after the child, so it fails while elements are reserved
+/// but unwritten; typed writes then continue after the elements it appended.
 ///
 /// ```
 /// use duckdb_neo::{DuckDBType, Result, data_chunk::DataChunk, environment::{Environment, StorageLocation}, types::List};
@@ -168,12 +172,25 @@ unsafe impl<T: VectorElement> VectorElement for List<T> {
     }
 }
 
+// SAFETY: LIST rows use only elements below the child size set by `set_child_size`.
+unsafe impl<T: VectorElement> HasChildren for List<T> {
+    fn child_len(writer: &VectorWriter<'_, Self>) -> Result<usize> {
+        Ok(writer
+            .vector()
+            .children()
+            .expect("validated LIST vector has a child")
+            .get_untyped_vector_at(0)?
+            .len())
+    }
+}
+
 impl<T: VectorElement> Vector<'_, List<T>> {
-    /// Size the element child to exactly `elements` and restart writes at its first element.
+    /// Size the element child to exactly `elements`; writes continue at [`Self::child_offset`],
+    /// capped at the new size.
     ///
     /// # Safety
-    /// Every element below `elements` must be written before DuckDB reads this vector; see
-    /// [`List`] for sizing to an upper bound and trimming.
+    /// Every element below `elements` must be written before DuckDB reads this vector, and no
+    /// written row may use an element at or above it; see [`List`] for sizing to an upper bound and trimming.
     pub unsafe fn set_child_size(&mut self, elements: usize) -> Result<()> {
         // SAFETY: the caller upholds the initialization contract.
         unsafe { self.size_appended_child(elements) }
@@ -195,7 +212,7 @@ impl<T: VectorElement> Vector<'_, List<T>> {
 impl<T: VectorElement> VectorWriter<'_, List<T>> {
     /// Return the first element the next list write uses.
     pub fn child_offset(&self) -> usize {
-        self.child_offset_cell().get()
+        self.vector().child_offset_cell().get()
     }
 }
 
@@ -203,16 +220,16 @@ impl<T: VectorElement> VectorWriter<'_, List<T>> {
 /// `index` must be in bounds, and the child must be validated as `T`.
 #[inline]
 unsafe fn write_list<T: VectorElement, V>(
-    vector: &mut VectorWriter<'_, List<T>>,
+    writer: &mut VectorWriter<'_, List<T>>,
     index: usize,
     values: Option<impl ExactSizeIterator<Item = V>>,
     mut write: impl FnMut(&mut VectorWriter<'_, T>, usize, V) -> Result<()>,
 ) -> Result<()> {
     let Some(values) = values else { return Ok(()) };
     let len = values.len();
-    let offset = vector.child_offset_cell().get();
+    let offset = writer.vector().child_offset_cell().get();
     // SAFETY: the caller guarantees that the child was validated as T.
-    let child = unsafe { vector.child_writer_unchecked::<T>(0)? };
+    let child = unsafe { writer.child_writer_unchecked::<T>(0)? };
     let size = child.len();
     let end = offset.checked_add(len).filter(|end| *end <= size).ok_or_else(|| {
         Error::invalid_input(format!(
@@ -223,10 +240,10 @@ unsafe fn write_list<T: VectorElement, V>(
     for (element, value) in (offset..end).zip(values) {
         write(child, element, value)?;
     }
-    vector.child_offset_cell().set(end);
+    writer.vector().child_offset_cell().set(end);
     // SAFETY: the caller guarantees an in-bounds row, and the entry covers the elements just written.
     unsafe {
-        vector.write_internal(
+        writer.write_internal(
             index,
             Some(ListIndex {
                 offset: offset as u64,
@@ -500,6 +517,167 @@ mod tests {
                 row.as_ref()
             );
         }
+        Ok(())
+    }
+
+    fn list_rows(vector: &Vector<'_, List<i32>>) -> Result<Vec<Option<List<i32>>>> {
+        (0..vector.len())
+            .map(|row| vector.get_value_slow(row)?.get::<List<i32>>())
+            .collect()
+    }
+
+    #[test]
+    fn list_typed_writes_continue_after_slow_writes() -> Result<()> {
+        let conn = connection()?;
+        let mut chunk = DataChunk::create(&conn, &[List::<i32>::logical_type(&conn)?], true)?;
+        let mut vector = chunk.get_vector_at_mut::<List<i32>>(0)?;
+        vector.set_size(3)?;
+        vector.write_value_slow(0, List(vec![Some(1), Some(2)]).value(&conn)?)?;
+        assert_eq!(vector.child_offset(), 2);
+        let error = vector.writer()?.set(1, Some(List(vec![Some(9)]))).unwrap_err();
+        assert!(error.message.contains("only 0 of 2 remain"), "{error}");
+        // SAFETY: row 1 writes the only new element.
+        unsafe { vector.set_child_size(3)? };
+        assert_eq!(vector.child_offset(), 2);
+        vector.writer()?.set(1, Some(List(vec![Some(9)])))?;
+        vector.write_value_slow(2, List(vec![Some(3)]).value(&conn)?)?;
+        assert_eq!(vector.child_offset(), 4);
+        assert_eq!(
+            list_rows(&vector)?,
+            [
+                Some(List(vec![Some(1), Some(2)])),
+                Some(List(vec![Some(9)])),
+                Some(List(vec![Some(3)]))
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn list_slow_write_rejects_reserved_elements() -> Result<()> {
+        let conn = connection()?;
+        let mut chunk = DataChunk::create(&conn, &[List::<i32>::logical_type(&conn)?], true)?;
+        let mut vector = chunk.get_vector_at_mut::<List<i32>>(0)?;
+        vector.set_size(2)?;
+        // SAFETY: the vector is trimmed to the written element before it is read.
+        unsafe { vector.set_child_size(3)? };
+        vector.writer()?.set(0, Some(List(vec![Some(1)])))?;
+        let error = vector
+            .write_value_slow(1, List(vec![Some(2)]).value(&conn)?)
+            .unwrap_err();
+        assert!(error.message.contains("after 2 unwritten"), "{error}");
+        // SAFETY: the element below the offset was written.
+        unsafe { vector.set_child_size(vector.child_offset())? };
+        vector.write_value_slow(1, List(vec![Some(2)]).value(&conn)?)?;
+        assert_eq!(
+            list_rows(&vector)?,
+            [Some(List(vec![Some(1)])), Some(List(vec![Some(2)]))]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn nested_list_typed_writes_continue_after_slow_writes() -> Result<()> {
+        let conn = connection()?;
+        let mut chunk = DataChunk::create(&conn, &[List::<List<i32>>::logical_type(&conn)?], true)?;
+        let mut vector = chunk.get_vector_at_mut::<List<List<i32>>>(0)?;
+        vector.set_size(2)?;
+        let row = List(vec![Some(List(vec![Some(1), Some(2)])), Some(List(vec![]))]);
+        vector.write_value_slow(0, row.value(&conn)?)?;
+        {
+            let mut children = vector.children_mut().unwrap();
+            let mut inner = children.get_vector_at_mut::<List<i32>>(0)?;
+            assert_eq!(inner.child_offset(), 2);
+            // SAFETY: row 1 writes the new inner element.
+            unsafe { inner.set_child_size(3)? };
+        }
+        // SAFETY: row 1 writes the new inner list.
+        unsafe { vector.set_child_size(3)? };
+        vector.writer()?.set(1, Some(List(vec![Some(List(vec![Some(9)]))])))?;
+        assert_eq!(vector.get_value_slow(0)?.get::<List<List<i32>>>()?, Some(row));
+        assert_eq!(
+            vector.get_value_slow(1)?.get::<List<List<i32>>>()?,
+            Some(List(vec![Some(List(vec![Some(9)]))]))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn struct_slow_write_moves_list_field_offset() -> Result<()> {
+        let conn = connection()?;
+        let mut chunk = DataChunk::create(&conn, &[<(List<i32>,)>::logical_type(&conn)?], true)?;
+        let mut vector = chunk.get_vector_at_mut::<crate::types::Struct>(0)?;
+        vector.set_size(1)?;
+        vector.write_value_slow(0, (List(vec![Some(1), Some(2)]),).value(&conn)?)?;
+        let mut children = vector.children_mut().unwrap();
+        assert_eq!(children.get_vector_at_mut::<List<i32>>(0)?.child_offset(), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn list_typed_writes_continue_after_cast() -> Result<()> {
+        let conn = connection()?;
+        let mut source = conn.query("SELECT * FROM (VALUES ([1, 2]), ([3]))", Parameters::None)?;
+        let source = source.next_chunk()?.unwrap();
+        let source = source.get_vector_at::<List<i32>>(0)?;
+        let mut chunk = DataChunk::create(&conn, &[List::<i64>::logical_type(&conn)?], true)?;
+        let mut target = chunk.get_vector_at_mut::<List<i64>>(0)?;
+        target.set_size(2)?;
+        // SAFETY: the widening cast gives the target its own storage, and the source is not changed.
+        unsafe { target.cast_rows(source, &conn)? };
+        let mut target = chunk.get_vector_at_mut::<List<i64>>(0)?;
+        assert_eq!(target.child_offset(), 3);
+        // SAFETY: row 1 writes the only new element.
+        unsafe { target.set_child_size(4)? };
+        target.writer()?.set(1, Some(List(vec![Some(7)])))?;
+        assert_eq!(
+            target.get_value_slow(0)?.get::<List<i64>>()?,
+            Some(List(vec![Some(1), Some(2)]))
+        );
+        assert_eq!(target.get_value_slow(1)?.get::<List<i64>>()?, Some(List(vec![Some(7)])));
+        Ok(())
+    }
+
+    #[test]
+    fn list_copy_continues_after_copied_elements() -> Result<()> {
+        let conn = connection()?;
+        let mut chunk = DataChunk::create(&conn, &[List::<i32>::logical_type(&conn)?], true)?;
+        let mut vector = chunk.get_vector_at_mut::<List<i32>>(0)?;
+        vector.set_size(1)?;
+        vector.write_value_slow(0, List(vec![Some(1), Some(2)]).value(&conn)?)?;
+        drop(vector);
+        let mut copy = chunk.copy(&conn)?;
+        assert_eq!(copy.get_vector_at_mut::<List<i32>>(0)?.child_offset(), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn list_reservation_persists_across_scopes() -> Result<()> {
+        fn reserve(chunk: &mut DataChunk<'_>, elements: usize) -> Result<()> {
+            let [vector] = chunk.get_vector_array_mut([0])?;
+            let mut vector = vector.cast::<List<i32>>()?;
+            vector.set_size(2)?;
+            // SAFETY: the caller writes every reserved element.
+            unsafe { vector.set_child_size(elements) }
+        }
+        fn write(chunk: &mut DataChunk<'_>, row: usize, values: Vec<Option<i32>>) -> Result<()> {
+            chunk
+                .get_vector_at_mut::<List<i32>>(0)?
+                .writer()?
+                .set(row, Some(List(values)))
+        }
+
+        let conn = connection()?;
+        let mut chunk = DataChunk::create(&conn, &[List::<i32>::logical_type(&conn)?], true)?;
+        reserve(&mut chunk, 3)?;
+        write(&mut chunk, 0, vec![Some(1), Some(2)])?;
+        write(&mut chunk, 1, vec![Some(3)])?;
+        assert!(write(&mut chunk, 1, vec![Some(4)]).is_err());
+        let vector = chunk.get_vector_at_mut::<List<i32>>(0)?;
+        assert_eq!(
+            list_rows(&vector)?,
+            [Some(List(vec![Some(1), Some(2)])), Some(List(vec![Some(3)]))]
+        );
         Ok(())
     }
 

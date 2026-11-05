@@ -200,7 +200,7 @@ macro_rules! impl_reader_tuple {
             }
 
             fn all_flat(&self) -> bool {
-                true $(&& self.$index.storage_kind() == super::StorageKind::Flat)+
+                true $(&& self.$index.vector().storage_kind() == super::StorageKind::Flat)+
             }
 
             #[inline(always)]

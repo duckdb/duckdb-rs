@@ -50,12 +50,6 @@ impl FromValue for rust_decimal::Decimal {
     }
 }
 
-fn signature(metadata: crate::vector::TypeMetadata) -> DecimalSignature {
-    metadata
-        .decimal_signature()
-        .expect("validated DECIMAL vector has a signature")
-}
-
 /// # Panics
 /// Panics if a stored value exceeds `rust_decimal`'s 96-bit mantissa.
 // SAFETY: `get` reads the storage integer DuckDB uses for the vector's width.
@@ -82,7 +76,10 @@ unsafe impl VectorElement for rust_decimal::Decimal {
     where
         Self: 'a,
     {
-        let DecimalSignature { width, scale } = signature(vector.metadata());
+        let DecimalSignature { width, scale } = vector
+            .vector()
+            .decimal_signature()
+            .expect("validated DECIMAL vector has a signature");
         let data = vector.as_ptr() as *const u8;
         let value = unsafe {
             match width {
@@ -112,7 +109,7 @@ unsafe impl WritableVectorElement for rust_decimal::Decimal {
             // SAFETY: The caller guarantees a writable, flat, in-bounds row; no data is written.
             return unsafe { vector.write_internal::<()>(index, None) };
         };
-        let DecimalSignature { width, scale } = signature(vector.metadata());
+        let DecimalSignature { width, scale } = vector.vector().decimal_signature()?;
         let from_scale = value.scale();
         let to_scale = u32::from(scale);
         let scaled = if from_scale <= to_scale {

@@ -1,5 +1,7 @@
 //! User-defined casts between logical types.
 
+use std::rc::Rc;
+
 use crate::ffi;
 
 use crate::{
@@ -35,12 +37,14 @@ unsafe extern "C" fn exec_callback<T: CastFunctionCallbacks>(
             let input = Vector::<T::InputType>::from_handle(
                 &check_api_call!(ffi::duckdb_v2_cast_function_exec_get_input, info, RET)?,
                 Access::Exclusive,
+                &Rc::default(),
             )?;
 
             let mode = check_api_call!(ffi::duckdb_v2_cast_function_exec_get_mode, info, RET)?;
             let output = Vector::<T::OutputType>::from_handle(
                 &check_api_call!(ffi::duckdb_v2_cast_function_exec_get_output, info, RET)?,
                 Access::Writable,
+                &Rc::default(),
             )?;
 
             T::exec(

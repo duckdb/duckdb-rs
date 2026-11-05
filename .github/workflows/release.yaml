@@ -7,8 +7,14 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: full
 jobs:
+  ci:
+    name: CI
+    uses: ./.github/workflows/rust.yaml
+
   release:
     name: Cargo Publish
+    # Publishing skips cargo's verification build, so only publish a commit that passed CI.
+    needs: ci
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

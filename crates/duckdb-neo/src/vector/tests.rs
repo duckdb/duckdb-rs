@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use duckdb_loadable_macros::AsDuckDB;
 
@@ -35,17 +36,19 @@ fn vector_from_handle_rejects_type_mismatches() -> crate::Result<()> {
     )?;
     let chunk = result.next_chunk()?.expect("one result chunk");
 
-    let err = super::Vector::<i64>::from_handle(&chunk.get_vector_handle_at(0), super::Access::Shared)
+    let err = super::Vector::<i64>::from_handle(&chunk.get_vector_handle_at(0), super::Access::Shared, &Rc::default())
         .expect_err("scalar type mismatch");
     assert!(err.message.contains("INTEGER"), "{}", err.message);
 
-    let err = super::Vector::<List<i64>>::from_handle(&chunk.get_vector_handle_at(1), super::Access::Shared)
-        .expect_err("nested child type mismatch");
+    let err =
+        super::Vector::<List<i64>>::from_handle(&chunk.get_vector_handle_at(1), super::Access::Shared, &Rc::default())
+            .expect_err("nested child type mismatch");
     assert!(err.message.contains("INTEGER[]"), "{}", err.message);
 
     let err = super::Vector::<crate::types::Decimal<18, 2>>::from_handle(
         &chunk.get_vector_handle_at(2),
         super::Access::Shared,
+        &Rc::default(),
     )
     .expect_err("decimal scale mismatch");
     assert!(err.message.contains("DECIMAL(18,3)"), "{}", err.message);
@@ -212,7 +215,8 @@ fn vector_fill_validity_rejects_read_only_and_constant_storage() -> crate::Resul
     vector.set_size(1)?;
     vector.writer()?.set(0, Some(42))?;
     drop(vector);
-    let mut shared = super::Vector::<i32>::from_handle(&chunk.get_vector_handle_at(0), super::Access::Shared)?;
+    let mut shared =
+        super::Vector::<i32>::from_handle(&chunk.get_vector_handle_at(0), super::Access::Shared, &Rc::default())?;
     assert!(shared.writer().is_err());
     assert_eq!(shared.reader()?.get(0)?, Some(&42));
     drop(shared);
@@ -446,7 +450,8 @@ fn vector_writer_arena_rejects_read_only_vectors() -> crate::Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
     let chunk = DataChunk::create(&conn, &[String::logical_type(&conn)?], true)?;
-    let mut shared = super::Vector::<String>::from_handle(&chunk.get_vector_handle_at(0), super::Access::Shared)?;
+    let mut shared =
+        super::Vector::<String>::from_handle(&chunk.get_vector_handle_at(0), super::Access::Shared, &Rc::default())?;
     let error = shared.writer().expect_err("shared input");
     assert!(error.message.contains("not writable"), "{}", error.message);
     assert!(shared.heap.is_none());
@@ -475,28 +480,6 @@ fn vector_byte_backed_types_expose_arenas() -> crate::Result<()> {
     check::<BitValue>()?;
     check::<BigNum>()?;
     check::<BigNumValue>()?;
-    Ok(())
-}
-
-#[test]
-fn vector_cast_rows_preserves_target_type() -> crate::Result<()> {
-    let env = Environment::new()?;
-    let conn = env.open(StorageLocation::InMemory)?.connect()?;
-    let mut source = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
-    let mut input = source.get_vector_at_mut::<i32>(0)?;
-    input.set_size(2)?;
-    input.writer()?.set(0, Some(42))?;
-    input.writer()?.set(1, None)?;
-
-    let mut strict = DataChunk::create(&conn, &[i64::logical_type(&conn)?], true)?;
-    let output: super::Vector<'_, i64> = strict.get_vector_at_mut::<i64>(0)?.cast_rows(&input, &conn)?;
-    assert_eq!(output.reader()?.iter().collect::<Vec<_>>(), [Some(&42), None]);
-
-    let mut relaxed = DataChunk::create(&conn, &[i64::logical_type(&conn)?], true)?;
-    let (output, error): (super::Vector<'_, i64>, _) =
-        relaxed.get_vector_at_mut::<i64>(0)?.try_cast_rows(&input, &conn)?;
-    assert!(error.is_none());
-    assert_eq!(output.reader()?.iter().collect::<Vec<_>>(), [Some(&42), None]);
     Ok(())
 }
 
@@ -2750,7 +2733,7 @@ fn test_children_follow_parent() -> crate::Result<()> {
             .children_mut()
             .unwrap()
             .get_vector_at_mut::<i32>(0)?
-            .set_size(1)
+            .writer()
             .is_err()
     );
 
@@ -2921,9 +2904,12 @@ scalar_callback!(CopyOver, i64, |input, result, ctx, _ud| {
     let vec = input.get_vector_at::<String>(0)?;
     let has_bad_row = vec.reader()?.iter().any(|row| row == Some("abc"));
 
-    let (_, row_error) = result.try_cast_rows(vec, ctx)?;
-    match row_error {
-        Some(error) if has_bad_row => assert!(error.message.contains("'abc'"), "{error}"),
+    // SAFETY: the callback input and output are not changed after the cast.
+    match unsafe { result.try_cast_rows(vec, ctx)? } {
+        Some(error) if has_bad_row => {
+            assert_eq!(error.code, DuckDBError::TypeConversion);
+            assert!(error.message.contains("'abc'"), "{error}");
+        }
         None if !has_bad_row => {}
         other => panic!("unexpected TRY cast diagnostic: {other:?}"),
     }
@@ -2964,7 +2950,8 @@ fn test_vector_cast() -> crate::Result<()> {
 
 scalar_callback!(CopyOverStrict, i64, |input, result, ctx, _ud| {
     let vec = input.get_vector_at::<String>(0)?;
-    result.cast_rows(vec, ctx)?;
+    // SAFETY: the callback input and output are not changed after the cast.
+    unsafe { result.cast_rows(vec, ctx)? };
     Ok(())
 });
 
@@ -2995,5 +2982,47 @@ fn test_vector_cast_fails() -> crate::Result<()> {
         "{error}"
     );
 
+    Ok(())
+}
+
+#[test]
+fn test_list_output_child_starts_empty_in_every_callback() -> crate::Result<()> {
+    static ENTRY_CHILD: std::sync::Mutex<Vec<(usize, usize)>> = std::sync::Mutex::new(Vec::new());
+    scalar_callback!(Pair, List<i32>, |input, output, _ctx, _user_data| {
+        let input = input.get_vector_at::<i32>(0)?;
+        let mut output = output;
+        let child_len = output.children().unwrap().get_untyped_vector_at(0)?.len();
+        ENTRY_CHILD.lock().unwrap().push((child_len, output.child_offset()));
+        output.set_size(input.len())?;
+        // SAFETY: every row writes two elements.
+        unsafe { output.set_child_size(2 * input.len())? };
+        let mut writer = output.writer()?;
+        for (row, value) in input.reader()?.iter().enumerate() {
+            writer.set(row, value.map(|value| List(vec![Some(*value), Some(*value)])))?;
+        }
+        Ok(())
+    });
+
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    conn.config()?
+        .set_text("threads", "1", crate::connection::SettingScope::Default)?;
+    ScalarFunctionBuilder::new(
+        "pair",
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("x"))
+            .return_type(List::<i32>::logical_type(&conn)?),
+        Pair,
+    )
+    .register(&conn)?;
+    let mut result = conn.query(
+        "SELECT sum(list_sum(pair(i::INTEGER)))::BIGINT FROM range(10000) t(i)",
+        Parameters::None,
+    )?;
+    let chunk = result.next_chunk()?.unwrap();
+    assert_eq!(chunk.get_vector_at::<i64>(0)?.reader()?.get(0)?, Some(&99_990_000));
+    let entries = ENTRY_CHILD.lock().unwrap().clone();
+    assert!(entries.len() > 1);
+    assert!(entries.iter().all(|&entry| entry == (0, 0)), "{entries:?}");
     Ok(())
 }

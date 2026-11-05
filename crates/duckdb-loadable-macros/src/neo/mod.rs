@@ -187,7 +187,8 @@ mod tests {
                 "Hash",
                 "VectorElement",
                 "WritableVectorElement",
-                "OwnedVectorElement"
+                "OwnedVectorElement",
+                "HasChildren"
             ]
         );
     }

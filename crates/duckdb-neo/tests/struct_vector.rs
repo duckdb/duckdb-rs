@@ -902,3 +902,166 @@ fn clearing_a_chunk_restarts_nested_list_offsets() -> Result<()> {
     );
     Ok(())
 }
+
+#[derive(Debug, PartialEq, AsDuckDB)]
+struct Wide {
+    x: Option<i64>,
+}
+
+#[derive(Debug, PartialEq, AsDuckDB)]
+struct Outer {
+    inner: Option<Wide>,
+}
+
+#[test]
+fn struct_fields_allow_writes_and_flattening() -> Result<()> {
+    let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[Outer::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<Outer>(0)?;
+    vector.set_size(2)?;
+    vector.writer()?.set(1, None)?;
+    {
+        let mut children = vector.children_mut().unwrap();
+        let [inner] = children.get_vector_array_mut([0])?;
+        let mut inner = inner.cast::<Wide>()?;
+        inner.flatten()?;
+        inner.writer()?.set(0, Some(Wide { x: Some(1) }))?;
+        let mut fields = inner.children_mut().unwrap();
+        let mut x = fields.get_vector_at_mut::<i64>(0)?;
+        x.write_value_slow(0, 7_i64.value(&conn)?)?;
+        x.set_null_slow(1)?;
+    }
+    let reader = vector.reader()?;
+    let row = reader.get(0)?.unwrap();
+    assert_eq!(row.inner.unwrap().x, Some(&7));
+    assert!(reader.get(1)?.is_none());
+    Ok(())
+}
+
+#[test]
+fn chunks_over_children_are_read_only() -> Result<()> {
+    let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[Wide::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<Wide>(0)?;
+    vector.set_size(1)?;
+    vector.writer()?.set(0, Some(Wide { x: Some(42) }))?;
+    {
+        let mut children = vector.children_mut().unwrap();
+        let mut fields = children.to_data_chunk(&conn)?;
+        let mut x = fields.get_vector_at_mut::<i64>(0)?;
+        assert!(!x.is_writable());
+        assert!(x.set_size(0).is_err());
+        assert!(x.writer().is_err());
+        assert_eq!(x.reader()?.get(0)?, Some(&42));
+    }
+    assert_eq!(vector.reader()?.get(0)?.unwrap().x, Some(&42));
+    Ok(())
+}
+
+#[test]
+fn casts_need_writable_output() -> Result<()> {
+    let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+    let mut source = conn.query("SELECT 1::BIGINT", Parameters::None)?;
+    let source = source.next_chunk()?.unwrap();
+    let source = source.get_vector_at::<i64>(0)?;
+    let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], false)?;
+    // SAFETY: the casts fail before touching either vector.
+    unsafe {
+        assert!(chunk.get_vector_at_mut::<i32>(0)?.cast_rows(source, &conn).is_err());
+        assert!(chunk.get_vector_at_mut::<i32>(0)?.try_cast_rows(source, &conn).is_err());
+    }
+    Ok(())
+}
+
+#[test]
+fn casts_convert_every_row() -> Result<()> {
+    let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+    let mut source = DataChunk::create(&conn, &[List::<i32>::logical_type(&conn)?], true)?;
+    let mut src = source.get_vector_at_mut::<List<i32>>(0)?;
+    src.set_size(5000)?;
+    // SAFETY: every row below writes two elements.
+    unsafe { src.set_child_size(10_000)? };
+    {
+        let mut writer = src.writer()?;
+        for row in 0..5000 {
+            let value = (row % 7 != 0).then_some(row as i32);
+            writer.set(row, Some(List(vec![value, Some(-1)])))?;
+        }
+    }
+    for target_type in [List::<i32>::logical_type(&conn)?, List::<i64>::logical_type(&conn)?] {
+        let mut target = DataChunk::create(&conn, &[target_type], true)?;
+        // SAFETY: neither vector is written or resized after the cast.
+        unsafe { target.get_vector_at_mut::<Unknown>(0)?.cast_rows(&src, &conn)? };
+        let dst = target.get_vector_at_mut::<Unknown>(0)?;
+        assert_eq!(dst.len(), 5000);
+        for row in [0, 1, 2047, 2048, 4999] {
+            assert_eq!(
+                dst.get_value_slow(row)?.get::<List<i64>>()?,
+                Some(List(vec![(row % 7 != 0).then_some(row as i64), Some(-1)]))
+            );
+        }
+    }
+    Ok(())
+}
+
+#[derive(Debug, PartialEq, AsDuckDB)]
+struct Fallible {
+    x: Option<i32>,
+    bits: Option<duckdb_neo::types::BitValue>,
+}
+
+#[test]
+fn failed_struct_writes_leave_the_row_null() -> Result<()> {
+    use duckdb_neo::types::BitValue;
+
+    let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[Fallible::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<Fallible>(0)?;
+    vector.set_size(2)?;
+    let valid = Fallible {
+        x: Some(1),
+        bits: Some(BitValue(vec![0, 1])),
+    };
+    let invalid = Fallible {
+        x: Some(42),
+        bits: Some(BitValue(vec![])),
+    };
+    {
+        let mut writer = vector.writer()?;
+        writer.set(0, None)?;
+        writer.set_ref(1, Some(&valid))?;
+        assert!(writer.set(0, Some(invalid)).is_err());
+        let invalid = Fallible {
+            x: Some(42),
+            bits: Some(BitValue(vec![])),
+        };
+        assert!(writer.set_ref(1, Some(&invalid)).is_err());
+    }
+    let reader = vector.reader()?;
+    let fields = vector.children().unwrap().get_vector_at::<i32>(0)?.reader()?;
+    for row in 0..2 {
+        assert!(reader.get(row)?.is_none());
+        assert_eq!(fields.get(row)?, None, "row {row}");
+    }
+    Ok(())
+}
+
+#[test]
+fn failed_array_writes_leave_the_row_null() -> Result<()> {
+    use duckdb_neo::types::BitValue;
+
+    let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[Array::<BitValue, 2>::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<Array<BitValue, 2>>(0)?;
+    vector.set_size(1)?;
+    {
+        let mut writer = vector.writer()?;
+        writer.set(0, None)?;
+        assert!(writer.set(0, Some(Array([Some(&[0, 1][..]), Some(&[][..])]))).is_err());
+    }
+    assert!(vector.reader()?.get(0)?.is_none());
+    let elements = vector.children().unwrap().get_vector_at::<BitValue>(0)?.reader()?;
+    assert!(elements.get(0)?.is_none());
+    assert!(elements.get(1)?.is_none());
+    Ok(())
+}

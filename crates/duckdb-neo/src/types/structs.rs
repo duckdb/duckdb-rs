@@ -4,7 +4,11 @@
 //! values, borrowed vector rows, and vector writes. [`Struct`] is the untyped fallback.
 
 use crate::{
-    Result, data_chunk::VectorCollection, enums::LogicalTypeID, logical_type::LogicalType, vector::VectorElement,
+    Result,
+    data_chunk::VectorCollection,
+    enums::LogicalTypeID,
+    logical_type::LogicalType,
+    vector::{HasChildren, VectorElement, VectorWriter},
 };
 
 /// Accepts any `STRUCT` or `TUPLE` vector without checking its fields.
@@ -36,6 +40,13 @@ unsafe impl VectorElement for Struct {
     where
         Self: 'a,
     {
+    }
+}
+
+// SAFETY: every STRUCT field has one row per parent row.
+unsafe impl HasChildren for Struct {
+    fn child_len(writer: &VectorWriter<'_, Self>) -> Result<usize> {
+        Ok(writer.len())
     }
 }
 

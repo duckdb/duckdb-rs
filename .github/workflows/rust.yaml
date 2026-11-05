@@ -2,15 +2,17 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "v*.*-*"]
     paths-ignore:
       - "**/*.md"
       - "LICENSE"
   pull_request:
-    branches: [main]
+    branches: [main, "v*.*-*"]
     paths-ignore:
       - "**/*.md"
       - "LICENSE"
+  # Release runs CI on the tagged commit before publishing.
+  workflow_call:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: full
@@ -43,8 +45,6 @@ jobs:
       - name: run cargo clippy
         # `bundled-cmake` is checkout-only and covered in the dedicated CMake job below.
         # extensions-full pulls in the bundled (cc) backend; wrap CC/CXX for sccache.
-        # That also makes buildtime_bindgen read duckdb_v2.h from the bundled tree,
-        # which the pinned download archive may not ship yet.
         env:
           CC: "sccache cc"
           CXX: "sccache c++"

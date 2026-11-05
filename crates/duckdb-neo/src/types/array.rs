@@ -12,7 +12,7 @@ use crate::{
     error::Error,
     logical_type::{LogicalType, LogicalTypeID},
     value::{Value, ValueInput},
-    vector::{OwnedVectorElement, VectorElement, VectorWriter, WritableVectorElement},
+    vector::{HasChildren, OwnedVectorElement, VectorElement, VectorWriter, WritableVectorElement},
 };
 
 /// An owned `ARRAY` row of exactly `N` elements; each `None` element is SQL NULL.
@@ -128,6 +128,16 @@ unsafe impl<T: VectorElement, const N: usize> VectorElement for Array<T, N> {
     }
 }
 
+// SAFETY: every ARRAY row owns exactly `N` child elements.
+unsafe impl<T: VectorElement, const N: usize> HasChildren for Array<T, N> {
+    fn child_len(writer: &VectorWriter<'_, Self>) -> Result<usize> {
+        writer
+            .len()
+            .checked_mul(N)
+            .ok_or_else(|| Error::invalid_input("Array child length overflow"))
+    }
+}
+
 /// # Safety
 /// `index` must be in bounds, and the child must be validated as `T`.
 #[inline]
@@ -140,18 +150,24 @@ unsafe fn write_array<T: VectorElement, V, const N: usize>(
     // SAFETY: the caller guarantees that the child was validated as T; preparing it sized it to N per row.
     let child = unsafe { vector.child_writer_unchecked::<T>(0)? };
     let offset = index * N;
-    match values {
-        Some(values) => {
-            for (element, value) in (offset..offset + N).zip(values) {
-                write(child, element, Some(value))?;
-            }
+    if let Some(values) = values {
+        let written = (offset..offset + N)
+            .zip(values)
+            .try_for_each(|(element, value)| write(child, element, Some(value)));
+        if written.is_ok() {
+            return Ok(());
         }
-        // DuckDB requires a NULL array row's elements to be NULL too.
-        None => {
-            for element in offset..offset + N {
-                write(child, element, None)?;
-            }
+        // Earlier elements were written, so NULL the row to keep its elements consistent.
+        for element in offset..offset + N {
+            write(child, element, None)?;
         }
+        // SAFETY: the caller guarantees an in-bounds row.
+        unsafe { vector.set_validity_unchecked(index, false) };
+        return written;
+    }
+    // DuckDB requires a NULL array row's elements to be NULL too.
+    for element in offset..offset + N {
+        write(child, element, None)?;
     }
     Ok(())
 }
@@ -314,6 +330,33 @@ mod tests {
     }
 
     #[test]
+    fn nested_array_rows_outlive_their_readers_and_iterators() -> Result<()> {
+        let conn = connection()?;
+        let chunk = conn
+            .query(
+                "SELECT [['a string longer than the inline storage', NULL], ['tail', 'end']]::VARCHAR[2][2]",
+                Parameters::None,
+            )?
+            .next_chunk()?
+            .unwrap();
+        let vector = chunk.get_vector_at::<Array<Array<String, 2>, 2>>(0)?;
+        let row = {
+            let reader = vector.reader()?;
+            reader.get(0)?.unwrap()
+        };
+        let inner = row.iter().next().unwrap().unwrap();
+        drop(row);
+        let mut iter = inner.iter();
+        drop(inner);
+        let text = iter.next().unwrap().unwrap();
+        assert_eq!(iter.next(), Some(None));
+        assert_eq!(iter.next(), None);
+        drop(iter);
+        assert_eq!(text, "a string longer than the inline storage");
+        Ok(())
+    }
+
+    #[test]
     fn array_write_checks_parent_bounds() -> Result<()> {
         let conn = connection()?;
         let mut chunk = DataChunk::create(&conn, &[Array::<i32, 2>::logical_type(&conn)?], true)?;
@@ -397,6 +440,23 @@ mod tests {
             vector.get_value_slow(1)?.get::<List<Array<i32, 2>>>()?,
             Some(List(vec![Some(Array([None, Some(4)]))]))
         );
+        Ok(())
+    }
+
+    #[test]
+    fn failed_resize_keeps_the_vector_usable() -> Result<()> {
+        let conn = connection()?;
+        let mut chunk = DataChunk::create(&conn, &[Array::<i32, 2048>::logical_type(&conn)?], true)?;
+        let mut vector = chunk.get_vector_at_mut::<Array<i32, 2048>>(0)?;
+        vector.set_size(1)?;
+        vector.writer()?.set(0, Some(Array([Some(1); 2048])))?;
+        // DuckDB grows the parent validity before the child reservation fails.
+        assert!(vector.set_size(1 << 25).is_err());
+        assert_eq!(vector.len(), 1);
+        vector.writer()?.set(0, None)?;
+        assert!(vector.reader()?.get(0)?.is_none());
+        vector.writer()?.set(0, Some(Array([Some(2); 2048])))?;
+        assert_eq!(vector.reader()?.get(0)?.unwrap().iter().nth(2047), Some(Some(&2)));
         Ok(())
     }
 }

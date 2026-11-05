@@ -1,6 +1,6 @@
 use duckdb_loadable_macros::AsDuckDB;
 
-use super::{DictionaryReader, FlatReader, ReaderStorage, VectorReader};
+use super::{ReaderStorage, VectorReader};
 use crate::{
     Parameters, Result, ToValue,
     builder_helpers::scalar_callback,
@@ -34,39 +34,6 @@ fn assert_physical_reads(reader: &VectorReader<'_, i32>) -> Result<()> {
 }
 
 #[test]
-fn physical_validity_is_independent_of_logical_selection() {
-    let all_valid = FlatReader {
-        validity: std::ptr::null(),
-    };
-    for physical in [0, 63, 64, 127] {
-        // SAFETY: A missing mask marks every physical slot valid.
-        assert!(unsafe { all_valid.is_valid_unchecked(physical) });
-    }
-
-    let validity = [1u64 << 63, 1];
-    let flat = FlatReader {
-        validity: validity.as_ptr(),
-    };
-    for (physical, expected) in [(0, false), (63, true), (64, true), (65, false), (127, false)] {
-        // SAFETY: Both mask words remain live, and every index is in bounds.
-        assert_eq!(unsafe { flat.is_valid_unchecked(physical) }, expected);
-    }
-
-    let selection = [64, 0, 63, 127];
-    let dictionary = DictionaryReader {
-        values: flat,
-        selection: selection.as_ptr(),
-    };
-    let storage = ReaderStorage::Flat(flat);
-    for (logical, expected) in [Some(64), None, Some(63), None].into_iter().enumerate() {
-        // SAFETY: Every selected physical index is covered by the mask.
-        assert_eq!(unsafe { dictionary.physical_index_unchecked(logical) }, expected);
-        let physical = selection[logical] as usize;
-        assert_eq!(unsafe { storage.physical_index_unchecked(physical) }, expected);
-    }
-}
-
-#[test]
 fn selection_maps_logical_to_physical_indices() {
     assert_eq!(Selection::Identity.index(123), 123);
     assert_eq!(Selection::Constant.index(usize::MAX), 0);
@@ -95,7 +62,6 @@ fn reader_exposes_flat_data_and_physical_validity() -> Result<()> {
     }
     let reader = vector.reader()?;
     assert_eq!(reader.selection(), Selection::Identity);
-    assert_eq!(reader.as_ptr(), vector.view.as_ref().unwrap().data());
     assert!(reader.validity().unwrap().iter().all(|word| *word == u64::MAX));
     // SAFETY: Every physical slot was initialized above.
     let values = unsafe { vector.reader()?.as_slice() }.unwrap();
@@ -132,7 +98,7 @@ fn flat_reader_handles_empty_rows_nulls_and_bounds() -> Result<()> {
     let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
     vector.set_size(0)?;
     let reader = vector.reader()?;
-    assert!(matches!(reader.storage, ReaderStorage::Flat(_)));
+    assert!(matches!(reader.storage, ReaderStorage::Flat));
     assert!(reader.is_empty());
     assert_eq!(reader.len(), 0);
     assert_eq!(reader.iter().next(), None);
@@ -144,8 +110,8 @@ fn flat_reader_handles_empty_rows_nulls_and_bounds() -> Result<()> {
         let value = (index % 3 != 0).then_some(index as i32);
         vector.writer()?.set(index, value)?;
     }
-    let reader = vector.reader()?;
-    assert_eq!(reader.storage_kind(), StorageKind::Flat);
+    let reader: VectorReader<'_, i32> = vector.reader()?;
+    assert_eq!(reader.vector().storage_kind(), StorageKind::Flat);
     assert!(!reader.is_empty());
     assert_eq!(reader.len(), 130);
     for index in 0..reader.len() {
@@ -203,12 +169,11 @@ fn constant_reader_does_not_index_the_shared_selection() -> Result<()> {
             let vector = chunk.get_vector_at_mut::<i32>(0)?.make_constant(value, count)?;
             let reader = vector.reader()?;
             assert!(matches!(reader.storage, ReaderStorage::Constant(_)));
-            assert_eq!(reader.storage_kind(), StorageKind::Constant);
+            assert_eq!(reader.vector().storage_kind(), StorageKind::Constant);
             assert_eq!(reader.len(), count);
             assert_eq!(reader.is_empty(), count == 0);
             assert_eq!(reader.selection(), Selection::Constant);
             assert_eq!(reader.selection().index(usize::MAX), 0);
-            assert_eq!(reader.as_ptr(), vector.view.as_ref().unwrap().data());
             assert!(reader.validity().is_none_or(|mask| mask.len() == 1));
             if let Some(value) = expected {
                 // SAFETY: The non-NULL constant has one initialized physical slot.
@@ -266,6 +231,43 @@ fn reader_values_borrow_the_vector_not_the_reader() -> Result<()> {
 }
 
 #[test]
+fn child_reader_ref_borrows_the_cached_reader_without_cloning() -> Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let chunk = conn
+        .query("SELECT [[1, NULL], [3]]::INTEGER[][]", Parameters::None)?
+        .next_chunk()?
+        .unwrap();
+    let vector = chunk.get_vector_at::<List<List<i32>>>(0)?;
+    let reader = vector.reader()?;
+    let cached = reader.cached_child_reader(0);
+    let descendants = cached.child_readers.as_ref().unwrap();
+    let owners = std::rc::Rc::strong_count(descendants);
+
+    // SAFETY: validating List<List<i32>> checked its child as List<i32>.
+    let child = unsafe { reader.child_reader_ref::<List<i32>>(0) };
+    assert_eq!(
+        std::ptr::from_ref(child).cast::<()>(),
+        std::ptr::from_ref(cached).cast::<()>()
+    );
+    assert_eq!(std::rc::Rc::strong_count(descendants), owners);
+    assert_eq!(child.len(), 2);
+    assert_eq!(child.get(0)?.unwrap().iter().collect::<Vec<_>>(), [Some(&1), None]);
+
+    // SAFETY: validating List<i32> checked its child as i32.
+    let elements = unsafe { child.child_reader_ref::<i32>(0) };
+    assert_eq!(elements.iter().collect::<Vec<_>>(), [Some(&1), None, Some(&3)]);
+    assert_eq!(std::rc::Rc::strong_count(descendants), owners);
+
+    // SAFETY: validating List<List<i32>> checked its child as List<i32>.
+    let owned = unsafe { reader.child_reader::<List<i32>>(0) };
+    assert_eq!(std::rc::Rc::strong_count(descendants), owners + 1);
+    drop(reader);
+    assert_eq!(owned.get(1)?.unwrap().iter().collect::<Vec<_>>(), [Some(&3)]);
+    Ok(())
+}
+
+#[test]
 fn reader_rejects_other_storage_until_explicitly_flattened() -> Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
@@ -276,7 +278,7 @@ fn reader_rejects_other_storage_until_explicitly_flattened() -> Result<()> {
     assert_eq!(vector.storage_kind(), StorageKind::Other);
     vector.flatten()?;
     let reader = vector.reader()?;
-    assert_eq!(reader.storage_kind(), StorageKind::Flat);
+    assert_eq!(reader.vector().storage_kind(), StorageKind::Flat);
     assert_eq!(reader.iter().collect::<Vec<_>>(), [Some(&3), Some(&5), Some(&7)]);
     Ok(())
 }
@@ -289,17 +291,15 @@ scalar_callback!(ReaderProbe, i32, |input, output, _ctx, _user_data| {
         vector.flatten()?;
     }
     let reader = vector.reader()?;
-    assert_eq!(reader.storage_kind(), vector.storage_kind());
+    assert_eq!(reader.vector().storage_kind(), vector.storage_kind());
     assert_physical_reads(&reader)?;
-    if reader.storage_kind() == StorageKind::Dictionary {
+    if reader.vector().storage_kind() == StorageKind::Dictionary {
         assert!(matches!(reader.storage, ReaderStorage::Dictionary(_)));
-        let Selection::Dictionary(selection) = reader.selection() else {
+        let Selection::Dictionary(_) = reader.selection() else {
             panic!("dictionary reader must expose its selection");
         };
-        let view = vector.view.as_ref().unwrap();
-        assert_eq!(selection, view.selection().unwrap());
-        assert_eq!(reader.as_ptr(), view.data());
-        assert_eq!(reader.validity(), view.validity());
+        let reader = vector.reader()?;
+
         assert_eq!(reader.iter().collect::<Vec<_>>(), [Some(&i32::MAX), None]);
         assert_eq!(reader.get(0)?, Some(&i32::MAX));
         assert_eq!(reader.get(1)?, None);
@@ -353,5 +353,85 @@ fn reader_handles_native_storage_layouts() -> Result<()> {
             Some(7),
         ]
     );
+    Ok(())
+}
+
+fn assert_view_is_current<T: crate::vector::VectorElement>(vector: &crate::vector::Vector<'_, T>) -> Result<()> {
+    let cached = vector.reader()?.view;
+    let fresh = crate::check_api_call!(crate::ffi::duckdb_v2_vector_get_view, vector.handle, RET)?;
+    assert_eq!(
+        (cached.data, cached.validity, cached.count),
+        (fresh.data, fresh.validity, fresh.count)
+    );
+    Ok(())
+}
+
+#[test]
+fn cached_views_follow_writes_and_resizes() -> Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
+    vector.set_size(2)?;
+    // The slow path writes valid rows without allocating a validity mask.
+    vector.write_value_slow(0, 1_i32.value(&conn)?)?;
+    vector.write_value_slow(1, 2_i32.value(&conn)?)?;
+    assert_eq!(vector.reader()?.iter().collect::<Vec<_>>(), [Some(&1), Some(&2)]);
+    assert!(vector.reader()?.validity().is_none());
+
+    // The writer allocates the mask after the view was cached.
+    vector.writer()?.set(1, None)?;
+    assert_view_is_current(&vector)?;
+    assert_eq!(vector.reader()?.iter().collect::<Vec<_>>(), [Some(&1), None]);
+
+    vector.set_size(5000)?;
+    assert_view_is_current(&vector)?;
+    vector.writer()?.set(4999, Some(7))?;
+    let reader = vector.reader()?;
+    assert_eq!(reader.len(), 5000);
+    assert_eq!(reader.get(0)?, Some(&1));
+    assert_eq!(reader.get(4999)?, Some(&7));
+    Ok(())
+}
+
+#[derive(Debug, AsDuckDB)]
+struct CachedField {
+    x: Option<i32>,
+}
+
+#[test]
+fn cached_child_views_follow_parent_writes() -> Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[CachedField::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<CachedField>(0)?;
+    vector.set_size(2)?;
+    {
+        let mut children = vector.children_mut().unwrap();
+        let mut x = children.get_vector_at_mut::<i32>(0)?;
+        x.write_value_slow(0, 1_i32.value(&conn)?)?;
+        x.write_value_slow(1, 2_i32.value(&conn)?)?;
+    }
+    let read = |vector: &crate::vector::Vector<'_, CachedField>| -> Result<Vec<Option<Option<i32>>>> {
+        Ok(vector
+            .reader()?
+            .iter()
+            .map(|row| row.map(|row| row.x.copied()))
+            .collect())
+    };
+    assert_eq!(read(&vector)?, [Some(Some(1)), Some(Some(2))]);
+    assert!(
+        vector
+            .children()
+            .unwrap()
+            .get_vector_at::<i32>(0)?
+            .reader()?
+            .validity()
+            .is_none()
+    );
+
+    vector.writer()?.set(1, Some(CachedField { x: None }))?;
+    assert_eq!(read(&vector)?, [Some(Some(1)), Some(None)]);
+    assert_view_is_current(vector.children().unwrap().get_vector_at::<i32>(0)?)?;
     Ok(())
 }
