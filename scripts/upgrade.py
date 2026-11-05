@@ -94,18 +94,20 @@ def core_url(value: str) -> str:
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Bump the duckdb crates and regenerate bundled DuckDB sources and bindings.",
-        epilog="Supply all three core options together to update the pin, sources, and bindings; omit them to update only crate versions.",
+        epilog="Omitted crate versions keep their current manifest values. Supply all three core options together to update the pin, sources, and bindings; omit them to update only crate versions.",
         allow_abbrev=False,
     )
     parser.add_argument(
         "duckdb_rs_version",
         metavar="duckdb-rs-version",
+        nargs="?",
         type=crate_version,
         help="version for duckdb, libduckdb-sys, and duckdb-loadable-macros",
     )
     parser.add_argument(
         "neo_version",
         metavar="neo-version",
+        nargs="?",
         type=crate_version,
         help="version for duckdb-neo",
     )
@@ -518,6 +520,8 @@ def regenerate_bundled_sources(root: Path, commit: str, version: str) -> None:
 def upgrade(args: argparse.Namespace, root: Path) -> None:
     current = current_crate_version(root / "Cargo.toml")
     current_neo = current_crate_version(root / "crates/duckdb-neo/Cargo.toml")
+    version = args.duckdb_rs_version or current
+    neo_version = args.neo_version or current_neo
     if args.core_commit:
         current_core = read_release_pin(root).get(
             "DUCKDB_RELEASE_VERSION", crate_version_to_core_version(current)
@@ -525,9 +529,9 @@ def upgrade(args: argparse.Namespace, root: Path) -> None:
         print(
             f"Upgrade DuckDB from {current_core} to {args.core_version} ({args.core_commit})"
         )
-    print(f"Update crate version from {current} to {args.duckdb_rs_version}")
-    print(f"Update duckdb-neo version from {current_neo} to {args.neo_version}")
-    update_crate_versions(root, args.duckdb_rs_version, args.neo_version)
+    print(f"Update crate version from {current} to {version}")
+    print(f"Update duckdb-neo version from {current_neo} to {neo_version}")
+    update_crate_versions(root, version, neo_version)
     if not args.core_commit:
         return
     update_release_pin(root, args)

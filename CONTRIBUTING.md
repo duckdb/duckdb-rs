@@ -193,8 +193,9 @@ is dispatched the same way and tests bundled and downloaded backends against
 that build.
 
 The upgrade script requires Python 3.11 or newer. Supply the duckdb-rs and
-duckdb-neo versions as positional arguments. To change DuckDB core as well,
-supply **all three** named options together:
+duckdb-neo versions as optional positional arguments; omitted versions keep their
+current manifest values. To change DuckDB core, supply **all three** named
+options together:
 
 ```shell
 ./scripts/upgrade.py 1.20100.0 0.20100.0 \
@@ -217,7 +218,14 @@ The script updates crate versions, exact workspace dependency pins, README
 specified commit and regenerates sources and all four binding variants.
 Supply libraries built from that same commit, and keep the
 encoded DuckDB version in each crate version consistent with the core version.
-Use the current crate versions to change only the core build.
+Omit both crate versions to change only the core build:
+
+```shell
+./scripts/upgrade.py \
+  --core-commit <COMMIT_SHA> \
+  --core-url <RELEASE_URL> \
+  --core-version <CORE_VERSION>
+```
 
 Omit all three core options for a crate-only release. This leaves the core
 pin, workflow version references, sources, and bindings unchanged:

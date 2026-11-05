@@ -100,19 +100,10 @@ jobs:
         env:
           DUCKDB_RELEASE_URL: ${{ steps.pin.outputs.release_url }}
         run: |
-          python3 -B - <<'PY'
-          import os
-          from scripts import upgrade
-
-          root = upgrade.WORKSPACE_DIR
-          raise SystemExit(upgrade.main([
-              upgrade.current_crate_version(root / "Cargo.toml"),
-              upgrade.current_crate_version(root / "crates/duckdb-neo/Cargo.toml"),
-              "--core-commit", os.environ["DUCKDB_SHA"],
-              "--core-url", os.environ["DUCKDB_RELEASE_URL"],
-              "--core-version", os.environ["DUCKDB_VERSION"],
-          ]))
-          PY
+          python3 scripts/upgrade.py \
+            --core-commit "$DUCKDB_SHA" \
+            --core-url "$DUCKDB_RELEASE_URL" \
+            --core-version "$DUCKDB_VERSION"
 
       - name: Show generated upgrade diff
         if: ${{ !cancelled() }}
