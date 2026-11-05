@@ -246,7 +246,7 @@ impl<'writer, T: VectorElement> VectorWriter<'writer, T> {
         Ok(())
     }
 
-    pub fn vector(&self) -> &Vector<'writer, T> {
+    pub(crate) fn vector(&self) -> &Vector<'writer, T> {
         // SAFETY: construction retains the vector's borrow, and this reference cannot outlive self.
         unsafe { self.vector.as_ref() }
     }

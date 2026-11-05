@@ -155,7 +155,6 @@ pub(crate) enum Access {
 ///     let _ = vector.write(0, Some(42));
 /// }
 /// ```
-// `repr(C)` fixes field order; the nested `VectorView<T>` is also `repr(C)`.
 #[repr(C)]
 #[derive(Debug, AsRaw)]
 pub struct Vector<'a, T: VectorElement> {
@@ -250,12 +249,12 @@ impl<'a> Vector<'a, Unknown> {
     /// # Safety
     /// This vector must have been validated as `T`.
     pub(crate) unsafe fn cast_ref_unchecked<T: VectorElement>(&self) -> &Vector<'a, T> {
-        // SAFETY: Both repr(C) wrappers differ only in markers, including inside Option<VectorView<T>>.
+        // SAFETY: Both repr(C) wrappers differ only in markers.
         unsafe { &*(self as *const Vector<'a, Unknown> as *const Vector<'a, T>) }
     }
 
     pub(crate) unsafe fn cast_ref_unchecked_mut<T: VectorElement>(&mut self) -> &mut Vector<'a, T> {
-        // SAFETY: Both repr(C) wrappers differ only in markers, including inside Option<VectorView<T>>.
+        // SAFETY: Both repr(C) wrappers differ only in markers.
         unsafe { &mut *(self as *mut Vector<'a, Unknown> as *mut Vector<'a, T>) }
     }
 }
@@ -338,8 +337,8 @@ impl<'a, T: VectorElement> Vector<'a, T> {
 
     /// Replace this vector with every row of `source` cast to this vector's type, like SQL `TRY_CAST`.
     ///
-    /// Rows that do not convert become `NULL`. The returned error, if any, is the
-    /// conversion error of one such row.
+    /// Rows that do not convert become `NULL`, and the cast still succeeds. When any row did
+    /// not convert, returns the conversion error of one such row.
     ///
     /// # Safety
     /// As for [`Self::cast_rows`].
@@ -347,7 +346,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         self,
         source: &Vector<'_, T2>,
         link: &C,
-    ) -> Result<()> {
+    ) -> Result<Option<Error>> {
         if !self.is_writable() {
             return Err(not_writable());
         }
@@ -366,10 +365,10 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         result?;
 
         if cast_err.is_null() {
-            Ok(())
+            Ok(None)
         } else {
             let error = unsafe { Error::from_code_and_handle(DuckDBError::TypeConversion.into(), &mut cast_err) };
-            Err(error)
+            Ok(Some(error))
         }
     }
 

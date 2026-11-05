@@ -34,10 +34,6 @@
 #[doc = include_str!("../README.md")]
 struct ReadmeDoctests;
 
-#[cfg(doctest)]
-#[doc = include_str!("../../../README.md")]
-struct RootReadme;
-
 // Lets the raw handle derives name `::duckdb_neo` inside this crate.
 extern crate self as duckdb_neo;
 

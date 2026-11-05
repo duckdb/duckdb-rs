@@ -295,12 +295,11 @@ scalar_callback!(ReaderProbe, i32, |input, output, _ctx, _user_data| {
     assert_physical_reads(&reader)?;
     if reader.vector().storage_kind() == StorageKind::Dictionary {
         assert!(matches!(reader.storage, ReaderStorage::Dictionary(_)));
-        let Selection::Dictionary(selection) = reader.selection() else {
+        let Selection::Dictionary(_) = reader.selection() else {
             panic!("dictionary reader must expose its selection");
         };
         let reader = vector.reader()?;
 
-        let view = reader.view;
         assert_eq!(reader.iter().collect::<Vec<_>>(), [Some(&i32::MAX), None]);
         assert_eq!(reader.get(0)?, Some(&i32::MAX));
         assert_eq!(reader.get(1)?, None);

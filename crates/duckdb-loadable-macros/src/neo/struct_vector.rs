@@ -233,7 +233,13 @@ pub(crate) fn as_writable_vector_element(input: &syn::DeriveInput) -> syn::Resul
                         if let ::core::result::Result::Err(error) = written {
                             // Earlier fields were written, so NULL the row to keep its children consistent.
                             // SAFETY: the caller guarantees row bounds.
-                            unsafe { Self::write_ref(writer, index, ::core::option::Option::None)? };
+                            unsafe {
+                                <Self as ::duckdb_neo::vector::OwnedVectorElement>::write_ref(
+                                    writer,
+                                    index,
+                                    ::core::option::Option::None,
+                                )?
+                            };
                             return ::core::result::Result::Err(error);
                         }
                     }

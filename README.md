@@ -26,7 +26,7 @@ cargo add duckdb -F bundled
 
 Update `src/main.rs` with the following code:
 
-```rust,ignore
+```rust
 use duckdb::{params, Connection, Result};
 
 struct Duck {

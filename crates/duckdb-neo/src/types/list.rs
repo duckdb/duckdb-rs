@@ -197,7 +197,6 @@ impl<T: VectorElement> Vector<'_, List<T>> {
     }
 
     /// Return the first element the next list write uses.
-    /// TODO REMOVE
     pub fn child_offset(&self) -> usize {
         self.child_offset_cell().get()
     }

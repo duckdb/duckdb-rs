@@ -53,7 +53,7 @@ impl<T: VectorElement> Clone for VectorReader<'_, T> {
     fn clone(&self) -> Self {
         Self {
             vector: self.vector,
-            view: self.view.clone(),
+            view: self.view,
             storage: self.storage.clone(),
             child_readers: self.child_readers.clone(),
         }
@@ -124,7 +124,7 @@ impl ReaderStorage {
                 unsafe { std::slice::from_raw_parts(view.sel, view.count as usize) }
                     .iter()
                     .max()
-                    .map_or(0, |v| *v as u32 + 1)
+                    .map_or(0, |v| *v + 1)
             }) as usize,
         }
     }
@@ -136,19 +136,20 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
             return Ok(None);
         }
 
-        check_api_call!(ffi::duckdb_v2_vector_get_view, vector.raw(), RET).map(|view| Some(view))
+        check_api_call!(ffi::duckdb_v2_vector_get_view, vector.raw(), RET).map(Some)
     }
 
     pub(super) fn new(vector: &'vec Vector<'vec, T>) -> Result<Self> {
-        let view = Self::acquire_view(vector)?;
-        if view.is_none() {
-            return Err(other_not_readable());
-        }
+        let view = Self::acquire_view(vector)?.ok_or_else(|| other_not_readable())?;
+
         vector.cache_children()?;
         // SAFETY: The vector and all descendants have readable, cached views.
-        unsafe { Self::from_prepared(vector, view.unwrap()) }
+        unsafe { Self::from_prepared(vector, view) }
     }
 
+    /// Create a reader from a vector and its prepared view, without checking the vector's storage kind.
+    /// # Safety
+    /// The vector must be validated as `T`, and cache_children must have been called on it already.
     pub(crate) unsafe fn from_prepared(
         vector: &'vec Vector<'vec, T>,
         view: ffi::duckdb_v2_vector_view,
@@ -183,7 +184,7 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
         })
     }
 
-    pub fn vector(&self) -> &Vector<'vec, T> {
+    pub(crate) fn vector(&self) -> &Vector<'vec, T> {
         self.vector
     }
 
