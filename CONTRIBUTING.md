@@ -131,7 +131,7 @@ To test an upstream DuckDB C API change before it is tagged, supply its full com
 
 ```shell
 cd ~/github/duckdb-rs
-./scripts/upgrade.py 1.20000.0 0.20000.0 \
+./scripts/upgrade.py \
   --core-commit <COMMIT_SHA> --core-url <RELEASE_URL> --core-version <CORE_VERSION>
 ```
 
@@ -198,13 +198,15 @@ current manifest values. To change DuckDB core, supply **all three** named
 options together:
 
 ```shell
-./scripts/upgrade.py 1.20100.0 0.20100.0 \
+./scripts/upgrade.py 1.20000.1 0.20000.0 \
   --core-commit <COMMIT_SHA> \
-  --core-url https://install.duckdb.org/v2.1.0 \
-  --core-version v2.1.0
+  --core-url https://install.duckdb.org/v2.0.0 \
+  --core-version v2.0.0
 ```
 
 - Crate versions must be `MAJOR.MINOR.PATCH` and are used as supplied.
+  For example, `1.20000.1` targets DuckDB `2.0.0`; the final `.1` is the Rust
+  crate patch version, not the DuckDB core patch version.
 - `--core-commit` must be a full 40-character hexadecimal commit.
 - `--core-url` must be an HTTP(S) directory URL containing the per-platform
   `duckdb-shared-libs-<platform>.tar.gz` archives, without credentials, query,
@@ -228,10 +230,11 @@ Omit both crate versions to change only the core build:
 ```
 
 Omit all three core options for a crate-only release. This leaves the core
-pin, workflow version references, sources, and bindings unchanged:
+pin, workflow version references, sources, and bindings unchanged. Omit the
+second positional argument to keep the current duckdb-neo version:
 
 ```shell
-./scripts/upgrade.py 1.20000.1 0.20000.1
+./scripts/upgrade.py 1.20000.1
 ```
 
 The script does not run tests; validate the `bundled`, `bundled-cmake`, and linked
