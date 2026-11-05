@@ -41,6 +41,14 @@ fn cache_key(archive: &[u8]) -> String {
 }
 
 fn publish(staging: &Path, source_dir: &Path) -> io::Result<()> {
+    // No marker: an incomplete tree, e.g. one whose files a CI cache deleted. Replace it.
+    if source_dir.exists()
+        && !source_dir.join(COMPLETE).is_file()
+        && let Err(err) = fs::remove_dir_all(source_dir)
+        && err.kind() != io::ErrorKind::NotFound
+    {
+        return Err(err);
+    }
     // Rename on the same filesystem so readers only see complete, immutable trees.
     match fs::rename(staging, source_dir) {
         Ok(()) => Ok(()),
@@ -73,5 +81,53 @@ impl StagingDir {
 impl Drop for StagingDir {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn archive() -> Vec<u8> {
+        let mut builder = tar::Builder::new(flate2::write::GzEncoder::new(Vec::new(), Default::default()));
+        let content = b"// header\n";
+        let mut header = tar::Header::new_gnu();
+        header.set_size(content.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        builder
+            .append_data(&mut header, "duckdb/src/include/duckdb.h", &content[..])
+            .unwrap();
+        builder.into_inner().unwrap().finish().unwrap()
+    }
+
+    #[test]
+    fn unpack_replaces_tree_without_marker() {
+        let out_dir = tempfile::tempdir().unwrap();
+        let archive_path = out_dir.path().join("duckdb.tar.gz");
+        let bytes = archive();
+        fs::write(&archive_path, &bytes).unwrap();
+        // What a CI cache that keeps directories but deletes files leaves behind.
+        let source_dir = out_dir.path().join("duckdb-sources").join(cache_key(&bytes));
+        fs::create_dir_all(source_dir.join("duckdb/src/include")).unwrap();
+
+        assert_eq!(unpack(&archive_path, out_dir.path()).unwrap(), source_dir);
+        assert!(source_dir.join("duckdb/src/include/duckdb.h").is_file());
+        assert!(source_dir.join(AUTOREGISTER_WRAPPER).is_file());
+        assert!(source_dir.join(COMPLETE).is_file());
+    }
+
+    #[test]
+    fn publish_keeps_complete_tree() {
+        let root = tempfile::tempdir().unwrap();
+        let source_dir = root.path().join("sources");
+        fs::create_dir_all(&source_dir).unwrap();
+        fs::write(source_dir.join(COMPLETE), b"").unwrap();
+        let staging = root.path().join("staging");
+        fs::create_dir_all(staging.join("duckdb")).unwrap();
+
+        publish(&staging, &source_dir).unwrap();
+        assert!(source_dir.join(COMPLETE).is_file());
+        assert!(!source_dir.join("duckdb").exists());
     }
 }
