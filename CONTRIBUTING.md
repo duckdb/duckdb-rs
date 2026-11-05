@@ -127,14 +127,15 @@ cargo test --features bundled
 
 CI exercises the pinned DuckDB download (linked mode) on Linux, macOS, and Windows, the `bundled` backend through the Linux feature checks and the sanitizer job on `main`, and the `bundled-cmake` backend in its dedicated job.
 
-To test an upstream DuckDB C API change before it is tagged, run the top-level upgrade script with the full upstream commit SHA (or `--sync` to use the commit pinned in `crates/libduckdb-sys/.duckdb-release`):
+To test an upstream DuckDB C API change before it is tagged, supply its full commit SHA, the URL of its prebuilt libraries, and its build version:
 
 ```shell
 cd ~/github/duckdb-rs
-./upgrade.sh --sha <COMMIT_SHA>
+./scripts/upgrade.py \
+  --core-commit <COMMIT_SHA> --core-url <RELEASE_URL> --core-version <CORE_VERSION>
 ```
 
-This checks out that commit in the `duckdb-sources` submodule, regenerates `duckdb.tar.gz`, and regenerates all three pregenerated bindings files (`bindgen_bundled_version.rs`, `bindgen_bundled_version_loadable.rs`, `bindgen_bundled_version_v2.rs`). It does not run tests; validate the `bundled` and `bundled-cmake` backends afterward.
+This checks out that commit in the `duckdb-sources` submodule, regenerates `duckdb.tar.gz`, and regenerates all four pregenerated bindings files (`bindgen_bundled_version.rs`, `bindgen_bundled_version_loadable.rs`, `bindgen_bundled_version_v2.rs`, `bindgen_bundled_version_loadable_v2.rs`). It does not run tests; validate the `bundled` and `bundled-cmake` backends afterward.
 
 ### duckdb-rs
 
@@ -180,52 +181,66 @@ Install a nightly Rust toolchain first if necessary. `RUSTFLAGS` does not instru
 
 Which DuckDB the crates target is pinned in
 `crates/libduckdb-sys/.duckdb-release` (`DUCKDB_RELEASE_COMMIT`,
-`DUCKDB_RELEASE_URL` and `DUCKDB_RELEASE_VERSION`). Linked-mode builds
-download the prebuilt libraries from that URL, and `./upgrade.sh --sync`
-vendors the same commit into the bundled sources and regenerates the
-pregenerated bindings, so the three never drift apart.
+`DUCKDB_RELEASE_URL` and `DUCKDB_RELEASE_VERSION`). Linked-mode builds download
+the prebuilt libraries from that URL. `scripts/upgrade.py` updates the pin and vendors
+the same commit into the bundled sources when given the three core options.
 
 Normally the pin moves on its own: DuckDB's release dispatcher
 (`duckdb/duckdb-workflow-trigger`, `core_ready` hook) invokes the
 `Create Release Version PR` workflow with the commit and version of each new
-build, which rewrites the pin, runs `--sync`, and opens a PR. The `Nightly`
-workflow is dispatched the same way and tests the bundled and downloaded
-backends against that build.
+build. The workflow calls `scripts/upgrade.py` and opens a PR. The `Nightly` workflow
+is dispatched the same way and tests bundled and downloaded backends against
+that build.
 
-To do the same by hand, edit the three values in the pin file and run:
+The upgrade script requires Python 3.11 or newer. Supply the duckdb-rs and
+duckdb-neo versions as optional positional arguments; omitted versions keep their
+current manifest values. To change DuckDB core, supply **all three** named
+options together:
 
 ```shell
-./upgrade.sh --sync           # vendor the pinned commit, regenerate tarball + bindings
-./upgrade.sh v2.0.0 --sync    # same, and bump the crate version for a planned release
+./scripts/upgrade.py 1.20000.1 0.20000.0 \
+  --core-commit <COMMIT_SHA> \
+  --core-url https://install.duckdb.org/v2.0.0 \
+  --core-version v2.0.0
 ```
 
-The version form updates the workspace crate version, the exact workspace
-dependency pins that keep sibling crates in lockstep, README `Cargo.toml`
-examples, and the DuckDB version references in the workflows, before calling
-`./crates/libduckdb-sys/upgrade.sh` to regenerate the sources and bindings.
-Neither form runs tests; validate the `bundled`, `bundled-cmake`, and linked
+- Crate versions must be `MAJOR.MINOR.PATCH` and are used as supplied.
+  For example, `1.20000.1` targets DuckDB `2.0.0`; the final `.1` is the Rust
+  crate patch version, not the DuckDB core patch version.
+- `--core-commit` must be a full 40-character hexadecimal commit.
+- `--core-url` must be an HTTP(S) directory URL containing the per-platform
+  `duckdb-shared-libs-<platform>.tar.gz` archives, without credentials, query,
+  or fragment.
+- `--core-version` accepts a leading `v` and prerelease/build suffixes, such
+  as `v2.0.0-alpha39998`.
+
+The script updates crate versions, exact workspace dependency pins, README
+`Cargo.toml` examples, and `Cargo.lock`. With the core options, it also updates
+`.duckdb-release` and workflow DuckDB version references, then checks out the
+specified commit and regenerates sources and all four binding variants.
+Supply libraries built from that same commit, and keep the
+encoded DuckDB version in each crate version consistent with the core version.
+Omit both crate versions to change only the core build:
+
+```shell
+./scripts/upgrade.py \
+  --core-commit <COMMIT_SHA> \
+  --core-url <RELEASE_URL> \
+  --core-version <CORE_VERSION>
+```
+
+Omit all three core options for a crate-only release. This leaves the core
+pin, workflow version references, sources, and bindings unchanged. Omit the
+second positional argument to keep the current duckdb-neo version:
+
+```shell
+./scripts/upgrade.py 1.20000.1
+```
+
+The script does not run tests; validate the `bundled`, `bundled-cmake`, and linked
 backends afterwards. DuckDB's C API may occasionally have breaking changes, so
-version updates may also require code fixes.
-
-To try an arbitrary upstream commit without touching the pin, use `--sha`.
-It vendors that commit the same way and warns when it differs from the pin:
-
-```shell
-./upgrade.sh --sha <COMMIT_SHA>          # vendor a commit, no version bump
-./upgrade.sh v2.0.0 --sha <COMMIT_SHA>   # planned release, sources from that commit
-```
-
-Prepare normal releases from `main`. For LTS releases that stay on DuckDB 1.4
-Andium, use the `v1.4-andium` branch. For a duckdb-rs patch release that does
-not change the bundled DuckDB version:
-
-```shell
-./upgrade.sh --patch
-```
-
-Patch releases only update crate versions, exact workspace dependency pins,
-README `Cargo.toml` examples, and `Cargo.lock`. They do not touch the pin, the
-DuckDB submodule, or the generated bindings.
+version updates may also require code fixes. Prepare normal releases from
+`main`; for LTS releases on DuckDB 1.4 Andium, use the `v1.4-andium` branch.
 
 Note for `cargo package` / `cargo publish --dry-run`: cargo caches the extracted
 workspace crates by name and version under `~/.cargo/registry/src`, so re-running
