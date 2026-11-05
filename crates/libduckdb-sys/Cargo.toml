@@ -68,6 +68,10 @@ which = { version = "8", optional = true }
 
 [dev-dependencies]
 arrow = { workspace = true, features = ["ffi"] }
+flate2 = { workspace = true }
+sha2 = { workspace = true }
+tar = { workspace = true }
+tempfile = { workspace = true }
 
 [package.metadata.docs.rs]
 features = ["capi-v2"]

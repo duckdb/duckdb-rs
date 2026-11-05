@@ -25,6 +25,8 @@ mod arrow_c_data;
 mod build_paths;
 #[cfg(test)]
 mod build_version;
+#[cfg(test)]
+mod bundled_sources;
 
 /// Bindings for DuckDB's v1 C API (`duckdb.h`, or `duckdb_extension.h` with the
 /// `loadable-extension` feature).
