@@ -118,6 +118,10 @@ impl Statement<'_> {
     /// }
     /// ```
     ///
+    /// `VARIANT` columns are exported as the `arrow.parquet.variant` extension:
+    /// a struct of `metadata` and `value` binaries. Shredded variants
+    /// (`typed_value`) are not supported.
+    ///
     /// # Failure
     ///
     /// Will return `Err` if binding parameters fails, execution fails, or
@@ -695,7 +699,7 @@ impl Statement<'_> {
 #[cfg(test)]
 mod test {
     use arrow::{
-        array::ListArray,
+        array::{Array, AsArray, ListArray},
         datatypes::{DataType, Int32Type, Schema, SchemaRef},
         record_batch::RecordBatch,
     };
@@ -704,7 +708,10 @@ mod test {
         Connection, Error, Result, Statement,
         core::{LogicalTypeId, RawLogicalTypeId},
         params_from_iter,
-        types::{Decimal, ListType, OrderedMap, ToSql, ToSqlOutput, Type, Value, ValueRef},
+        types::{
+            Decimal, ListType, OrderedMap, ToSql, ToSqlOutput, Value, ValueRef,
+            extension::{ARROW_EXTENSION_NAME_KEY, UUID_BYTE_WIDTH, UUID_EXTENSION_NAME, VARIANT_EXTENSION_NAME},
+        },
     };
 
     struct BorrowedList(ListArray);
@@ -731,19 +738,6 @@ mod test {
                 );
             }
             other => panic!("expected ToSqlConversionFailure, got {other:?}"),
-        }
-    }
-
-    fn assert_variant_decode_error(err: Error, expected_idx: usize) {
-        match err {
-            Error::FromSqlConversionFailure(idx, Type::Variant, e) => {
-                assert_eq!(idx, expected_idx);
-                assert!(
-                    e.to_string().contains("decoding Variant columns is not supported"),
-                    "unexpected message: {e}"
-                );
-            }
-            other => panic!("expected FromSqlConversionFailure for Variant, got {other:?}"),
         }
     }
 
@@ -1693,10 +1687,6 @@ mod test {
         Ok(())
     }
 
-    const ARROW_EXTENSION_NAME_KEY: &str = "ARROW:extension:name";
-    const UUID_EXTENSION_NAME: &str = "arrow.uuid";
-    const UUID_BYTE_WIDTH: i32 = 16;
-
     fn assert_default_uuid_arrow_schema(schema: &Schema) {
         let field = schema.field(0);
         assert_eq!(field.name(), "id");
@@ -2140,87 +2130,98 @@ mod test {
     }
 
     #[test]
-    fn test_variant_result_decode_unsupported() -> Result<()> {
+    fn test_variant_result_decodes_to_value() -> Result<()> {
         let db = Connection::open_in_memory()?;
+        let sql = "SELECT {'i': 42, 'f': [1.5::DOUBLE, NULL], 's': 'x', 'b': true, 'd': DATE '1970-01-02', \
+                   'm': 1.25::DECIMAL(4, 2), 'u': '00000000-0000-0000-0000-000000000001'::UUID}::VARIANT, \
+                   NULL::VARIANT";
+        let (value, null): (Value, Value) = db.query_row(sql, [], |row| Ok((row.get(0)?, row.get(1)?)))?;
 
-        let err = match db
-            .prepare("SELECT 1 AS id, {'a': 42}::VARIANT AS variant_col")?
-            .query([])
-        {
-            Ok(_) => panic!("expected Variant query to fail"),
-            Err(err) => err,
-        };
-
-        assert_variant_decode_error(err, 1);
+        assert_eq!(
+            value,
+            Value::Struct(OrderedMap::from(vec![
+                ("i".to_string(), Value::Int(42)),
+                ("f".to_string(), Value::List(vec![Value::Double(1.5), Value::Null])),
+                ("s".to_string(), Value::Text("x".to_string())),
+                ("b".to_string(), Value::Boolean(true)),
+                ("d".to_string(), Value::Date32(1)),
+                ("m".to_string(), Value::Decimal(Decimal::new(9, 2, 125).unwrap())),
+                (
+                    "u".to_string(),
+                    Value::Text("00000000-0000-0000-0000-000000000001".to_string())
+                ),
+            ]))
+        );
+        assert_eq!(null, Value::Null);
         Ok(())
     }
 
     #[test]
-    fn test_variant_streaming_result_decode_unsupported() -> Result<()> {
+    fn test_variant_arrow_exports_parquet_variant() -> Result<()> {
         let db = Connection::open_in_memory()?;
-        let err = match db
-            .prepare("SELECT 1 AS id, {'a': 42}::VARIANT AS variant_col")?
-            .stream_arrow([])
-        {
-            Ok(_) => panic!("expected Variant streaming query to fail"),
-            Err(err) => err,
-        };
-
-        assert_variant_decode_error(err, 1);
-        Ok(())
-    }
-
-    #[test]
-    fn test_variant_returning_execute_rejected_before_mutation() -> Result<()> {
-        let db = Connection::open_in_memory()?;
-        db.execute_batch("CREATE TABLE t(id INTEGER, v VARIANT);")?;
-
-        let err = match db.execute("INSERT INTO t VALUES (1, {'a': 42}::VARIANT) RETURNING v", []) {
-            Ok(_) => panic!("expected Variant RETURNING execute to fail"),
-            Err(err) => err,
-        };
-
-        assert_variant_decode_error(err, 0);
-        let count: i64 = db.query_row("SELECT COUNT(*) FROM t", [], |row| row.get(0))?;
-        assert_eq!(0, count);
-        Ok(())
-    }
-
-    #[test]
-    fn test_variant_returning_streaming_rejected_before_mutation() -> Result<()> {
-        let db = Connection::open_in_memory()?;
-        db.execute_batch("CREATE TABLE t(id INTEGER, v VARIANT);")?;
-
-        let err = match db
-            .prepare("INSERT INTO t VALUES (1, {'a': 42}::VARIANT) RETURNING v")?
-            .stream_arrow([])
-        {
-            Ok(_) => panic!("expected Variant RETURNING streaming execute to fail"),
-            Err(err) => err,
-        };
-
-        assert_variant_decode_error(err, 0);
-        let count: i64 = db.query_row("SELECT COUNT(*) FROM t", [], |row| row.get(0))?;
-        assert_eq!(0, count);
-        Ok(())
-    }
-
-    #[test]
-    fn test_nested_variant_result_decode_unsupported() -> Result<()> {
-        let db = Connection::open_in_memory()?;
-
-        let cases = [
-            "SELECT [123::VARIANT] AS variant_list",
-            "SELECT {'v': 123::VARIANT} AS variant_struct",
-            "SELECT map(['v'], [123::VARIANT]) AS variant_map",
+        let mut stmt = db.prepare("SELECT v FROM (VALUES (1, {'a': 42}::VARIANT), (2, NULL)) t(i, v) ORDER BY i")?;
+        let batches = [
+            stmt.query_arrow([])?.collect::<Vec<_>>(),
+            stmt.stream_arrow([])?.collect(),
         ];
 
-        for sql in cases {
-            let err = match db.prepare(sql)?.query([]) {
-                Ok(_) => panic!("expected nested Variant query to fail for {sql}"),
-                Err(err) => err,
-            };
-            assert_variant_decode_error(err, 0);
+        for batches in batches {
+            assert_eq!(batches.len(), 1);
+            let batch = &batches[0];
+            assert_eq!(
+                batch
+                    .schema()
+                    .field(0)
+                    .metadata()
+                    .get(ARROW_EXTENSION_NAME_KEY)
+                    .map(String::as_str),
+                Some(VARIANT_EXTENSION_NAME)
+            );
+            let variant = batch.column(0).as_struct();
+            assert!(variant.is_valid(0) && variant.is_null(1));
+            for child in ["metadata", "value"] {
+                let array = arrow::compute::cast(variant.column_by_name(child).expect(child), &DataType::Binary)
+                    .expect("variant children are binary");
+                assert!(!array.as_binary::<i32>().value(0).is_empty(), "empty variant {child}");
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_variant_returning_query_decodes_variant() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE t(id INTEGER, v VARIANT);")?;
+
+        let (id, v): (i32, Value) = db.query_row(
+            "INSERT INTO t VALUES (1, 'hello'::VARIANT) RETURNING id, v",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        assert_eq!((id, v), (1, Value::Text("hello".to_string())));
+        Ok(())
+    }
+
+    #[test]
+    fn test_nested_variant_result_decodes_to_value() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let v = Value::Int(123);
+
+        let cases = [
+            ("SELECT [123::VARIANT]", Value::List(vec![v.clone()])),
+            (
+                "SELECT {'v': 123::VARIANT}",
+                Value::Struct(OrderedMap::from(vec![("v".to_string(), v.clone())])),
+            ),
+            (
+                "SELECT map(['v'], [123::VARIANT])",
+                Value::Map(OrderedMap::from(vec![(Value::Text("v".to_string()), v.clone())])),
+            ),
+        ];
+
+        for (sql, expected) in cases {
+            let got: Value = db.query_row(sql, [], |row| row.get(0))?;
+            assert_eq!(got, expected, "{sql}");
         }
 
         Ok(())

@@ -2,11 +2,11 @@ use std::{convert, sync::Arc};
 
 use super::{Error, Result, Statement};
 use crate::core::LogicalTypeId;
-use crate::types::{self, Decimal, EnumType, FromSql, FromSqlError, ListType, ValueRef};
+use crate::types::{self, Decimal, EnumType, FromSql, FromSqlError, ListType, ValueRef, is_variant_field};
 
 use arrow::{
     array::{
-        self, Array, ArrayRef, DictionaryArray, FixedSizeBinaryArray, FixedSizeListArray, ListArray, MapArray,
+        self, Array, ArrayRef, AsArray, DictionaryArray, FixedSizeBinaryArray, FixedSizeListArray, ListArray, MapArray,
         StructArray,
     },
     datatypes::*,
@@ -368,8 +368,9 @@ impl<'stmt> Row<'stmt> {
     }
 
     fn value_ref(&self, row: usize, col: usize) -> ValueRef<'_> {
-        let column = self.arr.as_ref().as_ref().unwrap().column(col);
-        let value = Self::value_ref_internal(row, column);
+        let arr = self.arr.as_ref().as_ref().unwrap();
+        let column = arr.column(col);
+        let value = Self::value_ref_internal(row, &arr.fields()[col], column);
 
         // Some DuckDB logical types share Arrow physical carriers. Executed
         // result metadata recovers those DuckDB type tags.
@@ -399,9 +400,12 @@ impl<'stmt> Row<'stmt> {
         }
     }
 
-    pub(crate) fn value_ref_internal<'a>(row: usize, column: &'a ArrayRef) -> ValueRef<'a> {
+    pub(crate) fn value_ref_internal<'a>(row: usize, field: &Field, column: &'a ArrayRef) -> ValueRef<'a> {
         if column.is_null(row) {
             return ValueRef::Null;
+        }
+        if is_variant_field(field) {
+            return ValueRef::Variant(column.as_struct(), row);
         }
         // duckdb.cpp SetArrowFormat
         // https://github.com/duckdb/duckdb/blob/71f1c7a7e4b8737cff5e78d1f090c54f5e78e17b/src/main/query_result.cpp#L148

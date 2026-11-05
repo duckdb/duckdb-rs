@@ -5,7 +5,7 @@ use crate::{
     types::Decimal,
 };
 
-use super::{UUID_BYTE_WIDTH, UUID_EXTENSION_NAME};
+use crate::types::extension::{UUID_BYTE_WIDTH, UUID_EXTENSION_NAME};
 
 /// Convert Arrow [`DataType`] to DuckDB type id.
 pub fn to_duckdb_type_id(data_type: &DataType) -> Result<LogicalTypeId, Box<dyn std::error::Error>> {
