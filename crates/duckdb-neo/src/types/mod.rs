@@ -22,11 +22,11 @@
 //! Named Rust structs map to `STRUCT` through [`crate::AsDuckDB`], which derives
 //! the value conversions, a borrowed `NameRef` row, and vector writes. [`Struct`]
 //! accepts any `STRUCT` or `TUPLE` vector when the schema is only known at runtime.
+//! Enums of single-field variants map to `UNION` the same way through [`crate::AsDuckDBUnion`],
+//! with [`Union`] as the runtime fallback.
 //!
 //! ```
-//! use duckdb_neo::types::{
-//!     ArrayIterator, ArrayRef, ListIterator, ListRef, MapRow, UnionRow, UnionWriter,
-//! };
+//! use duckdb_neo::types::{ArrayIterator, ArrayRef, ListIterator, ListRef, MapRow};
 //!
 //! fn array_items<'a>(row: ArrayRef<'a, i32>) -> ArrayIterator<'a, i32> {
 //!     row.iter()
@@ -35,11 +35,6 @@
 //!     row.iter()
 //! }
 //! fn map_row(_row: MapRow<'_, i32, i32>) {}
-//! fn union_member(row: UnionRow<'_>) -> u8 {
-//!     row.member()
-//! }
-//!
-//! let _row: UnionWriter<'_> = UnionWriter::set_value::<i32>(0, Some(2));
 //! ```
 
 use crate::{Result, connection::FFILink, logical_type::LogicalType, value::Value};
@@ -58,7 +53,7 @@ pub(crate) mod array;
 mod list;
 mod map;
 pub(crate) mod structs;
-mod union;
+pub(crate) mod union;
 
 pub use self::uuid::UuidValueRaw;
 pub use array::{Array, ArrayIterator, ArrayRef};
@@ -77,7 +72,7 @@ pub use temporal::{
     DateValue, IntervalValue, TimeNsValue, TimeTzValue, TimeValue, TimestampMsValue, TimestampNsValue,
     TimestampSecValue, TimestampTzNsValue, TimestampTzValue, TimestampValue,
 };
-pub use union::{Union, UnionRow, UnionSchema, UnionValue, UnionWriter};
+pub use union::Union;
 pub use variant::{Variant, VariantValue};
 
 #[cfg(feature = "rust_decimal")]

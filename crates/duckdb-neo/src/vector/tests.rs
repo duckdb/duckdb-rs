@@ -9,7 +9,6 @@ use crate::types::Any;
 use crate::{
     Parameters, ToValue,
     builder_helpers::scalar_callback,
-    connection::FFILink,
     data_chunk::DataChunk,
     environment::{Environment, StorageLocation},
     error::{DuckDBError, Error},
@@ -20,7 +19,7 @@ use crate::{
         Array, BigNum, BigNumValue, BitValue, BlobValue, DateValue, DecimalSignature, DecimalValue, DuckDBType,
         IntervalValue, List, ListRef, LongDecimal, Map, MapValue, ShortDecimal, TimeNsValue, TimeTzValue, TimeValue,
         TimestampMsValue, TimestampNsValue, TimestampSecValue, TimestampTzNsValue, TimestampTzValue, TimestampValue,
-        Union, UnionSchema, UnionValue, UnionWriter, UuidValueRaw, Variant, WordDecimal,
+        UuidValueRaw, Variant, WordDecimal,
     },
     value::Value,
     vector::StorageKind,
@@ -97,12 +96,9 @@ fn vector_dynamic_fields_validate_before_reading() -> crate::Result<()> {
     assert!(chunk.get_vector_at::<DynamicStructWrongField>(0).is_err());
     assert!(chunk.get_vector_at::<DynamicStructWrongItems>(0).is_err());
 
-    let row = chunk.get_vector_at::<Union>(1)?.reader()?.get(0)?.unwrap();
-    assert_eq!(row.member(), 0);
-    assert_eq!(row.get::<i32>(0)?, Some(&42));
-    assert!(row.get::<String>(0).is_err());
-    assert_eq!(row.get::<String>(1)?, None);
-    assert!(row.get::<i32>(1).is_err());
+    let row = chunk.get_vector_at::<NumOrStr>(1)?.reader()?.get(0)?.unwrap();
+    assert_eq!(row, NumOrStrRef::Num(Some(&42)));
+    assert!(chunk.get_vector_at::<SwappedNumOrStr>(1).is_err());
     Ok(())
 }
 
@@ -709,15 +705,29 @@ struct TestStruct {
     value: String,
 }
 
-struct TestUnion;
+#[derive(Debug, PartialEq, crate::AsDuckDBUnion)]
+enum TestUnion {
+    #[duckdb(rename = "key")]
+    Key(Option<i32>),
+    #[duckdb(rename = "value")]
+    Value(Option<String>),
+}
 
-impl UnionSchema for TestUnion {
-    fn members<C: FFILink + ?Sized>(link: &C) -> crate::Result<Vec<(&'static str, LogicalType)>> {
-        Ok(vec![
-            ("key", i32::logical_type(link)?),
-            ("value", String::logical_type(link)?),
-        ])
-    }
+#[derive(Debug, PartialEq, crate::AsDuckDBUnion)]
+enum NumOrStr {
+    #[duckdb(rename = "num")]
+    Num(i32),
+    #[duckdb(rename = "str")]
+    Str(String),
+}
+
+#[derive(Debug, crate::AsDuckDBUnion)]
+#[allow(dead_code)]
+enum SwappedNumOrStr {
+    #[duckdb(rename = "num")]
+    Num(String),
+    #[duckdb(rename = "str")]
+    Str(i32),
 }
 
 scalar_callback!(NegateScalar, i32, |input, output, _ctx, _user_data| {
@@ -783,7 +793,7 @@ scalar_callback!(
     }
 );
 
-scalar_callback!(UnionScalar, Union, |input, output, _ctx, _user_data| {
+scalar_callback!(UnionScalar, TestUnion, |input, output, _ctx, _user_data| {
     let keys = input.get_vector_at::<i32>(0)?;
     let values = input.get_vector_at::<String>(1)?;
     let rows: Vec<(i32, Option<&str>)> = keys
@@ -797,19 +807,12 @@ scalar_callback!(UnionScalar, Union, |input, output, _ctx, _user_data| {
     output.set_size(rows.len())?;
 
     for (index, (key, value)) in rows.iter().enumerate() {
-        match *key {
-            1 => output.writer()?.set(
-                index,
-                Some(UnionWriter::set_value::<i32>(
-                    0u8,
-                    value.map_or(None, |v| Some(v.len() as i32)),
-                )),
-            )?,
-            2 => output
-                .writer()?
-                .set(index, Some(UnionWriter::set_value::<String>(1u8, *value)))?,
+        let row = match *key {
+            1 => TestUnion::Key(value.map(|v| v.len() as i32)),
+            2 => TestUnion::Value(value.map(str::to_owned)),
             _ => unimplemented!("Unexpected key value: {}", key),
-        }
+        };
+        output.writer()?.set(index, Some(row))?;
     }
     Ok(())
 });
@@ -873,12 +876,12 @@ scalar_callback!(NullableStructScalar, TestStruct, |input, output, _ctx, _user_d
 });
 
 // Writes a NULL row whenever the key is NULL.
-scalar_callback!(NullableUnionScalar, Union, |input, output, _ctx, _user_data| {
+scalar_callback!(NullableUnionScalar, TestUnion, |input, output, _ctx, _user_data| {
     let keys = input.get_vector_at::<i32>(0)?;
     let mut output = output;
     output.set_size(keys.len())?;
     for (index, key) in keys.reader()?.iter().enumerate() {
-        let row = key.map(|key| UnionWriter::set_value::<i32>(0, Some(*key)));
+        let row = key.map(|key| TestUnion::Key(Some(*key)));
         output.writer()?.set(index, row)?;
     }
     Ok(())
@@ -889,22 +892,34 @@ struct SmallStruct {
     x: String,
 }
 
+#[derive(Debug, crate::AsDuckDBUnion)]
+enum NumOrStruct {
+    #[duckdb(rename = "num")]
+    Num(i32),
+    #[duckdb(rename = "s")]
+    S(SmallStruct),
+}
+
 // Odd keys pick the INTEGER member, even keys the STRUCT member.
-scalar_callback!(StructMemberUnionScalar, Union, |input, output, _ctx, _user_data| {
-    let keys = input.get_vector_at::<i32>(0)?;
-    let mut output = output;
-    output.set_size(keys.len())?;
-    for (index, key) in keys.reader()?.iter().enumerate() {
-        let key = *key.unwrap();
-        let row = if key % 2 == 1 {
-            UnionWriter::set_value::<i32>(0, Some(key))
-        } else {
-            UnionWriter::set_value::<SmallStruct>(1, Some(SmallStruct { x: "even".into() }))
-        };
-        output.writer()?.set(index, Some(row))?;
+scalar_callback!(
+    StructMemberUnionScalar,
+    NumOrStruct,
+    |input, output, _ctx, _user_data| {
+        let keys = input.get_vector_at::<i32>(0)?;
+        let mut output = output;
+        output.set_size(keys.len())?;
+        for (index, key) in keys.reader()?.iter().enumerate() {
+            let key = *key.unwrap();
+            let row = if key % 2 == 1 {
+                NumOrStruct::Num(key)
+            } else {
+                NumOrStruct::S(SmallStruct { x: "even".into() })
+            };
+            output.writer()?.set(index, Some(row))?;
+        }
+        Ok(())
     }
-    Ok(())
-});
+);
 
 scalar_callback!(ConstantScalar, i32, |_input, result, ctx, _user_data| {
     let val = 42_i32.value(&ctx)?;
@@ -1352,23 +1367,24 @@ pub fn test_vector_union() -> crate::Result<()> {
         .next_chunk()?
         .unwrap();
 
-    let vector = res.get_vector_at::<Union>(0)?;
+    let vector = res.get_vector_at::<NumOrStr>(0)?;
     assert_eq!(vector.len(), 5);
-    let mut reader = vector.reader()?.iter();
-
-    let first = reader.next().unwrap().unwrap();
-    assert_eq!(first.member(), 0, "Expected first union member to be 0 (num)");
-    assert_eq!(first.get::<i32>(0)?, Some(&1));
-
-    assert_eq!(reader.next().unwrap().unwrap().get::<i32>(0)?, Some(&42));
-
-    assert!(reader.next().unwrap().is_none());
-    assert_eq!(reader.next().unwrap().unwrap().get::<String>(1)?, Some("two"));
-
-    let last = reader.next().unwrap().unwrap();
-    assert_eq!(last.get::<String>(1)?, Some("three"));
-    // The wrong member type must be rejected.
-    assert_eq!(last.get::<i32>(1).unwrap_err().code, DuckDBError::InputInvalid);
+    let rows: Vec<_> = vector.reader()?.iter().collect();
+    assert_eq!(
+        rows,
+        [
+            Some(NumOrStrRef::Num(Some(&1))),
+            Some(NumOrStrRef::Num(Some(&42))),
+            None,
+            Some(NumOrStrRef::Str(Some("two"))),
+            Some(NumOrStrRef::Str(Some("three"))),
+        ]
+    );
+    // The wrong member types must be rejected.
+    assert_eq!(
+        res.get_vector_at::<SwappedNumOrStr>(0).unwrap_err().code,
+        DuckDBError::InputInvalid
+    );
     Ok(())
 }
 
@@ -1494,7 +1510,7 @@ pub fn vector_union_write() -> crate::Result<()> {
     let instance = env.open(StorageLocation::InMemory)?;
     let conn = instance.connect()?;
 
-    let union_type = UnionValue::<TestUnion, i32>::logical_type(&conn)?;
+    let union_type = TestUnion::logical_type(&conn)?;
 
     ScalarFunctionBuilder::new(
         "to_union",
@@ -1514,21 +1530,17 @@ pub fn vector_union_write() -> crate::Result<()> {
     let mut chunk_count = 0;
     while let Some(mut chunk) = result.next_chunk()? {
         chunk_count += 1;
-        let mut vector = chunk.get_vector_at_mut::<Union>(0)?;
+        let mut vector = chunk.get_vector_at_mut::<TestUnion>(0)?;
         vector.flatten()?;
         let rows: Vec<_> = vector.reader()?.iter().collect();
-
-        assert_eq!(rows[0].as_ref().unwrap().member(), 0);
-        assert_eq!(rows[1].as_ref().unwrap().member(), 1);
-
-        assert_eq!(rows[0].as_ref().unwrap().get::<i32>(0)?, Some(&14));
         assert_eq!(
-            rows[1].as_ref().unwrap().get::<String>(1)?,
-            Some("OPAOPDAOADWADtablesss")
+            rows,
+            [
+                Some(TestUnionRef::Key(Some(&14))),
+                Some(TestUnionRef::Value(Some("OPAOPDAOADWADtablesss"))),
+                Some(TestUnionRef::Value(None)),
+            ]
         );
-
-        assert_eq!(rows[2].as_ref().unwrap().member(), 1);
-        assert_eq!(rows[2].as_ref().unwrap().get::<String>(1)?, None);
     }
     assert_eq!(chunk_count, 1);
     Ok(())
@@ -1586,7 +1598,7 @@ pub fn vector_nested_null_write() -> crate::Result<()> {
         "to_union_or_null",
         SignatureBuilder::new()
             .param(key())
-            .return_type(UnionValue::<TestUnion, i32>::logical_type(&conn)?),
+            .return_type(TestUnion::logical_type(&conn)?),
         NullableUnionScalar,
     )
     .register(&conn)?;

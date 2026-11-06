@@ -3,21 +3,19 @@ use crate::logical_type::LogicalTypeID;
 
 use super::*;
 
-struct TestUnion;
+#[derive(crate::AsDuckDBUnion)]
+#[allow(dead_code)]
+enum TestUnion {
+    #[duckdb(rename = "number")]
+    Number(i32),
+    #[duckdb(rename = "text")]
+    Text(String),
+}
 
 #[derive(crate::AsDuckDB)]
 struct TestStruct {
     id: i32,
     name: String,
-}
-
-impl UnionSchema for TestUnion {
-    fn members<C: FFILink + ?Sized>(link: &C) -> Result<Vec<(&'static str, LogicalType)>> {
-        Ok(vec![
-            ("number", i32::logical_type(link)?),
-            ("text", String::logical_type(link)?),
-        ])
-    }
 }
 
 #[test]
@@ -443,8 +441,9 @@ fn test_complex_values() -> crate::Result<()> {
     assert_eq!(struct_value.dbg_string()?, "{'id': 42, 'name': duck}");
     assert_eq!(struct_value.logical_type()?, TestStruct::logical_type(&conn)?);
 
-    let union = UnionValue::<TestUnion, _>::new(42_i32).value(&conn)?;
-    assert_eq!(union.logical_type()?.id()?, LogicalTypeID::Union);
+    let union = TestUnion::Number(42).value(&conn)?;
+    assert_eq!(union.logical_type()?, TestUnion::logical_type(&conn)?);
+    assert_eq!(union.dbg_string()?, "42");
     assert_eq!(union.child_count()?, 2);
 
     let variant = VariantValue(42_i32).value(&conn)?;

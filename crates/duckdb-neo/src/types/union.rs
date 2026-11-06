@@ -1,300 +1,248 @@
 //! The `UNION` logical type.
+//!
+//! Rust enums of single-field variants map to `UNION` through `#[derive(AsDuckDBUnion)]`, which
+//! generates typed values, borrowed vector rows, and vector writes. [`Union`] is the untyped fallback.
 
-use std::marker::PhantomData;
-
-use super::{DuckDBType, ToValue};
 use crate::{
     Result,
-    connection::FFILink,
-    data_chunk::VectorCollection,
-    error::Error,
-    logical_type::{LogicalType, LogicalTypeID},
-    parameter::{Parameters, QueryParameter},
-    value::Value,
-    vector::{Unknown, Vector, VectorElement, WritableVectorElement},
+    enums::LogicalTypeID,
+    vector::{HasChildren, VectorElement, VectorWriter},
 };
-/// Reads a `UNION` vector through its tag and member child vectors.
+
+/// Accepts any `UNION` vector without checking its members.
+///
+/// Rows only report NULLs. Derive `AsDuckDBUnion` for typed members, or use
+/// [`Vector::get_value_slow`](crate::vector::Vector::get_value_slow) and
+/// [`Vector::write_value_slow`](crate::vector::Vector::write_value_slow) when the schema is only known at runtime.
+///
+/// ```
+/// use duckdb_neo::{AsDuckDBUnion, Result, vector::Vector};
+///
+/// #[derive(AsDuckDBUnion)]
+/// enum Input {
+///     #[duckdb(rename = "num")]
+///     Num(i16),
+///     #[duckdb(rename = "str")]
+///     Str(Option<String>),
+/// }
+///
+/// fn describe(vector: &Vector<'_, Input>) -> Result<String> {
+///     Ok(match vector.reader()?.get(0)? {
+///         Some(InputRef::Num(num)) => format!("{num:?}"),
+///         Some(InputRef::Str(text)) => format!("{text:?}"),
+///         None => "NULL".to_owned(),
+///     })
+/// }
+///
+/// fn write(vector: &mut Vector<'_, Input>) -> Result<()> {
+///     vector.writer()?.set(0, Some(Input::Str(Some("duck".to_owned()))))
+/// }
+/// ```
 #[derive(Debug)]
 pub struct Union;
 
-/// Defines the named members of a [`UnionValue`].
-pub trait UnionSchema {
-    /// Return member names and types in tag order.
-    fn members<C: FFILink + ?Sized>(link: &C) -> Result<Vec<(&'static str, LogicalType)>>;
-}
-
-/// A DuckDB `UNION` with schema `S`; implicit-cast costs select the active member.
-/// Conversion fails when multiple members tie for the cheapest cast.
-pub struct UnionValue<S, T> {
-    /// The active member value.
-    pub value: T,
-    _schema: PhantomData<S>,
-}
-
-impl<S, T: std::fmt::Debug> std::fmt::Debug for UnionValue<S, T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("UnionValue").field("value", &self.value).finish()
-    }
-}
-
-impl<S, T> UnionValue<S, T> {
-    /// Create a union value from its active member.
-    pub fn new(value: T) -> Self {
-        Self {
-            value,
-            _schema: PhantomData,
-        }
-    }
-}
-
-impl<S: UnionSchema, T> DuckDBType for UnionValue<S, T> {
-    fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
-        let members = S::members(link)?;
-        let values = members
-            .into_iter()
-            .map(|(name, logical_type)| Ok((name, Value::from_logical_type(link, &logical_type)?)))
-            .collect::<Result<Vec<_>>>()?;
-        let parameters = values
-            .iter()
-            .map(|(name, value)| (*name, value as &dyn QueryParameter))
-            .collect::<Vec<_>>();
-        link.logical_type_create("UNION", Parameters::named(&parameters))
-    }
-}
-
-impl<S: UnionSchema, T: ToValue> ToValue for UnionValue<S, T> {
-    fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
-        let value = self.value.value(link)?;
-        link.value_cast(&value, &Self::logical_type(link)?)
-    }
-}
-
-// SAFETY: members are read only through the child vectors, and `validate` checks the tag.
+// SAFETY: there is no physical row data, and `get` reads nothing.
 unsafe impl VectorElement for Union {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Union;
-    type Ref<'a> = UnionRow<'a>;
-
-    type Internal<'a> = Union;
-
-    fn validate(other: &LogicalType, children: Option<&VectorCollection>) -> Result<bool> {
-        if other.id()? != Self::TYPE_ID {
-            return Ok(false);
-        }
-
-        let Some(children) = children.filter(|children| children.col_count() > 0) else {
-            return Err(Error::invalid_input("Union vector is missing its tag child"));
-        };
-        children.get_untyped_vector_at(0)?.validate_as::<u8>().map(|()| true)
-    }
+    type Ref<'a>
+        = ()
+    where
+        Self: 'a;
+    type Internal<'a> = ();
 
     unsafe fn get<'a, U: VectorElement>(
-        reader: &crate::vector::VectorReader<'a, U>,
-        physical: usize,
+        _reader: &crate::vector::VectorReader<'a, U>,
+        _physical: usize,
         _logical: usize,
     ) -> Self::Ref<'a>
     where
-        Self: Sized + 'a,
+        Self: 'a,
     {
-        let children = reader
-            .vector()
-            .children()
-            .expect("validated nested vector has children");
-        // SAFETY: The parent reader prepared the tag, which validate checked as u8.
-        let tag = unsafe { reader.child_reader::<u8>(0) };
-        UnionRow {
-            children,
-            tag,
-            logical: physical,
-        }
     }
 }
 
-/// A borrowed union row with access to its tag and member child vectors.
-#[derive(Debug)]
-pub struct UnionRow<'a> {
-    children: &'a VectorCollection,
-    tag: crate::vector::VectorReader<'a, u8>,
-    logical: usize,
-}
-
-impl<'a> UnionRow<'a> {
-    /// Return the active union member index.
-    pub fn member(&self) -> u8 {
-        // SAFETY: The tag reader was prepared with the parent and this row is in bounds.
-        unsafe { *self.tag.get_unchecked(self.logical).unwrap() }
-    }
-
-    /// Return a union member by index after validating its logical type.
-    pub fn get<T: VectorElement>(&self, index: usize) -> Result<Option<T::Ref<'a>>> {
-        let child_index = index
-            .checked_add(1)
-            .filter(|&index| index < self.children.col_count())
-            .ok_or_else(|| {
-                Error::invalid_parameter(format!(
-                    "Union member index {} is out of bounds ({} members)",
-                    index,
-                    self.children.col_count() - 1
-                ))
-            })?;
-
-        self.children
-            .cached_unchecked(child_index)
-            .cast_ref::<T>()?
-            .reader()?
-            .get(self.logical)
+// SAFETY: the tag and every member have one row per parent row.
+unsafe impl HasChildren for Union {
+    fn child_len(writer: &VectorWriter<'_, Self>) -> Result<usize> {
+        Ok(writer.len())
     }
 }
 
-trait UnionFieldWrite {
-    fn validate(&self, child: &Vector<'_, Unknown>) -> Result<()>;
+/// Runtime support for the union derive in `duckdb-loadable-macros`; not a stable API.
+pub mod derive_support {
+    use crate::{
+        Error, Parameters, Result, connection::FFILink, data_chunk::VectorCollection, logical_type::LogicalType,
+        logical_type::LogicalTypeID, value::Value, vector::VectorElement,
+    };
 
-    fn write(self: Box<Self>, child: &mut Vector<'_, Unknown>, index: usize) -> Result<()>;
-}
-
-#[derive(Debug)]
-struct TypedUnionField<'a, T: WritableVectorElement + 'a> {
-    member: Option<T::Write<'a>>,
-}
-
-impl<'a, T> UnionFieldWrite for TypedUnionField<'a, T>
-where
-    T: WritableVectorElement + 'a,
-    T::Write<'a>: 'a,
-{
-    fn validate(&self, child: &Vector<'_, Unknown>) -> Result<()> {
-        child.validate_as::<T>()
+    /// Build a `union_type` value whose member `tag` holds `member`.
+    ///
+    /// Casting to a single-member union first keeps the tag even when several members share a type.
+    pub fn union_value<C: FFILink + ?Sized>(
+        link: &C,
+        union_type: &LogicalType,
+        tag: usize,
+        member: &Value,
+    ) -> Result<Value> {
+        let (name, member_type) = union_type.get_param(tag)?;
+        let single = link.logical_type_create("UNION", Parameters::named(&[(name, &member_type)]))?;
+        link.value_cast(&link.value_cast(member, &single)?, union_type)
     }
 
-    fn write(self: Box<Self>, child: &mut Vector<'_, Unknown>, index: usize) -> Result<()> {
-        // SAFETY: The member's type was validated before writing any children.
-        unsafe { child.cast_ref_unchecked_mut::<T>() }
-            .writer()?
-            .set(index, self.member)
-    }
-}
-
-/// A typed value for one writable `UNION` row.
-pub struct UnionWriter<'a> {
-    tag: u8,
-    value: Box<dyn UnionFieldWrite + 'a>,
-}
-
-impl std::fmt::Debug for UnionWriter<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("UnionWriter")
-            .field("tag", &self.tag)
-            .finish_non_exhaustive()
-    }
-}
-
-impl<'a> UnionWriter<'a> {
-    /// Select a zero-based union member and provide its typed value.
-    pub fn set_value<T>(index: u8, value: Option<T::Write<'a>>) -> Self
-    where
-        T: WritableVectorElement + 'a,
-        T::Write<'a>: 'a,
-    {
-        Self {
-            tag: index,
-            value: Box::new(TypedUnionField::<T> { member: value }),
-        }
-    }
-}
-
-// SAFETY: the tag is range-checked, and members are written through the children's own `write`.
-unsafe impl WritableVectorElement for Union {
-    type Write<'a> = UnionWriter<'a>;
-
-    unsafe fn write(
-        vector: &mut crate::vector::VectorWriter<'_, Self>,
-        index: usize,
-        value: Option<Self::Write<'_>>,
-    ) -> Result<()> {
-        let Some(value) = value else {
-            // A union is a struct of tag and members; this nulls all of them.
-            return vector.set_null_slow(index);
-        };
-
-        let member_count = vector
-            .vector()
-            .children()
-            .map_or(0, VectorCollection::col_count)
-            .saturating_sub(1);
-        if value.tag as usize >= member_count {
-            return Err(Error::invalid_parameter(format!(
-                "Union member index {} is out of bounds ({} members)",
-                value.tag, member_count
+    /// Check that `value` is a `UNION` with members `names`, and return the active one's index and value.
+    ///
+    /// Members are matched by name, preferring an exact over a case-insensitive match.
+    pub fn union_member(value: &Value, names: &[&str]) -> Result<(usize, Value)> {
+        let logical_type = value.logical_type()?;
+        if logical_type.id()? != LogicalTypeID::Union {
+            return Err(Error::invalid_input(format!(
+                "Expected UNION value, found {}",
+                logical_type.to_text()?
             )));
         }
-
-        let member = 1 + value.tag as usize;
-        value.value.validate(
-            vector
-                .vector()
-                .children()
-                .ok_or_else(|| Error::invalid_input("Union vector is missing its member children"))?
-                .get_untyped_vector_at(member)?,
-        )?;
-
-        let vector_len = vector.len();
-        let children = vector
-            .vector_mut()
-            .children_collection_mut()
-            .expect("validated nested vector has children");
-
-        for i in 0..children.col_count() {
-            let child = children.cached_mut::<Unknown>(i)?;
-            if child.len() != vector_len {
-                child.set_size(vector_len)?;
-            }
-            if i == 0 {
-                // SAFETY: Union::validate checks that the tag child is a u8 vector.
-                unsafe { child.cast_ref_unchecked_mut::<u8>() }
-                    .writer()?
-                    .set(index, Some(value.tag))?;
-            } else if i != member {
-                // Nested fixed-width rows need NULL descendants, which only the slow path sets.
-                let nested = matches!(
-                    child.logical_type().id()?,
-                    LogicalTypeID::Struct | LogicalTypeID::Tuple | LogicalTypeID::Union | LogicalTypeID::Array
-                );
-                if nested {
-                    child.set_null_slow(index)?;
-                } else {
-                    // SAFETY: The row is in bounds and these types need no descendant NULL updates.
-                    unsafe { child.writer()?.set_row_validity(index, false)? };
-                }
+        let members = logical_type.get_params()?;
+        if members.len() != names.len() {
+            return Err(Error::invalid_input(format!(
+                "UNION has {} members, expected {}",
+                members.len(),
+                names.len()
+            )));
+        }
+        let tag = value
+            .get_child(0)?
+            .get::<u8>()?
+            .ok_or_else(|| Error::invalid_input("UNION tag is NULL"))? as usize;
+        let mut active = None;
+        for (index, name) in names.iter().enumerate() {
+            let member = members
+                .iter()
+                .position(|(member, _)| member == name)
+                .or_else(|| members.iter().position(|(member, _)| member.eq_ignore_ascii_case(name)))
+                .ok_or_else(|| Error::invalid_input(format!("UNION member '{name}' is missing")))?;
+            if member == tag {
+                active = Some(index);
             }
         }
-        // The member's own write sets its validity.
-        let written = value.value.write(children.cached_mut::<Unknown>(member)?, index);
-        if written.is_err() {
-            // The tag was written, so NULL the row to keep its children consistent.
-            vector.set_null_slow(index)?;
+        let active = active.ok_or_else(|| Error::invalid_input(format!("UNION tag {tag} is out of range")))?;
+        Ok((active, value.get_child(1)?))
+    }
+
+    /// Reject a SQL NULL for a member whose Rust type is not optional.
+    pub fn required_member<T>(value: Option<T>, name: &str) -> Result<T> {
+        value.ok_or_else(|| Error::invalid_input(format!("UNION member '{name}' is NULL")))
+    }
+
+    /// Check that a vector type is a `UNION` with `count` members, and a `UTINYINT` tag child.
+    pub fn validate_union_layout(
+        other: &LogicalType,
+        children: Option<&VectorCollection>,
+        count: usize,
+    ) -> Result<bool> {
+        if other.id()? != LogicalTypeID::Union || other.param_count()? != count {
+            return Ok(false);
         }
-        written
+        let Some(children) = children.filter(|children| children.col_count() == count + 1) else {
+            return Ok(false);
+        };
+        let tag = children.get_untyped_vector_at(0)?;
+        u8::validate(tag.logical_type(), tag.children())
+    }
+
+    /// Check the name (case-insensitively) and child vector of the member at `index`.
+    pub fn validate_union_member<T: VectorElement>(
+        other: &LogicalType,
+        children: Option<&VectorCollection>,
+        index: usize,
+        name: &str,
+    ) -> Result<bool> {
+        let Some(children) = children.filter(|children| index + 1 < children.col_count()) else {
+            return Ok(false);
+        };
+        if !other.get_param(index)?.0.eq_ignore_ascii_case(name) {
+            return Ok(false);
+        }
+        let child = children.get_untyped_vector_at(index + 1)?;
+        T::validate(child.logical_type(), child.children())
+    }
+
+    /// Report a valid row whose tag names no member, which DuckDB never produces.
+    #[cold]
+    pub fn invalid_union_tag(tag: Option<u8>, count: usize) -> ! {
+        panic!("UNION row has tag {tag:?}, but the union has {count} members")
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use duckdb_loadable_macros::AsDuckDBUnion;
+
     use super::*;
     use crate::{
+        DuckDBType, Parameters, ToValue,
         data_chunk::DataChunk,
         environment::{Environment, StorageLocation},
+        vector::Unknown,
     };
 
+    #[derive(Debug, PartialEq, AsDuckDBUnion)]
+    enum NumOrText {
+        #[duckdb(rename = "num")]
+        Num(i32),
+        #[duckdb(rename = "str")]
+        Text(String),
+    }
+
+    #[derive(Debug, AsDuckDBUnion)]
+    #[allow(dead_code)]
+    enum Swapped {
+        #[duckdb(rename = "num")]
+        Num(String),
+        #[duckdb(rename = "str")]
+        Text(i32),
+    }
+
     #[test]
-    fn union_value_debug_does_not_require_schema_debug() {
-        struct Schema;
-        let value = UnionValue::<Schema, _>::new(42);
-        assert_eq!(format!("{value:?}"), "UnionValue { value: 42 }");
+    fn union_marker_reads_rows_and_slow_values() -> Result<()> {
+        let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+        let chunk = conn
+            .query(
+                "SELECT unnest([union_value(str := 'duck'), NULL])::UNION(num INTEGER, str VARCHAR)",
+                Parameters::None,
+            )?
+            .next_chunk()?
+            .unwrap();
+        let vector = chunk.get_vector_at::<Union>(0)?;
+        assert!(vector.reader()?.get(0)?.is_some());
+        assert!(vector.reader()?.get(1)?.is_none());
+        assert_eq!(
+            vector.get_value_slow(0)?.get::<NumOrText>()?,
+            Some(NumOrText::Text("duck".to_owned()))
+        );
+        assert!(
+            conn.query("SELECT {'num': 1}", Parameters::None)?
+                .next_chunk()?
+                .unwrap()
+                .get_vector_at::<Union>(0)
+                .is_err()
+        );
+
+        let mut chunk = DataChunk::create(&conn, &[NumOrText::logical_type(&conn)?], true)?;
+        {
+            let mut vector = chunk.get_vector_at_mut::<Union>(0)?;
+            vector.set_size(2)?;
+            vector.write_value_slow(0, NumOrText::Num(7).value(&conn)?)?;
+            vector.set_null_slow(1)?;
+        }
+        let vector = chunk.get_vector_at::<NumOrText>(0)?;
+        let reader = vector.reader()?;
+        assert_eq!(reader.get(0)?, Some(NumOrTextRef::Num(Some(&7))));
+        assert!(reader.get(1)?.is_none());
+        Ok(())
     }
 
     #[test]
     fn union_type_mismatch_preserves_row() -> Result<()> {
-        let env = Environment::new()?;
-        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+        let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
         let value = conn
             .query(
                 "SELECT union_value(str := 'duck')::UNION(num INTEGER, str VARCHAR)",
@@ -309,60 +257,14 @@ mod tests {
             let mut vector = chunk.get_vector_at_mut::<Union>(0)?;
             vector.set_size(2)?;
             vector.write_value_slow(0, value)?;
-            vector.writer()?.set(1, None)?;
-            for index in 0..2 {
-                let invalid = UnionWriter::set_value::<String>(0, Some("bad"));
-                assert!(vector.writer()?.set(index, Some(invalid)).is_err());
-            }
+            vector.set_null_slow(1)?;
         }
-        let vector = chunk.get_vector_at::<Union>(0)?;
-        let vector_reader = vector.reader()?;
-        let row = vector_reader.get(0)?.unwrap();
-        assert_eq!(row.member(), 1);
-        assert_eq!(row.get::<i32>(0)?, None);
-        assert_eq!(row.get::<String>(1)?, Some("duck"));
-        assert!(vector_reader.get(1)?.is_none());
-        Ok(())
-    }
-
-    #[test]
-    fn failed_union_writes_leave_the_row_null() -> Result<()> {
-        use crate::types::BitValue;
-
-        let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
-        let union_type = conn
-            .query("SELECT NULL::UNION(b BIT)", Parameters::None)?
-            .next_chunk()?
-            .unwrap()
-            .get_vector_at::<Union>(0)?
-            .logical_type()
-            .clone();
-        let mut chunk = DataChunk::create(&conn, &[union_type], true)?;
-        let mut vector = chunk.get_vector_at_mut::<Union>(0)?;
-        vector.set_size(1)?;
-        {
-            let mut writer = vector.writer()?;
-            writer.set(0, None)?;
-            let invalid = UnionWriter::set_value::<BitValue>(0, Some(&[]));
-            assert!(writer.set(0, Some(invalid)).is_err());
-        }
-        assert!(vector.reader()?.get(0)?.is_none());
-        let tags = vector.children().unwrap().get_vector_at::<u8>(0)?.reader()?;
-        assert!(tags.get(0)?.is_none());
-        Ok(())
-    }
-
-    #[test]
-    fn union_member_index_overflow_returns_error() -> Result<()> {
-        let env = Environment::new()?;
-        let conn = env.open(StorageLocation::InMemory)?.connect()?;
-        let chunk = conn
-            .query("SELECT union_value(x := 42)", Parameters::None)?
-            .next_chunk()?
-            .unwrap();
-        let row = chunk.get_vector_at::<Union>(0)?.reader()?.get(0)?.unwrap();
-        assert!(row.get::<u8>(usize::MAX).is_err());
-        assert_eq!(row.get::<i32>(0)?, Some(&42));
+        assert!(chunk.get_vector_at_mut::<Swapped>(0).is_err());
+        assert!(chunk.get_vector_at_mut::<Unknown>(0)?.cast::<Swapped>().is_err());
+        let vector = chunk.get_vector_at::<NumOrText>(0)?;
+        let reader = vector.reader()?;
+        assert_eq!(reader.get(0)?, Some(NumOrTextRef::Text(Some("duck"))));
+        assert!(reader.get(1)?.is_none());
         Ok(())
     }
 }
