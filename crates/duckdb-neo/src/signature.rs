@@ -310,32 +310,29 @@ impl SignatureBuilder {
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod test {
     use crate::Parameters;
-    use crate::builder_helpers::scalar_callback;
-    use crate::connection::Connection;
+    use crate::connection::{Connection, Context};
+    use crate::data_chunk::VectorCollection;
     use crate::environment::{Environment, StorageLocation};
-    use crate::scalar::ScalarFunctionBuilder;
+    use crate::scalar::MicroScalar;
+    use crate::vector::Vector;
 
     use super::*;
 
-    scalar_callback!(DefaultParameterScalar, u64, |input, result, _ctx, _user_data| {
+    fn default_parameter(_ctx: &Context, input: &mut VectorCollection, mut result: Vector<'_, u64>) -> Result<()> {
         let vectors_len = input.col_count();
         let vector = input.get_vector_at::<i32>(2)?;
-        let mut result = result;
-        result.set_size(1)?;
         result.writer()?.set(
             0,
             Some(*vector.reader()?.get(0).unwrap().unwrap() as u64 + vectors_len as u64),
         )?;
         Ok(())
-    });
+    }
 
-    scalar_callback!(VarargScalar, u64, |input, result, _ctx, _user_data| {
+    fn vararg(_ctx: &Context, input: &mut VectorCollection, mut result: Vector<'_, u64>) -> Result<()> {
         let vectors_len = input.col_count();
-        let mut result = result;
-        result.set_size(1)?;
         result.writer()?.set(0, Some(vectors_len as u64))?;
         Ok(())
-    });
+    }
 
     fn query_u64(conn: &crate::connection::Connection, sql: &str) -> crate::Result<Option<u64>> {
         let mut result = conn.query(sql, Parameters::None)?;
@@ -357,7 +354,7 @@ mod test {
             ))
             .param(FunctionParameter::with_default("param3", 42_i32))
             .return_type(u64::logical_type(&conn)?);
-        ScalarFunctionBuilder::new("typed", sig, DefaultParameterScalar).register(&conn)?;
+        MicroScalar::with_signature("typed", sig, default_parameter).register(&conn)?;
 
         let mut result = conn.query(
             "SELECT parameter_types::VARCHAR, return_type FROM duckdb_functions() WHERE function_name = 'typed'",
@@ -391,7 +388,7 @@ mod test {
                     .return_type(u64::logical_type(&conn)?),
             ),
         ] {
-            ScalarFunctionBuilder::new(name, signature, VarargScalar).register(&conn)?;
+            MicroScalar::with_signature(name, signature, vararg).register(&conn)?;
             assert_eq!(query_u64(&conn, &format!("SELECT {name}()"))?, Some(0));
         }
         Ok(())
@@ -410,7 +407,7 @@ mod test {
         let signature = SignatureBuilder::new().return_type_of::<InvalidType>();
         let env = Environment::new()?;
         let conn = env.open(StorageLocation::InMemory)?.connect()?;
-        let error = ScalarFunctionBuilder::new("invalid_return", signature, VarargScalar)
+        let error = MicroScalar::with_signature("invalid_return", signature, vararg)
             .register(&conn)
             .expect_err("logical type errors must propagate");
         assert_eq!(error.message, "invalid return type");
@@ -429,7 +426,7 @@ mod test {
             .param(FunctionParameter::with_default("param3", 42_i32))
             .return_type(u64::logical_type(&conn)?);
 
-        ScalarFunctionBuilder::new("test", sig, DefaultParameterScalar).register(&conn)?;
+        MicroScalar::with_signature("test", sig, default_parameter).register(&conn)?;
 
         assert_eq!(query_u64(&conn, "SELECT test(10, 'AA')")?, Some(45));
         assert_eq!(query_u64(&conn, "SELECT test(10, 'AA', 7)")?, Some(10));
@@ -449,7 +446,7 @@ mod test {
             .param(FunctionParameter::with_default("param3", 42_i32).kind(FunctionParameterKind::Named))
             .return_type(u64::logical_type(&conn)?);
 
-        ScalarFunctionBuilder::new("test", sig, DefaultParameterScalar).register(&conn)?;
+        MicroScalar::with_signature("test", sig, default_parameter).register(&conn)?;
 
         assert_eq!(query_u64(&conn, "SELECT test(10, 'AA')")?, Some(45));
         assert_eq!(query_u64(&conn, "SELECT test(10, 'AA', param3 := 7)")?, Some(10));
@@ -470,7 +467,7 @@ mod test {
             .param(FunctionParameter::vararg::<i32>("param3"))
             .return_type(u64::logical_type(&conn)?);
 
-        ScalarFunctionBuilder::new("test", sig, VarargScalar).register(&conn)?;
+        MicroScalar::with_signature("test", sig, vararg).register(&conn)?;
 
         assert_eq!(
             query_u64(&conn, "SELECT test(10, 'AA', 1, 2, 3, 4, 5, 6, 7, 8, 9)")?,
@@ -480,15 +477,13 @@ mod test {
         Ok(())
     }
 
-    scalar_callback!(IdentityScalar, i32, |input, result, _ctx, _user_data| {
+    fn identity(_ctx: &Context, input: &mut VectorCollection, mut result: Vector<'_, i32>) -> Result<()> {
         let input = input.get_vector_at::<i32>(0)?;
-        let mut result = result;
-        result.set_size(input.len())?;
         for (i, value) in input.reader()?.iter().enumerate() {
             result.writer()?.set(i, value.copied())?;
         }
         Ok(())
-    });
+    }
 
     #[test]
     fn test_signature_explicit_type_default_value() -> Result<()> {
@@ -497,7 +492,7 @@ mod test {
         let signature = SignatureBuilder::new()
             .param(FunctionParameter::with_type("x", LogicalType::from_text(&conn, "INTEGER")?).default_value(42_i64))
             .return_type(i32::logical_type(&conn)?);
-        ScalarFunctionBuilder::new("typed_default", signature, IdentityScalar).register(&conn)?;
+        MicroScalar::with_signature("typed_default", signature, identity).register(&conn)?;
 
         assert_eq!(query_u64(&conn, "SELECT typed_default()::UBIGINT")?, Some(42));
         assert_eq!(query_u64(&conn, "SELECT typed_default(7)::UBIGINT")?, Some(7));
@@ -511,7 +506,7 @@ mod test {
         if let Some(docs) = docs {
             signature = signature.documentation(docs);
         }
-        ScalarFunctionBuilder::new(name, signature, IdentityScalar).register(conn)
+        MicroScalar::with_signature(name, signature, identity).register(conn)
     }
 
     /// Returns `description`, `examples` and `categories` from `duckdb_functions()` as text.

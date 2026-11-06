@@ -159,6 +159,82 @@ fn callback_panics_are_caught() -> Result<()> {
 }
 
 #[test]
+fn explicit_signature_sizes_variadic_batches() -> Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let base = Arc::new(42_i64);
+    MicroScalar::with_signature(
+        "micro_sum",
+        SignatureBuilder::new()
+            .param(FunctionParameter::vararg::<i32>("values"))
+            .return_type_of::<i64>(),
+        move |ctx, input, mut output: Vector<'_, i64>| {
+            assert_eq!(output.logical_type(), &i64::logical_type(ctx)?);
+            assert_eq!(output.len(), input.row_count()?);
+            let mut sums = vec![*base; output.len()];
+            for column in 0..input.col_count() {
+                for (sum, value) in sums
+                    .iter_mut()
+                    .zip(input.get_vector_at::<i32>(column)?.reader()?.iter())
+                {
+                    *sum += i64::from(value.copied().unwrap_or(0));
+                }
+            }
+            let mut writer = output.writer()?;
+            for (row, sum) in sums.into_iter().enumerate() {
+                writer.set(row, Some(sum))?;
+            }
+            Ok(())
+        },
+    )
+    .register(&conn)?;
+
+    let chunk = conn
+        .query("SELECT micro_sum(), micro_sum(1, 2, 3)", Parameters::None)?
+        .next_chunk()?
+        .unwrap();
+    assert_eq!(chunk.get_vector_at::<i64>(0)?.reader()?.get(0)?, Some(&42));
+    assert_eq!(chunk.get_vector_at::<i64>(1)?.reader()?.get(0)?, Some(&48));
+
+    let mut result = conn.query(
+        "SELECT micro_sum(i::INTEGER, 3) FROM range(5000) t(i) ORDER BY i",
+        Parameters::None,
+    )?;
+    let mut actual = Vec::new();
+    while let Some(chunk) = result.next_chunk()? {
+        actual.extend(
+            chunk
+                .get_vector_at::<i64>(0)?
+                .reader()?
+                .iter()
+                .map(|value| value.copied()),
+        );
+    }
+    assert_eq!(actual, (45..5045).map(Some).collect::<Vec<_>>());
+    Ok(())
+}
+
+#[test]
+fn explicit_signature_checks_output_type() -> Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    MicroScalar::with_signature(
+        "micro_mismatched",
+        SignatureBuilder::new().return_type_of::<String>(),
+        |_ctx, _input, _output: Vector<'_, i32>| panic!("mismatched output must not reach the closure"),
+    )
+    .register(&conn)?;
+
+    let error = conn
+        .query("SELECT micro_mismatched()", Parameters::None)
+        .and_then(|mut result| result.drain())
+        .expect_err("output must match the declared logical type");
+    assert!(error.message.contains("Vector logical type mismatch"), "{error}");
+    conn.query("SELECT 42", Parameters::None)?.drain()?;
+    Ok(())
+}
+
+#[test]
 fn captures_are_dropped_without_registration() -> Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;

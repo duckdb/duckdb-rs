@@ -428,14 +428,14 @@ mod tests {
 
     use crate::{
         Parameters, ToValue,
-        builder_helpers::scalar_callback,
         connection::FFILink,
         environment::{Environment, StorageLocation},
         error::DuckDBError,
-        scalar::ScalarFunctionBuilder,
+        scalar::MicroScalar,
         signature::{FunctionParameter, SignatureBuilder},
         types::{BigNumValue, DuckDBType, List},
         value::ValueInput,
+        vector::Vector,
     };
 
     fn assert_length_mismatches_rejected<C: FFILink + ?Sized>(link: &C) -> crate::Result<()> {
@@ -463,25 +463,21 @@ mod tests {
         Ok(())
     }
 
-    scalar_callback!(LengthCheckScalar, i32, |_input, output, ctx, _user_data| {
-        assert_length_mismatches_rejected(ctx)?;
-        let mut output = output;
-        output.set_size(1)?;
-        output.writer()?.set(0, Some(1))
-    });
-
     #[test]
     fn test_nested_value_length_mismatch() -> crate::Result<()> {
         let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
         assert_length_mismatches_rejected(&conn)?;
 
         // The same check through a callback context.
-        ScalarFunctionBuilder::new(
+        MicroScalar::with_signature(
             "length_check",
             SignatureBuilder::new()
                 .param(FunctionParameter::new::<i32>("x"))
                 .return_type(i32::logical_type(&conn)?),
-            LengthCheckScalar,
+            |ctx, _input, mut output: Vector<'_, i32>| {
+                assert_length_mismatches_rejected(ctx)?;
+                output.writer()?.set(0, Some(1))
+            },
         )
         .register(&conn)?;
         conn.execute("SELECT length_check(1)", Parameters::None)?;

@@ -9,10 +9,12 @@ use crate::{
     vector::{Unknown, Vector, VectorElement, WritableVectorElement},
 };
 
-/// Creates unary scalar functions from typed vector closures.
+/// Creates scalar functions from vector closures.
 ///
-/// The input and output element types determine the SQL signature. The closure
-/// receives a batch and an output vector already sized to its row count, and
+/// [`Self::create`] infers a unary signature from the input and output element
+/// types. [`Self::with_signature`] accepts an explicit signature and an input
+/// collection for multiple arguments, varargs, or runtime logical types.
+/// The output vector is already sized to the batch's row count; the closure
 /// must write every output row. DuckDB's default NULL handling applies unless
 /// overridden with [`ScalarFunctionBuilder::set_property`].
 ///
@@ -59,12 +61,30 @@ impl MicroScalar {
         O: DuckDBType + WritableVectorElement + 'static,
         F: Fn(&Context, Vector<'_, I>, Vector<'_, O>) -> Result<()> + Send + Sync + 'static,
     {
-        ScalarFunctionBuilder::new(
+        Self::with_signature(
             name,
             SignatureBuilder::new()
                 .param(FunctionParameter::new::<I>("input"))
                 .return_type_of::<O>(),
-            TypedCallback::<I, O, F> {
+            move |context, input, output| function(context, input.get_vector_at_mut::<I>(0)?, output),
+        )
+    }
+
+    /// Wrap a closure with an explicit signature and checked output element type.
+    /// Arguments follow the ordering of [`SignatureBuilder::param`].
+    pub fn with_signature<O, F>(
+        name: impl Into<String>,
+        signature: SignatureBuilder,
+        function: F,
+    ) -> ScalarFunctionBuilder<impl ScalarCallbacks>
+    where
+        O: WritableVectorElement + 'static,
+        F: Fn(&Context, &mut VectorCollection, Vector<'_, O>) -> Result<()> + Send + Sync + 'static,
+    {
+        ScalarFunctionBuilder::new(
+            name,
+            signature,
+            TypedCallback::<O, F> {
                 function,
                 types: PhantomData,
             },
@@ -72,16 +92,15 @@ impl MicroScalar {
     }
 }
 
-struct TypedCallback<I, O, F> {
+struct TypedCallback<O, F> {
     function: F,
-    types: PhantomData<fn(I) -> O>,
+    types: PhantomData<fn() -> O>,
 }
 
-impl<I, O, F> ScalarCallbacks for TypedCallback<I, O, F>
+impl<O, F> ScalarCallbacks for TypedCallback<O, F>
 where
-    I: VectorElement + 'static,
     O: WritableVectorElement + 'static,
-    F: Fn(&Context, Vector<'_, I>, Vector<'_, O>) -> Result<()> + Send + Sync + 'static,
+    F: Fn(&Context, &mut VectorCollection, Vector<'_, O>) -> Result<()> + Send + Sync + 'static,
 {
     type BindData = ();
     type InitData = ();
@@ -96,7 +115,7 @@ where
     ) -> Result<()> {
         let mut output = output.cast::<O>()?;
         output.set_size(input.row_count()?)?;
-        (self.function)(context, input.get_vector_at_mut::<I>(0)?, output)
+        (self.function)(context, input, output)
     }
 }
 
