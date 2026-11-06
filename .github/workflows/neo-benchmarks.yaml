@@ -1,0 +1,86 @@
+name: duckdb-neo benchmarks
+
+# Compares the duckdb-neo `functions` benchmarks of a change against its base on one runner and
+# fails on regressions. See crates/duckdb-neo/benches/README.md, which also covers dispatching
+# this workflow with `gh workflow run` to measure a branch.
+
+on:
+  pull_request:
+    branches: [main, "v*.*-*"]
+    paths:
+      - "crates/duckdb-neo/**"
+      - "crates/libduckdb-sys/**"
+      - "crates/duckdb-loadable-macros/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "scripts/neo_bench.py"
+      - ".github/workflows/neo-benchmarks.yaml"
+  workflow_dispatch:
+    inputs:
+      base:
+        description: Baseline git ref (branch, tag or SHA); the dispatched ref is the head
+        default: main
+      filter:
+        description: Space-separated benchmark filters, e.g. "scalar copy::base56_to" (empty runs all)
+        default: ""
+      rows:
+        description: Comma-separated row counts (empty runs 1000,10000,100000,1000000)
+        default: ""
+      repetitions:
+        description: Alternating runs per side
+        default: "3"
+      threshold:
+        description: Percent change that counts as a regression
+        default: "10"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: never
+  DUCKDB_DOWNLOAD_LIB: "1"
+
+jobs:
+  compare:
+    name: Compare
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # The base is exported from history, so fetch all of it.
+          fetch-depth: 0
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache-on-failure: false
+
+      - name: Compare benchmarks
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ inputs.base }}
+          FILTER: ${{ inputs.filter }}
+          ROWS: ${{ inputs.rows }}
+          REPETITIONS: ${{ inputs.repetitions || '3' }}
+          THRESHOLD: ${{ inputs.threshold || '10' }}
+        run: |
+          # A pull request checks out its merge commit, whose first parent is the exact base it merges into.
+          if [ "$EVENT" = pull_request ]; then BASE=$(git rev-parse HEAD^1); fi
+          args=(compare --base "$BASE" --repetitions "$REPETITIONS" --threshold "$THRESHOLD" --locked
+                --log-dir neo-bench/logs --json neo-bench/results.json --markdown "$GITHUB_STEP_SUMMARY")
+          for filter in $FILTER; do args+=(--filter "$filter"); done
+          if [ -n "$ROWS" ]; then args+=(--rows "$ROWS"); fi
+          python3 scripts/neo_bench.py "${args[@]}"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: neo-bench-results
+          path: neo-bench/
+          if-no-files-found: ignore
