@@ -8,10 +8,10 @@ This workspace has four crates:
 
 - `libduckdb-sys` provides native bindings for the [DuckDB C API](https://duckdb.org/docs/current/clients/c/api) under `libduckdb_sys::v1` (default `capi-v1` feature, re-exported at the crate root). With the `capi-v2` feature it also exposes bindings for the v2 C API (`duckdb_v2.h`) under `libduckdb_sys::v2`.
 - `duckdb` provides an ergonomic wrapper around the v1 C API.
-- `duckdb-neo` provides an ergonomic wrapper around the v2 C API. The v2 C API is still in rapid development, so this crate is experimental. Its `capi-v2-p2` feature targets API surface the bundled DuckDB does not provide yet and does not compile.
+- `duckdb-neo` provides an ergonomic wrapper around the v2 C API.
 - `duckdb-loadable-macros` provides procedural macros for loadable DuckDB extensions.
 
-Most users should use `duckdb`, but development may involve any of these components.
+Use `duckdb` for stable v1 API usage, or for projects that require compatibility with 1.5. Use `duckdb-neo` for modern projects, where you might need more surface, or forward-looking support.
 
 ## Prerequisites
 
