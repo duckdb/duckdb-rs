@@ -64,7 +64,8 @@ Rules for every benchmark:
 - Create the fixture, build the input and run `verify` once per benchmark and row count, before timing.
   A `verify` failure must fail the benchmark run.
 - Prepare the timed statement once, outside the timed region. Each iteration executes it and drains the
-  result (consumes it without reading rows). Planning is not part of a function's cost.
+  result (consumes it without reading rows). Timing covers end-to-end execution, including any rebinding
+  and planning DuckDB performs during execution; it does not isolate wrapper overhead.
 - `<path>` is `data.b56` in a fresh temporary directory, deleted afterwards. Quote it as a SQL string
   literal, doubling any `'`.
 - `base56_from`: before every iteration, outside the timed region, run `TRUNCATE copy_target`. Time one
@@ -170,8 +171,9 @@ A third of the parts are longer than 12 bytes, so they are not inlined in DuckDB
    `('a-b-c', 2)`, `('a-b-c', 3)`, `('a-b-c', 10)`, `('-a--b-', 10)`, `('', 1)`, `('abc', 0)`, `('a-b', 1)`.
 2. `SELECT string_agg(part, ',') FROM dash_split('a-b-c', 3)` is `a,b,c` (projects only `part`).
 3. `SELECT count(*) FROM dash_split(NULL, 3)` is 0.
-4. With `P` the number of parts of `split_input`: the timed query with `n = P` returns exactly the parts of
-   `split_input`, in order, and `SELECT count(*)` over it returns `P`.
+4. With `P` the number of parts of `split_input`: the timed query with `n = P` returns exactly the
+   `(idx, part)` pairs from enumerating `split_input`'s parts, including indices across chunk boundaries,
+   and `SELECT count(*)` over it returns `P`.
 
 ### 4.3 `row_hash` (aggregate)
 
@@ -213,10 +215,11 @@ FROM range(<rows>) t(i)
 
 `verify`:
 
-1. Compute the expected value in the host language: read `SELECT s, d, b FROM agg_input` and wrap-sum
-   `hash_row` over all rows.
-2. The ungrouped query returns the expected value.
-3. The wrapping sum of the grouped query's `row_hash` column equals the expected value.
+1. Compute the expected values in the host language: read `SELECT g, s, d, b FROM agg_input` and wrap-sum
+   `hash_row` over all rows, both overall and separately for each group key `g`.
+2. The ungrouped query returns the expected overall value.
+3. Every grouped row has the expected hash for its key, and every expected key appears exactly once.
+   Reject missing, duplicate or unexpected groups, and NULL hashes for nonempty groups.
 4. `SELECT row_hash(s, d, b) FROM agg_input WHERE false` returns NULL.
 
 ### 4.4 `base56` (COPY format, both directions)

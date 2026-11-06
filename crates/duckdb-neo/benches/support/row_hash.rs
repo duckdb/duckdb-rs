@@ -2,8 +2,10 @@
 //! one `UBIGINT` hash. Rows are hashed independently and summed, so the result does not
 //! depend on row order or on how DuckDB partitions the groups.
 
+use std::collections::HashMap;
+
 use duckdb_neo::{
-    DuckDBType, Parameters, Result,
+    DuckDBType, Error, Parameters, Result,
     aggregate::{AggregateCallbacks, AggregateFunctionBuilder, ReturnTypeHandle, States},
     bind_arguments::BindArguments,
     connection::{Connection, Context},
@@ -155,32 +157,80 @@ pub fn create_input(conn: &Connection, rows: usize) -> Result<()> {
 pub const UNGROUPED_QUERY: &str = "SELECT row_hash(s, d, b) FROM agg_input";
 pub const GROUPED_QUERY: &str = "SELECT g, row_hash(s, d, b) FROM agg_input GROUP BY g";
 
-/// Check `row_hash` over `agg_input` against [`hash_row`], ungrouped and grouped.
+/// Check `row_hash` over `agg_input` against [`hash_row`], both overall and per group.
 pub fn verify(conn: &Connection) -> Result<()> {
     let mut expected = 0u64;
-    let mut result = conn.query("SELECT s, d, b FROM agg_input", Parameters::None)?;
+    let mut expected_groups = HashMap::new();
+    let mut result = conn.query("SELECT g, s, d, b FROM agg_input", Parameters::None)?;
     while let Some(chunk) = result.next_chunk()? {
-        let s = chunk.get_vector_at::<UncheckedString>(0)?.reader()?;
-        let d = chunk.get_vector_at::<f64>(1)?.reader()?;
-        let b = chunk.get_vector_at::<bool>(2)?.reader()?;
-        for (s, d, b) in CombinedVectorIterator::new((s, d, b))? {
-            expected = expected.wrapping_add(hash_row(s, d.copied(), b.copied()));
+        let g = chunk.get_vector_at::<i32>(0)?.reader()?;
+        let s = chunk.get_vector_at::<UncheckedString>(1)?.reader()?;
+        let d = chunk.get_vector_at::<f64>(2)?.reader()?;
+        let b = chunk.get_vector_at::<bool>(3)?.reader()?;
+        for (g, s, d, b) in CombinedVectorIterator::new((g, s, d, b))? {
+            let hash = hash_row(s, d.copied(), b.copied());
+            expected = expected.wrapping_add(hash);
+            let group = expected_groups.entry(g.copied()).or_insert(0u64);
+            *group = group.wrapping_add(hash);
         }
     }
     drop(result);
 
     let ungrouped = super::query_u64(conn, UNGROUPED_QUERY)?;
-    let mut grouped = 0u64;
+    super::ensure(ungrouped == Some(expected), || {
+        format!("row_hash returned {ungrouped:?} ungrouped, expected {expected}")
+    })?;
+    let mut grouped = Vec::new();
     let mut result = conn.query(GROUPED_QUERY, Parameters::None)?;
     while let Some(chunk) = result.next_chunk()? {
-        for hash in chunk.get_vector_at::<u64>(1)?.reader()?.iter() {
-            grouped = grouped.wrapping_add(*hash.expect("every group has rows"));
-        }
+        let groups = chunk.get_vector_at::<i32>(0)?.reader()?;
+        let hashes = chunk.get_vector_at::<u64>(1)?.reader()?;
+        grouped.extend(CombinedVectorIterator::new((groups, hashes))?.map(|(g, hash)| (g.copied(), hash.copied())));
     }
     drop(result);
-    super::ensure(ungrouped == Some(expected) && grouped == expected, || {
-        format!("row_hash returned {ungrouped:?} ungrouped and {grouped} grouped, expected {expected}")
-    })?;
+    verify_groups(expected_groups, &grouped)?;
     let empty = super::query_u64(conn, "SELECT row_hash(s, d, b) FROM agg_input WHERE false")?;
     super::ensure(empty.is_none(), || format!("row_hash over no rows returned {empty:?}"))
+}
+
+fn verify_groups(mut expected: HashMap<Option<i32>, u64>, actual: &[(Option<i32>, Option<u64>)]) -> Result<()> {
+    for &(group, hash) in actual {
+        let expected_hash = expected.remove(&group).ok_or_else(|| {
+            Error::invalid_input(format!("row_hash returned unexpected or duplicate group {group:?}"))
+        })?;
+        super::ensure(hash == Some(expected_hash), || {
+            format!("row_hash returned {hash:?} for group {group:?}, expected {expected_hash}")
+        })?;
+    }
+    super::ensure(expected.is_empty(), || {
+        format!("row_hash omitted {} groups", expected.len())
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn verify_groups_rejects_swapped_hashes() {
+        use super::{HashMap, verify_groups};
+
+        let expected = HashMap::from([(Some(0), 100), (Some(1), 200)]);
+        verify_groups(expected.clone(), &[(Some(1), Some(200)), (Some(0), Some(100))]).unwrap();
+        assert!(verify_groups(expected, &[(Some(0), Some(200)), (Some(1), Some(100))]).is_err());
+    }
+
+    #[test]
+    fn verify_groups_rejects_invalid_groups() {
+        use super::{HashMap, verify_groups};
+
+        let expected = HashMap::from([(Some(0), 100), (Some(1), 200)]);
+        for actual in [
+            vec![(Some(0), Some(100))],
+            vec![(Some(0), Some(100)), (Some(0), Some(200))],
+            vec![(Some(0), Some(100)), (Some(2), Some(200))],
+            vec![(Some(0), None), (Some(1), Some(200))],
+            vec![(None, Some(100)), (Some(1), Some(200))],
+        ] {
+            assert!(verify_groups(expected.clone(), &actual).is_err(), "accepted {actual:?}");
+        }
+    }
 }

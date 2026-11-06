@@ -209,14 +209,19 @@ pub fn verify(conn: &Connection) -> Result<()> {
     let input = super::query_string(conn, "SELECT getvariable('split_input')")?;
     let expected = input.split('-').count();
     let actual = collect_parts(conn, &query(expected))?;
-    super::ensure(
-        actual.iter().map(|(_, part)| part.as_str()).eq(input.split('-')),
-        || "dash_split(split_input) returned different parts".to_owned(),
-    )?;
+    verify_parts(&input, &actual)?;
     let count = super::query_i64(conn, &format!("SELECT count(*) FROM ({})", query(expected)))?;
     super::ensure(count as usize == expected, || {
         format!("count(*) returned {count}, expected {expected}")
     })
+}
+
+fn verify_parts(input: &str, actual: &[(i64, String)]) -> Result<()> {
+    let expected = input.split('-').enumerate().map(|(index, part)| (index as i64, part));
+    super::ensure(
+        actual.iter().map(|(index, part)| (*index, part.as_str())).eq(expected),
+        || "dash_split(split_input) returned different indices or parts".to_owned(),
+    )
 }
 
 fn collect_parts(conn: &Connection, sql: &str) -> Result<Vec<(i64, String)>> {
@@ -230,4 +235,25 @@ fn collect_parts(conn: &Connection, sql: &str) -> Result<Vec<(i64, String)>> {
         }
     }
     Ok(parts)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn verify_parts_rejects_restarted_indices() {
+        let input = (0..5_000)
+            .map(|index| format!("p{index}"))
+            .collect::<Vec<_>>()
+            .join("-");
+        let mut actual: Vec<_> = input
+            .split('-')
+            .enumerate()
+            .map(|(index, part)| (index as i64, part.to_owned()))
+            .collect();
+        super::verify_parts(&input, &actual).unwrap();
+        for (index, _) in &mut actual {
+            *index %= 2_048;
+        }
+        assert!(super::verify_parts(&input, &actual).is_err());
+    }
 }

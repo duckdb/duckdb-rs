@@ -1,9 +1,9 @@
 # duckdb-neo benchmarks
 
 [Divan](https://github.com/nvzqz/divan) benchmarks of user-defined functions written with duckdb-neo. They
-measure what the wrapper adds on top of DuckDB: callback dispatch, typed vector readers and writers, and
-function state, at 1,000 to 1,000,000 rows. CI uses them to catch regressions, and
-[`scripts/neo_bench.py`](../../../scripts/neo_bench.py) compares any two versions of the code.
+measure end-to-end query execution, including DuckDB engine work and the wrapper's callback dispatch,
+typed vector readers and writers, and function state, at 1,000 to 1,000,000 rows. CI uses them to catch
+regressions, and [`scripts/neo_bench.py`](../../../scripts/neo_bench.py) compares any two versions of the code.
 
 ## Benchmarks
 
@@ -19,7 +19,9 @@ function state, at 1,000 to 1,000,000 rows. CI uses them to catch regressions, a
 The functions live in [`support/`](support), one module each. The argument of every benchmark is its row
 count: input rows, or parts for `dash_split`. Each benchmark builds its input before timing and checks its
 function's output against an independent computation, so an optimization that breaks a function fails the
-run instead of reporting a speedup. Queries are prepared once; only execution is timed.
+run instead of reporting a speedup. Initial statement preparation is outside the timed region; each
+iteration executes and drains the result, including any rebinding and planning DuckDB performs during
+execution. These are end-to-end measurements, not isolated measurements of wrapper overhead.
 
 DuckDB runs with one thread, so the numbers reflect per-row cost rather than the machine's core count.
 

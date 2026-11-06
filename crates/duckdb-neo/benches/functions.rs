@@ -15,7 +15,7 @@ fn main() {
 }
 
 fn bench_query(bencher: Bencher<'_, '_>, conn: &Connection, sql: &str, rows: usize) {
-    // Planning is not part of the function's cost, so it happens outside the timed loop.
+    // Non-cacheable plans rebind during execution, which is part of the measurement.
     let statement = conn.prepare(sql, false).unwrap();
     bencher
         .counter(ItemsCount::new(rows))
