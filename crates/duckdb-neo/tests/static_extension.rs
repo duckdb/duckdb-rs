@@ -5,49 +5,25 @@
 
 use duckdb_loadable_macros::duckdb_entrypoint_c_api_v2;
 use duckdb_neo::{
-    DuckDBType, Parameters,
-    connection::{Connection, Context},
-    data_chunk::VectorCollection,
+    Parameters,
+    connection::Connection,
     environment::{Environment, StorageLocation},
     extension::{Extension, register_static_extension},
-    scalar::{ScalarCallbacks, ScalarFunctionBuilder},
-    signature::{FunctionParameter, SignatureBuilder},
-    vector::{Unknown, Vector},
+    scalar::MicroScalar,
+    vector::Vector,
 };
-
-struct TimesTen;
-
-impl ScalarCallbacks for TimesTen {
-    type BindData = ();
-    type InitData = ();
-
-    fn exec(
-        &self,
-        _bind_data: Option<&Self::BindData>,
-        _init_data: Option<&mut Self::InitData>,
-        _context: &Context,
-        vectors: &mut VectorCollection,
-        output: Vector<'_, Unknown>,
-    ) -> duckdb_neo::Result<()> {
-        let input = vectors.get_vector_at::<i32>(0)?.reader()?;
-        let mut output = output.cast::<i32>()?;
-        output.set_size(input.len())?;
-        let mut writer = output.writer()?;
-        for (i, item) in input.iter().enumerate() {
-            writer.set(i, item.map(|value| value * 10))?;
-        }
-        Ok(())
-    }
-}
 
 #[duckdb_entrypoint_c_api_v2(extension_name = "neo_static_demo", api_version = "v2.0.0")]
 fn entrypoint(extension: &Extension) -> duckdb_neo::Result<()> {
-    ScalarFunctionBuilder::new(
+    MicroScalar::create(
         "neo_static_times_ten",
-        SignatureBuilder::new()
-            .param(FunctionParameter::new::<i32>("input"))
-            .return_type(i32::logical_type(extension)?),
-        TimesTen,
+        |_ctx, input: Vector<'_, i32>, mut output: Vector<'_, i32>| {
+            let mut writer = output.writer()?;
+            for (i, item) in input.reader()?.iter().enumerate() {
+                writer.set(i, item.map(|value| value * 10))?;
+            }
+            Ok(())
+        },
     )
     .register(extension)
 }
