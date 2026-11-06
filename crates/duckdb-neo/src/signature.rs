@@ -231,7 +231,7 @@ impl FunctionDocumentationBuilder {
 #[derive(Debug, Default)]
 pub struct SignatureBuilder {
     parameters: Vec<FunctionParameter>,
-    return_type: Option<LogicalType>,
+    return_type: Option<ParameterType>,
     documentation: Option<FunctionDocumentationBuilder>,
 }
 
@@ -253,7 +253,13 @@ impl SignatureBuilder {
     /// Scalar and aggregate functions require one. Table functions leave it
     /// unset and declare their result columns when binding.
     pub fn return_type(mut self, logical_type: LogicalType) -> Self {
-        self.return_type = Some(logical_type);
+        self.return_type = Some(ParameterType::Resolved(logical_type));
+        self
+    }
+
+    /// Set the return type from `T`, resolving its logical type at registration.
+    pub fn return_type_of<T: DuckDBType>(mut self) -> Self {
+        self.return_type = Some(FunctionParameter::rust_type::<T>());
         self
     }
 
@@ -271,7 +277,8 @@ impl SignatureBuilder {
         handle: &ffi::duckdb_v2_function_signature_handle,
         docs_handle: &ffi::duckdb_v2_function_docs_handle,
     ) -> Result<()> {
-        if let Some(return_type) = self.return_type.as_ref() {
+        if let Some(return_type) = self.return_type {
+            let return_type = return_type.resolve(link)?;
             check_api_call!(
                 ffi::duckdb_v2_function_signature_set_return_type,
                 *handle,
@@ -363,6 +370,50 @@ mod test {
         assert_eq!(column(0)?.as_deref(), Some("[INTEGER, VARCHAR, INTEGER]"));
         assert_eq!(column(1)?.as_deref(), Some("UBIGINT"));
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_return_type_of_replaces_previous_type() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+        for (name, signature) in [
+            (
+                "rust_return",
+                SignatureBuilder::new()
+                    .return_type(i32::logical_type(&conn)?)
+                    .return_type_of::<u64>(),
+            ),
+            (
+                "resolved_return",
+                SignatureBuilder::new()
+                    .return_type_of::<i32>()
+                    .return_type(u64::logical_type(&conn)?),
+            ),
+        ] {
+            ScalarFunctionBuilder::new(name, signature, VarargScalar).register(&conn)?;
+            assert_eq!(query_u64(&conn, &format!("SELECT {name}()"))?, Some(0));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_return_type_of_defers_errors_to_registration() -> crate::Result<()> {
+        struct InvalidType;
+
+        impl DuckDBType for InvalidType {
+            fn logical_type<C: FFILink + ?Sized>(_link: &C) -> Result<LogicalType> {
+                Err(crate::Error::invalid_input("invalid return type"))
+            }
+        }
+
+        let signature = SignatureBuilder::new().return_type_of::<InvalidType>();
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+        let error = ScalarFunctionBuilder::new("invalid_return", signature, VarargScalar)
+            .register(&conn)
+            .expect_err("logical type errors must propagate");
+        assert_eq!(error.message, "invalid return type");
         Ok(())
     }
 
