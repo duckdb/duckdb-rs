@@ -74,11 +74,11 @@ fn main() -> Result<()> {
 
 Execute the program with `cargo run` and watch DuckDB in action!
 
-### duckdb-neo: the v2 C API wrapper (experimental)
+### New! duckdb-neo: the v2 C API wrapper (beta)
 
-> ⚠ DuckDB's v2 C API is in rapid development. Consider `duckdb-neo` unstable. Feedback is welcome!
+`duckdb-neo` is the new crate that targets DuckDB's new v2 C API (`duckdb_v2.h`) instead of the v1 API used by `duckdb`. This allows you to do much more - replacement scans, copy, aggregates, all first-class citizens.
 
-`duckdb-neo` is a second wrapper crate in this repository that targets DuckDB's new v2 C API (`duckdb_v2.h`) instead of the v1 API used by `duckdb`. Both crates share the same `libduckdb-sys` crate and therefore the same bundled DuckDB, build options, and version number.
+Installation is simple:
 
 ```shell
 cargo add duckdb-neo
@@ -104,9 +104,7 @@ fn main() -> duckdb_neo::Result<()> {
 }
 ```
 
-`libduckdb-sys` exposes the v1 bindings as `libduckdb_sys::v1` (also re-exported at the crate root) behind the default `capi-v1` feature, and the v2 bindings as `libduckdb_sys::v2` behind its `capi-v2` feature. `duckdb-neo` disables the default features and enables `capi-v2`, so only the v2 bindings are generated.
-
-To write DuckDB extensions with `duckdb-neo`, loadable or statically linked, see [crates/duckdb-neo/extensions.md](crates/duckdb-neo/extensions.md).
+To write DuckDB extensions with `duckdb-neo`, loadable or statically linked, see [crates/duckdb-neo/extensions.md](crates/duckdb-neo/extensions.md) or the [extension template](https://github.com/duckdb/extension-template-rs).
 
 ## Examples
 
