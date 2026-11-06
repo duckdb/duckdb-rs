@@ -6,6 +6,7 @@ pub(super) struct StructFields<'a> {
     pub idents: Vec<&'a syn::Ident>,
     pub types: Vec<&'a syn::Type>,
     pub names: Vec<String>,
+    pub rust_names: Vec<String>,
 }
 
 impl<'a> StructFields<'a> {
@@ -22,12 +23,18 @@ impl<'a> StructFields<'a> {
                 ));
             }
         };
+        reject_container_attributes(input, derive)?;
         let idents = fields
             .iter()
             .map(|field| field.ident.as_ref().unwrap())
             .collect::<Vec<_>>();
         let types = fields.iter().map(|field| &field.ty).collect();
-        let names = idents.iter().map(|ident| ident.unraw().to_string()).collect::<Vec<_>>();
+        let rust_names = idents.iter().map(|ident| ident.unraw().to_string()).collect::<Vec<_>>();
+        let names = fields
+            .iter()
+            .zip(&rust_names)
+            .map(|(field, name)| sql_name(&field.attrs, name, derive))
+            .collect::<syn::Result<Vec<_>>>()?;
         for (index, name) in names.iter().enumerate() {
             if let Some(previous) = names[..index]
                 .iter()
@@ -46,7 +53,45 @@ impl<'a> StructFields<'a> {
             idents,
             types,
             names,
+            rust_names,
         })
+    }
+}
+
+pub(super) fn sql_name(attrs: &[syn::Attribute], name: &str, derive: &str) -> syn::Result<String> {
+    let mut rename: Option<syn::LitStr> = None;
+    for attr in attrs.iter().filter(|attr| attr.path().is_ident("duckdb")) {
+        attr.parse_nested_meta(|meta| {
+            if !meta.path.is_ident("rename") {
+                return Err(meta.error(format!("unsupported {derive} attribute, expected `rename = \"...\"`")));
+            }
+            let value: syn::LitStr = meta.value()?.parse()?;
+            if rename.is_some() {
+                return Err(syn::Error::new_spanned(
+                    &value,
+                    format!("{derive}: duplicate rename of '{name}'"),
+                ));
+            }
+            if value.value().is_empty() {
+                return Err(syn::Error::new_spanned(
+                    &value,
+                    format!("{derive} names cannot be empty"),
+                ));
+            }
+            rename = Some(value);
+            Ok(())
+        })?;
+    }
+    Ok(rename.map_or_else(|| name.to_owned(), |rename| rename.value()))
+}
+
+pub(super) fn reject_container_attributes(input: &syn::DeriveInput, derive: &str) -> syn::Result<()> {
+    match input.attrs.iter().find(|attr| attr.path().is_ident("duckdb")) {
+        Some(attr) => Err(syn::Error::new_spanned(
+            attr,
+            format!("{derive} supports #[duckdb(...)] only on fields and variants"),
+        )),
+        None => Ok(()),
     }
 }
 
@@ -114,17 +159,81 @@ mod tests {
         assert_eq!(fields.idents[0].to_string(), "r#type");
     }
 
+    type Derive = fn(&syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream>;
+    const DERIVES: [(&str, Derive); 6] = [
+        ("AsDuckDB", as_duckdb),
+        ("AsDuckDBType", as_duckdb_type),
+        ("AsFromValue", as_from_value),
+        ("AsToValue", as_to_value),
+        ("AsVectorElement", as_vector_element),
+        ("AsWritableVectorElement", as_writable_vector_element),
+    ];
+
+    #[test]
+    fn renamed_fields_keep_their_rust_names() {
+        let input = syn::parse_quote! {
+            struct Record {
+                #[duckdb(rename = "Kind")]
+                r#type: i32,
+                #[duckdb(rename = "with space")]
+                value: Option<String>,
+                plain: bool,
+            }
+        };
+        let fields = StructFields::new(&input, "AsDuckDB").unwrap();
+        assert_eq!(fields.names, ["Kind", "with space", "plain"]);
+        assert_eq!(fields.rust_names, ["type", "value", "plain"]);
+        for (_, derive) in DERIVES {
+            derive(&input).unwrap();
+        }
+    }
+
+    #[test]
+    fn struct_derives_reject_invalid_attributes() {
+        for (input, message) in [
+            (
+                syn::parse_quote! { struct Record { #[duckdb(name = "x")] value: i32 } },
+                "unsupported {} attribute, expected `rename = \"...\"`",
+            ),
+            (
+                syn::parse_quote! { struct Record { #[duckdb(rename)] value: i32 } },
+                "expected `=`",
+            ),
+            (
+                syn::parse_quote! { struct Record { #[duckdb(rename = 1)] value: i32 } },
+                "expected string literal",
+            ),
+            (
+                syn::parse_quote! { struct Record { #[duckdb(rename = "")] value: i32 } },
+                "{} names cannot be empty",
+            ),
+            (
+                syn::parse_quote! { struct Record { #[duckdb(rename = "a", rename = "b")] value: i32 } },
+                "{}: duplicate rename of 'value'",
+            ),
+            (
+                syn::parse_quote! { struct Record { #[duckdb(rename = "a")] #[duckdb(rename = "b")] value: i32 } },
+                "{}: duplicate rename of 'value'",
+            ),
+            (
+                syn::parse_quote! { #[duckdb(rename = "a")] struct Record { value: i32 } },
+                "{} supports #[duckdb(...)] only on fields and variants",
+            ),
+        ] {
+            for (name, derive) in DERIVES {
+                assert_eq!(
+                    derive(&input)
+                        .expect_err("invalid attributes must be rejected")
+                        .to_string(),
+                    message.replace("{}", name)
+                );
+            }
+        }
+    }
+
     #[test]
     fn struct_derives_reject_case_insensitive_duplicate_fields() {
-        type Derive = fn(&syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream>;
-        let derives: [(&str, Derive); 6] = [
-            ("AsDuckDB", as_duckdb),
-            ("AsDuckDBType", as_duckdb_type),
-            ("AsFromValue", as_from_value),
-            ("AsToValue", as_to_value),
-            ("AsVectorElement", as_vector_element),
-            ("AsWritableVectorElement", as_writable_vector_element),
-        ];
+        let derives = DERIVES;
         for (input, first, second) in [
             (
                 syn::parse_quote! {
@@ -139,6 +248,13 @@ mod tests {
                 },
                 "type",
                 "Type",
+            ),
+            (
+                syn::parse_quote! {
+                    struct Record { x: i32, #[duckdb(rename = "X")] y: i32 }
+                },
+                "x",
+                "X",
             ),
         ] {
             for (name, derive) in derives {

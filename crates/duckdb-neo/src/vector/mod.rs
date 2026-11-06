@@ -250,11 +250,6 @@ impl<'a> Vector<'a, Unknown> {
         // SAFETY: Both repr(C) wrappers differ only in markers.
         unsafe { &*(self as *const Vector<'a, Unknown> as *const Vector<'a, T>) }
     }
-
-    pub(crate) unsafe fn cast_ref_unchecked_mut<T: VectorElement>(&mut self) -> &mut Vector<'a, T> {
-        // SAFETY: Both repr(C) wrappers differ only in markers.
-        unsafe { &mut *(self as *mut Vector<'a, Unknown> as *mut Vector<'a, T>) }
-    }
 }
 
 impl<'a, T: VectorElement> Vector<'a, T> {
