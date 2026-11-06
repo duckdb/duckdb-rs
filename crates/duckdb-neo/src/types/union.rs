@@ -71,22 +71,34 @@ unsafe impl HasChildren for Union {
 /// Runtime support for the union derive in `duckdb-loadable-macros`; not a stable API.
 pub mod derive_support {
     use crate::{
-        Error, Parameters, Result, connection::FFILink, data_chunk::VectorCollection, logical_type::LogicalType,
-        logical_type::LogicalTypeID, value::Value, vector::VectorElement,
+        Error, Parameters, Result,
+        connection::FFILink,
+        data_chunk::VectorCollection,
+        logical_type::LogicalType,
+        logical_type::LogicalTypeID,
+        value::{Value, ValueInput},
+        vector::VectorElement,
     };
 
     /// Build a `union_type` value whose member `tag` holds `member`.
-    ///
-    /// Casting to a single-member union first keeps the tag even when several members share a type.
+    /// A singleton union fixes the tag; a tagged STRUCT preserves NULL payloads.
     pub fn union_value<C: FFILink + ?Sized>(
         link: &C,
         union_type: &LogicalType,
         tag: usize,
-        member: &Value,
+        member: Value,
     ) -> Result<Value> {
         let (name, member_type) = union_type.get_param(tag)?;
         let single = link.logical_type_create("UNION", Parameters::named(&[(name, &member_type)]))?;
-        link.value_cast(&link.value_cast(member, &single)?, union_type)
+        let member = if member.is_null()? {
+            link.create_value(ValueInput::Struct {
+                names: &["", name],
+                children: &[link.create_value(ValueInput::UTinyInt(0))?, member],
+            })?
+        } else {
+            member
+        };
+        link.value_cast(&link.value_cast(&member, &single)?, union_type)
     }
 
     /// Check that `value` is a `UNION` with members `names`, and return the active one's index and value.

@@ -165,6 +165,71 @@ fn derived_union_values_roundtrip() -> Result<()> {
 }
 
 #[test]
+fn derived_union_nested_null_values_roundtrip() -> Result<()> {
+    #[derive(Debug, PartialEq, AsDuckDBUnion)]
+    enum Inner {
+        Nested(Option<i32>),
+    }
+
+    #[derive(Debug, PartialEq, AsDuckDBUnion)]
+    enum Outer {
+        Number(i32),
+        Nested(Option<Inner>),
+        Other(Option<Inner>),
+    }
+
+    let conn = connect()?;
+    let rows = [
+        Some(Outer::Number(1)),
+        Some(Outer::Nested(None)),
+        Some(Outer::Nested(Some(Inner::Nested(None)))),
+        Some(Outer::Nested(Some(Inner::Nested(Some(7))))),
+        Some(Outer::Other(None)),
+        Some(Outer::Other(Some(Inner::Nested(Some(9))))),
+        None,
+    ];
+    let logical_type = Outer::logical_type(&conn)?;
+    let mut chunk = DataChunk::create(&conn, &[logical_type.clone()], true)?;
+    let mut vector = chunk.get_vector_at_mut::<Outer>(0)?;
+    vector.set_size(rows.len())?;
+    for (index, row) in rows.iter().enumerate() {
+        vector.writer()?.set_ref(index, row.as_ref())?;
+        let value = row.value(&conn)?;
+        assert_eq!(value.logical_type()?, logical_type);
+        assert_eq!(value.is_null()?, row.is_none(), "row {index}");
+        assert_eq!(value.get::<Outer>()?.as_ref(), row.as_ref(), "row {index}");
+        assert_eq!(vector.get_value_slow(index)?.get::<Outer>()?.as_ref(), row.as_ref());
+    }
+    Ok(())
+}
+
+#[test]
+fn derived_union_variants_can_use_associated_type_names() -> Result<()> {
+    #[derive(Debug, PartialEq, AsDuckDBUnion)]
+    enum Named {
+        Ref(i32),
+        Internal(String),
+        Write(bool),
+    }
+
+    let conn = connect()?;
+    let mut chunk = DataChunk::create(&conn, &[Named::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<Named>(0)?;
+    vector.set_size(3)?;
+    for (index, row) in [Named::Ref(7), Named::Internal("duck".to_owned()), Named::Write(true)]
+        .iter()
+        .enumerate()
+    {
+        vector.writer()?.set_ref(index, Some(row))?;
+        assert_eq!(row.value(&conn)?.get::<Named>()?.as_ref(), Some(row));
+    }
+    assert_eq!(vector.reader()?.get(0)?, Some(NamedRef::Ref(Some(&7))));
+    assert_eq!(vector.reader()?.get(1)?, Some(NamedRef::Internal(Some("duck"))));
+    assert_eq!(vector.reader()?.get(2)?, Some(NamedRef::Write(Some(&true))));
+    Ok(())
+}
+
+#[test]
 fn derived_union_binds_as_query_parameter() -> Result<()> {
     let conn = connect()?;
     let inputs = [Input::Num(7), Input::str("duck".to_owned())];

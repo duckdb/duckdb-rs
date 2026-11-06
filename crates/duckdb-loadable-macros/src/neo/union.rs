@@ -150,7 +150,7 @@ fn to_value(input: &syn::DeriveInput, variants: &UnionVariants<'_>) -> TokenStre
                     link,
                     &<Self as ::duckdb_neo::DuckDBType>::logical_type(link)?,
                     tag,
-                    &member,
+                    member,
                 )
             }
         }
@@ -310,7 +310,7 @@ fn vector_element(input: &syn::DeriveInput, variants: &UnionVariants<'_>) -> Tok
                 reader: &::duckdb_neo::vector::VectorReader<#lifetime, #reader_type>,
                 _physical: ::core::primitive::usize,
                 logical: ::core::primitive::usize,
-            ) -> Self::Ref<#lifetime>
+            ) -> <Self as #bound>::Ref<#lifetime>
             where Self: #lifetime {
                 // SAFETY: validation checked the tag child, and the reader prepared every child reader.
                 let tag = unsafe { reader.get_child_value_unchecked::<::core::primitive::u8>(0, logical) };
