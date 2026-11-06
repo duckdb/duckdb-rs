@@ -189,7 +189,7 @@ fn derived_union_nested_null_values_roundtrip() -> Result<()> {
         None,
     ];
     let logical_type = Outer::logical_type(&conn)?;
-    let mut chunk = DataChunk::create(&conn, &[logical_type.clone()], true)?;
+    let mut chunk = DataChunk::create(&conn, std::slice::from_ref(&logical_type), true)?;
     let mut vector = chunk.get_vector_at_mut::<Outer>(0)?;
     vector.set_size(rows.len())?;
     for (index, row) in rows.iter().enumerate() {
