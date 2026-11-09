@@ -55,7 +55,7 @@ impl ScalarCallbacks for MergeStruct {
             let mut field = fields.get_vector_at_mut::<i32>(0)?;
             let mut writer = field.writer()?;
             for (row, value) in ints.reader()?.iter().enumerate() {
-                writer.set(row, value.copied())?;
+                writer.set_ref(row, value)?;
             }
         }
         {
@@ -106,7 +106,7 @@ impl ScalarCallbacks for MergeStruct {
             let mut field = fields.get_vector_at_mut::<Amount>(4)?;
             let mut writer = field.writer()?;
             for (row, value) in amounts.reader()?.iter().enumerate() {
-                writer.set(row, value.copied())?;
+                writer.set_ref(row, value)?;
             }
         }
         Ok(())
