@@ -2,12 +2,13 @@ use duckdb_loadable_macros::AsDuckDB;
 
 use crate::{
     Parameters, Result, ToValue,
+    connection::FFILink,
     data_chunk::DataChunk,
     environment::{Environment, StorageLocation},
     scalar::MicroScalar,
-    types::{Array, BlobValue, DuckDBType, List, UncheckedString, Variant},
+    types::{Array, BitValue, BlobValue, DuckDBType, List, UncheckedString, Variant},
     value::Value,
-    vector::{StorageKind, Unknown, Vector, VectorWriter},
+    vector::{StorageKind, Unknown, Vector, VectorWriter, WritableVectorElement},
 };
 
 #[test]
@@ -23,19 +24,116 @@ fn writer_sets_values_with_preallocated_validity() -> Result<()> {
         assert!(!writer.is_empty());
         let validity = unsafe { writer.validity_mut() }.unwrap().as_ptr();
         assert_eq!(unsafe { writer.validity_mut() }.unwrap()[0], u64::MAX);
-        assert!(writer.set(2, Some(99)).is_err());
+        assert!(writer.set(2, Some(&99)).is_err());
         assert!(writer.set(usize::MAX, None).is_err());
         assert_eq!(unsafe { writer.validity_mut() }.unwrap().as_ptr(), validity);
-        writer.set(0, Some(42))?;
+        writer.set(0, Some(&42))?;
         // SAFETY: Row one is within the writer's two rows.
-        unsafe { writer.set_unchecked(1, Some(7))? };
+        unsafe { writer.set_unchecked(1, Some(&7))? };
         assert_eq!(unsafe { writer.validity_mut() }.unwrap().as_ptr(), validity);
         writer.set(0, None)?;
         assert_eq!(unsafe { writer.validity_mut() }.unwrap()[0] & 1, 0);
-        writer.set(0, Some(43))?;
+        writer.set(0, Some(&43))?;
         assert_eq!(unsafe { writer.validity_mut() }.unwrap()[0] & 1, 1);
     }
     assert_eq!(vector.reader()?.iter().collect::<Vec<_>>(), [Some(&43), Some(&7)]);
+    Ok(())
+}
+
+fn write_twice<T: WritableVectorElement>(vector: &mut Vector<'_, T>, value: &T::Write) -> Result<()> {
+    vector.set_size(3)?;
+    let mut writer = vector.writer()?;
+    writer.set(0, Some(value))?;
+    // SAFETY: the writer has three rows.
+    unsafe { writer.set_unchecked(1, Some(value))? };
+    writer.set(2, None)
+}
+
+#[test]
+fn writer_copies_borrowed_unsized_inputs() -> Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(
+        &conn,
+        &[
+            String::logical_type(&conn)?,
+            BlobValue::logical_type(&conn)?,
+            BitValue::logical_type(&conn)?,
+        ],
+        true,
+    )?;
+    {
+        let text = String::from("a borrowed string longer than inline storage");
+        let bytes = vec![42; 32];
+        let bits = vec![0, 0x5a];
+        write_twice(&mut chunk.get_vector_at_mut::<String>(0)?, text.as_str())?;
+        write_twice(&mut chunk.get_vector_at_mut::<BlobValue>(1)?, bytes.as_slice())?;
+        write_twice(&mut chunk.get_vector_at_mut::<BitValue>(2)?, bits.as_slice())?;
+    }
+    for index in 0..2 {
+        assert_eq!(
+            chunk.get_vector_at::<String>(0)?.reader()?.get(index)?,
+            Some("a borrowed string longer than inline storage")
+        );
+        assert_eq!(
+            chunk
+                .get_vector_at::<BlobValue>(1)?
+                .get_value_slow(index)?
+                .get::<BlobValue>()?,
+            Some(BlobValue(vec![42; 32]))
+        );
+        assert_eq!(
+            chunk
+                .get_vector_at::<BitValue>(2)?
+                .get_value_slow(index)?
+                .get::<BitValue>()?,
+            Some(BitValue(vec![0, 0x5a]))
+        );
+    }
+    for column in 0..3 {
+        assert!(chunk.get_vector_at::<Unknown>(column)?.reader()?.is_null(2)?);
+    }
+    Ok(())
+}
+
+#[test]
+fn writer_borrows_non_clone_fields_and_values() -> Result<()> {
+    #[derive(AsDuckDB)]
+    struct Row {
+        text: UncheckedString,
+        bytes: BlobValue,
+    }
+
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[Row::logical_type(&conn)?, Variant::logical_type(&conn)?], true)?;
+    {
+        let row = Row {
+            text: UncheckedString("a borrowed field longer than inline storage".to_owned()),
+            bytes: BlobValue(vec![42; 32]),
+        };
+        write_twice(&mut chunk.get_vector_at_mut::<Row>(0)?, &row)?;
+        let value = 42_i32.value(&conn)?;
+        write_twice(&mut chunk.get_vector_at_mut::<Variant>(1)?, &value)?;
+        assert_eq!(value.get::<i32>()?, Some(42));
+        assert_eq!(row.bytes.0.len(), 32);
+    }
+    for index in 0..2 {
+        let row = chunk
+            .get_vector_at::<Row>(0)?
+            .get_value_slow(index)?
+            .get::<Row>()?
+            .unwrap();
+        assert_eq!(row.text.0, "a borrowed field longer than inline storage");
+        assert_eq!(row.bytes.0, vec![42; 32]);
+        let value = chunk.get_vector_at::<Variant>(1)?.get_value_slow(index)?;
+        assert_eq!(
+            conn.value_cast(&value, &i32::logical_type(&conn)?)?.get::<i32>()?,
+            Some(42)
+        );
+    }
+    assert!(chunk.get_vector_at::<Row>(0)?.reader()?.is_null(2)?);
+    assert!(chunk.get_vector_at::<Variant>(1)?.reader()?.is_null(2)?);
     Ok(())
 }
 
@@ -111,7 +209,7 @@ fn writer_mutable_slice_preserves_validity() -> Result<()> {
     {
         let mut writer = vector.writer()?;
         for index in 0..writer.len() {
-            writer.set(index, Some(index as i32))?;
+            writer.set(index, Some(&(index as i32)))?;
         }
         writer.set(1, None)?;
         // SAFETY: Every physical slot was initialized before clearing validity.
@@ -266,10 +364,10 @@ fn writer_reuses_nested_children_across_rows() -> Result<()> {
     unsafe { vector.set_child_size(5003)? };
     {
         let mut writer = vector.writer()?;
-        writer.set(0, Some(List(vec![Some(1), None])))?;
+        writer.set(0, Some(&List(vec![Some(1), None])))?;
         writer.set(1, None)?;
-        writer.set(2, Some((0..5000).map(Some).collect()))?;
-        writer.set(0, Some(List(vec![Some(42)])))?;
+        writer.set(2, Some(&(0..5000).map(Some).collect()))?;
+        writer.set(0, Some(&List(vec![Some(42)])))?;
         assert_eq!(writer.child_offset(), 5003);
     }
     let reader = vector.reader()?;
@@ -291,11 +389,11 @@ fn writer_nested_nulls_refresh_buffers_and_null_descendants() -> Result<()> {
         assert!(writer.as_mut_ptr().is_null());
         // SAFETY: ARRAY values have no parent data slots.
         assert!(unsafe { writer.as_slice_mut() }.is_none());
-        writer.set(0, Some(Array([Some(1), Some(2)])))?;
+        writer.set(0, Some(&Array([Some(1), Some(2)])))?;
         writer.set(1, None)?;
         // SAFETY: This observes the initialized mask without changing its bits.
         assert_eq!(unsafe { writer.validity_mut() }?[0] & 3, 1);
-        writer.set(1, Some(Array([Some(3), Some(4)])))?;
+        writer.set(1, Some(&Array([Some(3), Some(4)])))?;
         writer.set(0, None)?;
         // SAFETY: The rows and descendants were initialized by typed writes.
         unsafe { writer.set_row_validity(1, true)? };
@@ -329,7 +427,7 @@ fn writer_struct_nulls_propagate_to_children() -> Result<()> {
     vector.set_size(1)?;
     {
         let mut writer = vector.writer()?;
-        writer.set(0, Some(NullStruct { n: 42 }))?;
+        writer.set(0, Some(&NullStruct { n: 42 }))?;
         writer.set(0, None)?;
         assert_eq!(unsafe { writer.validity_mut() }.unwrap()[0] & 1, 0);
     }
@@ -350,12 +448,12 @@ fn writer_value_api_preserves_cast_nullness_and_refreshes_validity() -> Result<(
     vector.set_size(2)?;
     {
         let mut writer = vector.writer()?;
-        writer.set(0, Some(42_i32.value(&conn)?))?;
-        writer.set(1, Some(43_i32.value(&conn)?))?;
+        writer.set(0, Some(&42_i32.value(&conn)?))?;
+        writer.set(1, Some(&43_i32.value(&conn)?))?;
         // SAFETY: Both rows have been initialized; clearing a VARIANT row needs no child updates.
         unsafe { writer.validity_mut()?[0] &= !2 };
-        writer.set(0, Some(Value::null(&conn, &i32::logical_type(&conn)?)?))?;
-        writer.set(1, Some(7_i32.value(&conn)?))?;
+        writer.set(0, Some(&Value::null(&conn, &i32::logical_type(&conn)?)?))?;
+        writer.set(1, Some(&7_i32.value(&conn)?))?;
         // SAFETY: This observes the refreshed mask without changing its bits.
         assert_eq!(unsafe { writer.validity_mut() }?[0] & 3, 2);
     }
@@ -373,7 +471,7 @@ fn writer_cast_slow_writes_refresh_cached_validity() -> Result<()> {
     vector.set_size(2)?;
     {
         let mut writer = vector.writer()?;
-        writer.set(0, Some(42_i32.value(&conn)?))?;
+        writer.set(0, Some(&42_i32.value(&conn)?))?;
         writer.set(1, None)?;
         assert_eq!(
             writer.validity.cast_const(),
@@ -382,7 +480,7 @@ fn writer_cast_slow_writes_refresh_cached_validity() -> Result<()> {
         // SAFETY: Row zero contains an initialized VARIANT value with no NULL descendants to update.
         unsafe { writer.set_row_validity(0, false)? };
         assert_eq!(unsafe { writer.validity_mut() }.unwrap()[0] & 3, 0);
-        writer.set(1, Some(7_i32.value(&conn)?))?;
+        writer.set(1, Some(&7_i32.value(&conn)?))?;
         // SAFETY: This observes the refreshed mask without changing its bits.
         assert_eq!(unsafe { writer.validity_mut() }?[0] & 3, 2);
     }
@@ -407,7 +505,7 @@ fn writer_rejects_native_input_layouts() -> Result<()> {
             let reader = vector.reader()?;
             let mut writer = output.writer()?;
             for (index, value) in reader.iter().enumerate() {
-                writer.set(index, value.copied())?;
+                writer.set(index, value)?;
             }
             Ok(())
         },
@@ -464,7 +562,7 @@ fn writer_reuses_validity_until_buffers_change() -> Result<()> {
     {
         let mut writer = vector.writer()?;
         writer.set(4999, None)?;
-        writer.set(1, Some(7))?;
+        writer.set(1, Some(&7))?;
     }
     // Read through DuckDB, since a stale pointer would also be cached in this wrapper's view.
     assert!(vector.get_value_slow(4999)?.is_null()?);
@@ -481,12 +579,12 @@ fn writer_typed_writes_follow_slow_writes() -> Result<()> {
     vector.set_size(3)?;
     {
         let mut writer = vector.writer()?;
-        writer.set(0, Some(1))?;
+        writer.set(0, Some(&1))?;
         writer.set_null_slow(1)?;
-        writer.write_value_slow(2, 3_i32.value(&conn)?)?;
+        writer.write_value_slow(2, &3_i32.value(&conn)?)?;
         // Slow writes refresh the cached buffers that typed writes use.
-        writer.set(1, Some(2))?;
-        writer.set(0, Some(4))?;
+        writer.set(1, Some(&2))?;
+        writer.set(0, Some(&4))?;
     }
     for (index, expected) in [4, 2, 3].into_iter().enumerate() {
         assert_eq!(vector.get_value_slow(index)?.get::<i32>()?, Some(expected));

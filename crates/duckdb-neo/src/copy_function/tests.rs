@@ -72,7 +72,7 @@ impl CopyToFunctionCallbacks for RapidCopy {
         let mut data_chunk = DataChunk::create(&context, &[i64::logical_type(context)?], true)?;
         let mut vec = data_chunk.get_vector_at_mut::<i64>(0)?;
         vec.set_size(1)?;
-        vec.writer()?.set(0, Some(10))?;
+        vec.writer()?.set(0, Some(&10))?;
 
         to_append.append(&mut data_chunk)?;
 
@@ -421,7 +421,7 @@ impl CopyFromFunctionCallbacks for RangeSource {
         let mut vec = output.get_vector_at_mut::<i64>(0)?;
         vec.set_size(batch)?;
         for row in 0..batch {
-            vec.writer()?.set(row, Some((*produced + row) as i64))?;
+            vec.writer()?.set(row, Some(&((*produced + row) as i64)))?;
         }
 
         *produced += batch;
@@ -586,7 +586,7 @@ impl CopyFromFunctionCallbacks for EchoFormat {
         let mut vec = output.get_vector_at_mut::<i64>(0)?;
         vec.set_size(batch)?;
         for row in 0..batch {
-            vec.writer()?.set(row, Some((*produced + row) as i64))?;
+            vec.writer()?.set(row, Some(&((*produced + row) as i64)))?;
         }
 
         *produced += batch;

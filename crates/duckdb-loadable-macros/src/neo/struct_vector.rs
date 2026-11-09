@@ -175,19 +175,23 @@ pub(crate) fn as_writable_vector_element(input: &syn::DeriveInput) -> syn::Resul
     let values = fields.fields.iter().map(|field| {
         let ident = field.ident.as_ref().unwrap();
         if option_inner_type(&field.ty).is_some() {
-            quote!(::core::option::Option::as_ref(&value.#ident))
+            quote!(::core::option::Option::as_ref(&value.#ident).map(::core::borrow::Borrow::borrow))
         } else {
-            quote!(::core::option::Option::Some(&value.#ident))
+            quote!(::core::option::Option::Some(::core::borrow::Borrow::borrow(&value.#ident)))
         }
     });
     let indexes = (0..types.len()).collect::<Vec<_>>();
     let ident = &input.ident;
-    let lifetime = row_lifetime(input);
     let mut generics = bounded_generics(
         input,
         &types,
-        &syn::parse_quote!(::duckdb_neo::vector::OwnedVectorElement),
+        &syn::parse_quote!(::duckdb_neo::vector::WritableVectorElement),
     );
+    for ty in &types {
+        generics.make_where_clause().predicates.push(syn::parse_quote!(
+            #ty: ::core::borrow::Borrow<<#ty as ::duckdb_neo::vector::WritableVectorElement>::Write>
+        ));
+    }
     generics
         .make_where_clause()
         .predicates
@@ -195,31 +199,12 @@ pub(crate) fn as_writable_vector_element(input: &syn::DeriveInput) -> syn::Resul
     let (impl_generics, type_generics, where_clause) = generics.split_for_impl();
 
     Ok(quote! {
-        // SAFETY: rows are written through the validated `OwnedVectorElement` implementation below.
+        // SAFETY: VectorElement::validate establishes the field layout; child writers maintain NULL validity.
         unsafe impl #impl_generics ::duckdb_neo::vector::WritableVectorElement for #ident #type_generics #where_clause {
-            type Write<#lifetime> = Self;
+            type Write = Self;
 
             #[inline]
             unsafe fn write(
-                writer: &mut ::duckdb_neo::vector::VectorWriter<'_, Self>,
-                index: ::core::primitive::usize,
-                value: ::core::option::Option<Self>,
-            ) -> ::duckdb_neo::Result<()> {
-                // SAFETY: the caller guarantees row bounds.
-                unsafe {
-                    <Self as ::duckdb_neo::vector::OwnedVectorElement>::write_ref(
-                        writer,
-                        index,
-                        ::core::option::Option::as_ref(&value),
-                    )
-                }
-            }
-        }
-
-        // SAFETY: VectorElement::validate establishes the field layout; child writers maintain NULL validity.
-        unsafe impl #impl_generics ::duckdb_neo::vector::OwnedVectorElement for #ident #type_generics #where_clause {
-            #[inline]
-            unsafe fn write_ref(
                 writer: &mut ::duckdb_neo::vector::VectorWriter<'_, Self>,
                 index: ::core::primitive::usize,
                 value: ::core::option::Option<&Self>,
@@ -229,30 +214,23 @@ pub(crate) fn as_writable_vector_element(input: &syn::DeriveInput) -> syn::Resul
                         let mut written: ::duckdb_neo::Result<()> = ::core::result::Result::Ok(());
                         #(if written.is_ok() {
                             // SAFETY: validation checked every child, and the caller guarantees row bounds.
-                            written = unsafe { writer.write_child_ref_unchecked::<#types>(#indexes, index, #values) };
+                            written = unsafe { writer.write_child_unchecked::<#types>(#indexes, index, #values) };
                         })*
                         if let ::core::result::Result::Err(error) = written {
                             // Earlier fields were written, so NULL the row to keep its children consistent.
                             // SAFETY: the caller guarantees row bounds.
-                            unsafe {
-                                <Self as ::duckdb_neo::vector::OwnedVectorElement>::write_ref(
-                                    writer,
-                                    index,
-                                    ::core::option::Option::None,
-                                )?
-                            };
+                            unsafe { writer.set_unchecked(index, ::core::option::Option::None)? };
                             return ::core::result::Result::Err(error);
                         }
                     }
                     ::core::option::Option::None => {
                         // SAFETY: a NULL struct must also null each of its validated children.
                         #(unsafe {
-                            writer.write_child_ref_unchecked::<#types>(#indexes, index, ::core::option::Option::None)?
+                            writer.write_child_unchecked::<#types>(#indexes, index, ::core::option::Option::None)?
                         };)*
                     }
                 }
-                // SAFETY: every child of this row was written above.
-                unsafe { writer.set_row_validity(index, ::core::option::Option::is_some(&value)) }
+                ::core::result::Result::Ok(())
             }
         }
 
@@ -309,7 +287,7 @@ mod tests {
             }
         );
         let output = syn::parse2::<syn::File>(as_writable_vector_element(&input).unwrap()).unwrap();
-        assert_eq!(output.items.len(), 3);
+        assert_eq!(output.items.len(), 2);
         let syn::Item::Impl(implementation) = &output.items[0] else {
             panic!("expected writer implementation")
         };

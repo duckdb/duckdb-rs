@@ -333,18 +333,22 @@ fn writable_vector_element(input: &syn::DeriveInput, variants: &UnionVariants<'_
     let child_indexes = (1..=types.len()).collect::<Vec<_>>();
     let members = variants.idents.iter().zip(&variants.types).map(|(ident, ty)| {
         if option_inner_type(ty).is_some() {
-            quote!(Self::#ident(member) => ::core::option::Option::as_ref(member))
+            quote!(Self::#ident(member) => ::core::option::Option::as_ref(member).map(::core::borrow::Borrow::borrow))
         } else {
-            quote!(Self::#ident(member) => ::core::option::Option::Some(member))
+            quote!(Self::#ident(member) => ::core::option::Option::Some(::core::borrow::Borrow::borrow(member)))
         }
     });
     let ident = &input.ident;
-    let lifetime = row_lifetime(input);
     let mut generics = bounded_generics(
         input,
         &types,
-        &syn::parse_quote!(::duckdb_neo::vector::OwnedVectorElement),
+        &syn::parse_quote!(::duckdb_neo::vector::WritableVectorElement),
     );
+    for ty in &types {
+        generics.make_where_clause().predicates.push(syn::parse_quote!(
+            #ty: ::core::borrow::Borrow<<#ty as ::duckdb_neo::vector::WritableVectorElement>::Write>
+        ));
+    }
     generics
         .make_where_clause()
         .predicates
@@ -352,32 +356,13 @@ fn writable_vector_element(input: &syn::DeriveInput, variants: &UnionVariants<'_
     let (impl_generics, type_generics, where_clause) = generics.split_for_impl();
 
     quote! {
-        // SAFETY: rows are written through the validated `OwnedVectorElement` implementation below.
-        unsafe impl #impl_generics ::duckdb_neo::vector::WritableVectorElement for #ident #type_generics #where_clause {
-            type Write<#lifetime> = Self;
-
-            #[inline]
-            unsafe fn write(
-                writer: &mut ::duckdb_neo::vector::VectorWriter<'_, Self>,
-                index: ::core::primitive::usize,
-                value: ::core::option::Option<Self>,
-            ) -> ::duckdb_neo::Result<()> {
-                // SAFETY: the caller guarantees row bounds.
-                unsafe {
-                    <Self as ::duckdb_neo::vector::OwnedVectorElement>::write_ref(
-                        writer,
-                        index,
-                        ::core::option::Option::as_ref(&value),
-                    )
-                }
-            }
-        }
-
         // SAFETY: VectorElement::validate establishes the tag and member layout; child writers maintain NULL validity.
-        unsafe impl #impl_generics ::duckdb_neo::vector::OwnedVectorElement for #ident #type_generics #where_clause {
+        unsafe impl #impl_generics ::duckdb_neo::vector::WritableVectorElement for #ident #type_generics #where_clause {
+            type Write = Self;
+
             #[inline]
             #[allow(unreachable_patterns)]
-            unsafe fn write_ref(
+            unsafe fn write(
                 writer: &mut ::duckdb_neo::vector::VectorWriter<'_, Self>,
                 index: ::core::primitive::usize,
                 value: ::core::option::Option<&Self>,
@@ -385,9 +370,9 @@ fn writable_vector_element(input: &syn::DeriveInput, variants: &UnionVariants<'_
                 let ::core::option::Option::Some(value) = value else {
                     // SAFETY: a NULL union must also null its tag and each of its validated members.
                     unsafe {
-                        writer.write_child_ref_unchecked::<::core::primitive::u8>(0, index, ::core::option::Option::None)?;
-                        #(writer.write_child_ref_unchecked::<#types>(#child_indexes, index, ::core::option::Option::None)?;)*
-                        return writer.set_row_validity(index, false);
+                        writer.write_child_unchecked::<::core::primitive::u8>(0, index, ::core::option::Option::None)?;
+                        #(writer.write_child_unchecked::<#types>(#child_indexes, index, ::core::option::Option::None)?;)*
+                        return ::core::result::Result::Ok(());
                     }
                 };
                 let tag: ::core::primitive::u8 = match value {
@@ -395,7 +380,7 @@ fn writable_vector_element(input: &syn::DeriveInput, variants: &UnionVariants<'_
                 };
                 // SAFETY: validation checked the tag child, and the caller guarantees row bounds.
                 let mut written = unsafe {
-                    writer.write_child_ref_unchecked::<::core::primitive::u8>(0, index, ::core::option::Option::Some(&tag))
+                    writer.write_child_unchecked::<::core::primitive::u8>(0, index, ::core::option::Option::Some(&tag))
                 };
                 #(if written.is_ok() {
                     // Every member other than the active one is NULL.
@@ -404,22 +389,15 @@ fn writable_vector_element(input: &syn::DeriveInput, variants: &UnionVariants<'_
                         _ => ::core::option::Option::None,
                     };
                     // SAFETY: validation checked every member, and the caller guarantees row bounds.
-                    written = unsafe { writer.write_child_ref_unchecked::<#types>(#child_indexes, index, member) };
+                    written = unsafe { writer.write_child_unchecked::<#types>(#child_indexes, index, member) };
                 })*
                 if let ::core::result::Result::Err(error) = written {
                     // The tag and earlier members were written, so NULL the row to keep its children consistent.
                     // SAFETY: the caller guarantees row bounds.
-                    unsafe {
-                        <Self as ::duckdb_neo::vector::OwnedVectorElement>::write_ref(
-                            writer,
-                            index,
-                            ::core::option::Option::None,
-                        )?
-                    };
+                    unsafe { writer.set_unchecked(index, ::core::option::Option::None)? };
                     return ::core::result::Result::Err(error);
                 }
-                // SAFETY: the tag and every member of this row were written above.
-                unsafe { writer.set_row_validity(index, true) }
+                ::core::result::Result::Ok(())
             }
         }
 
@@ -478,7 +456,6 @@ mod tests {
                 "Hash",
                 "VectorElement",
                 "WritableVectorElement",
-                "OwnedVectorElement",
                 "HasChildren"
             ]
         );

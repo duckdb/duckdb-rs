@@ -425,7 +425,7 @@ mod tests {
         {
             let mut vector = chunk.get_vector_at_mut::<Struct>(0)?;
             vector.set_size(2)?;
-            vector.write_value_slow(0, (7_i32, Option::<String>::None).value(&conn)?)?;
+            vector.write_value_slow(0, &(7_i32, Option::<String>::None).value(&conn)?)?;
             vector.set_null_slow(1)?;
         }
         let vector = chunk.get_vector_at::<Struct>(0)?;
@@ -451,7 +451,7 @@ mod tests {
         {
             let mut vector = chunk.get_vector_at_mut::<Struct>(0)?;
             vector.set_size(2)?;
-            vector.write_value_slow(0, value)?;
+            vector.write_value_slow(0, &value)?;
             vector.set_null_slow(1)?;
         }
         assert!(chunk.get_vector_at_mut::<IntegerEntry>(0).is_err());
@@ -500,7 +500,7 @@ mod tests {
             let mut vector = chunk.get_vector_at_mut::<EmptyRow>(0)?;
             vector.set_size(2)?;
             let mut writer = vector.writer()?;
-            writer.set(0, Some(EmptyRow {}))?;
+            writer.set(0, Some(&EmptyRow {}))?;
             writer.set(1, None)?;
         }
         let vector = chunk.get_vector_at::<Struct>(0)?;

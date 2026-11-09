@@ -62,7 +62,7 @@ impl<T: VectorElement> ChildVector<'_, T> {
     }
 
     /// See [`Vector::write_value_slow`].
-    pub fn write_value_slow(&mut self, index: usize, value: Value) -> Result<()> {
+    pub fn write_value_slow(&mut self, index: usize, value: &Value) -> Result<()> {
         self.0.write_value_slow(index, value)
     }
 

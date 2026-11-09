@@ -12,7 +12,7 @@ use crate::{
     error::Error,
     logical_type::{LogicalType, LogicalTypeID},
     value::{Value, ValueInput},
-    vector::{HasChildren, OwnedVectorElement, Vector, VectorElement, VectorWriter, WritableVectorElement},
+    vector::{HasChildren, Vector, VectorElement, VectorWriter, WritableVectorElement},
 };
 
 /// DuckDB's physical list entry: a range of elements in the child vector.
@@ -65,8 +65,8 @@ impl ListIndex {
 /// unsafe { vector.set_child_size(16)? };
 /// {
 ///     let mut writer = vector.writer()?;
-///     writer.set(0, Some(List(vec![Some(1), Some(2)])))?;
-///     writer.set(1, Some(List(vec![Some(3)])))?;
+///     writer.set(0, Some(&List(vec![Some(1), Some(2)])))?;
+///     writer.set(1, Some(&List(vec![Some(3)])))?;
 /// }
 /// let written = vector.child_offset();
 /// // SAFETY: every element below `written` was written above.
@@ -254,38 +254,23 @@ unsafe fn write_list<T: VectorElement, V>(
 }
 
 // SAFETY: entries only cover elements written through the child's own writer.
-unsafe impl<T: WritableVectorElement> WritableVectorElement for List<T> {
-    type Write<'a> = List<T::Write<'a>>;
+unsafe impl<T> WritableVectorElement for List<T>
+where
+    T: WritableVectorElement + std::borrow::Borrow<T::Write>,
+{
+    type Write = Self;
 
     #[inline]
-    unsafe fn write(vector: &mut VectorWriter<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
-        // SAFETY: the caller guarantees an in-bounds row; validation checked the child as T.
-        unsafe {
-            write_list(
-                vector,
-                index,
-                value.map(|value| value.0.into_iter()),
-                |child, element, value| child.set_unchecked(element, value),
-            )
-        }
-    }
-}
-
-// SAFETY: entries only cover elements written through the child's own writer.
-unsafe impl<T: OwnedVectorElement> OwnedVectorElement for List<T> {
-    #[inline]
-    unsafe fn write_ref(vector: &mut VectorWriter<'_, Self>, index: usize, value: Option<&Self>) -> Result<()> {
+    unsafe fn write(vector: &mut VectorWriter<'_, Self>, index: usize, value: Option<&Self::Write>) -> Result<()> {
         // SAFETY: the caller guarantees an in-bounds row; validation checked the child as T.
         unsafe {
             write_list(
                 vector,
                 index,
                 value.map(|value| value.0.iter()),
-                |child, element, value| T::write_ref(child, element, value.as_ref()),
-            )?;
-            vector.set_validity_unchecked(index, value.is_some());
+                |child, element, value| child.set_unchecked(element, value.as_ref().map(std::borrow::Borrow::borrow)),
+            )
         }
-        Ok(())
     }
 }
 
@@ -448,9 +433,9 @@ mod tests {
         unsafe { vector.set_child_size(3)? };
         {
             let mut writer = vector.writer()?;
-            writer.set(2, Some(List(vec![Some(1), Some(2)])))?;
+            writer.set(2, Some(&List(vec![Some(1), Some(2)])))?;
             writer.set(1, None)?;
-            writer.set(0, Some(List(vec![None])))?;
+            writer.set(0, Some(&List(vec![None])))?;
         }
         assert_eq!(
             entries(&vector)?,
@@ -468,23 +453,23 @@ mod tests {
         let mut chunk = DataChunk::create(&conn, &[List::<i32>::logical_type(&conn)?], true)?;
         let mut vector = chunk.get_vector_at_mut::<List<i32>>(0)?;
         vector.set_size(2)?;
-        let error = vector.writer()?.set(0, Some(List(vec![Some(1)]))).unwrap_err();
+        let error = vector.writer()?.set(0, Some(&List(vec![Some(1)]))).unwrap_err();
         assert!(error.message.contains("only 0 of 0 remain"), "{error}");
         // SAFETY: the rows below write all three elements.
         unsafe { vector.set_child_size(3)? };
         {
             let mut writer = vector.writer()?;
-            writer.set(0, Some(List(vec![Some(1), Some(2)])))?;
-            let error = writer.set(1, Some(List(vec![Some(3), Some(4)]))).unwrap_err();
+            writer.set(0, Some(&List(vec![Some(1), Some(2)])))?;
+            let error = writer.set(1, Some(&List(vec![Some(3), Some(4)]))).unwrap_err();
             assert!(
                 error.message.contains("needs 2 elements, but only 1 of 3 remain"),
                 "{error}"
             );
             assert_eq!(writer.child_offset(), 2);
-            writer.set(1, Some(List(vec![Some(3)])))?;
-            assert!(writer.set(0, Some(List(vec![Some(5)]))).is_err());
+            writer.set(1, Some(&List(vec![Some(3)])))?;
+            assert!(writer.set(0, Some(&List(vec![Some(5)]))).is_err());
             // Empty lists need no elements.
-            writer.set(0, Some(List(vec![])))?;
+            writer.set(0, Some(&List(vec![])))?;
         }
         assert_eq!(entries(&vector)?, [Some(vec![]), Some(vec![Some(3)])]);
         Ok(())
@@ -508,7 +493,7 @@ mod tests {
         {
             let mut writer = vector.writer()?;
             for (index, row) in rows.iter().enumerate() {
-                writer.set_ref(index, row.as_ref())?;
+                writer.set(index, row.as_ref())?;
             }
         }
         for (index, row) in rows.iter().enumerate() {
@@ -532,15 +517,15 @@ mod tests {
         let mut chunk = DataChunk::create(&conn, &[List::<i32>::logical_type(&conn)?], true)?;
         let mut vector = chunk.get_vector_at_mut::<List<i32>>(0)?;
         vector.set_size(3)?;
-        vector.write_value_slow(0, List(vec![Some(1), Some(2)]).value(&conn)?)?;
+        vector.write_value_slow(0, &List(vec![Some(1), Some(2)]).value(&conn)?)?;
         assert_eq!(vector.child_offset(), 2);
-        let error = vector.writer()?.set(1, Some(List(vec![Some(9)]))).unwrap_err();
+        let error = vector.writer()?.set(1, Some(&List(vec![Some(9)]))).unwrap_err();
         assert!(error.message.contains("only 0 of 2 remain"), "{error}");
         // SAFETY: row 1 writes the only new element.
         unsafe { vector.set_child_size(3)? };
         assert_eq!(vector.child_offset(), 2);
-        vector.writer()?.set(1, Some(List(vec![Some(9)])))?;
-        vector.write_value_slow(2, List(vec![Some(3)]).value(&conn)?)?;
+        vector.writer()?.set(1, Some(&List(vec![Some(9)])))?;
+        vector.write_value_slow(2, &List(vec![Some(3)]).value(&conn)?)?;
         assert_eq!(vector.child_offset(), 4);
         assert_eq!(
             list_rows(&vector)?,
@@ -561,14 +546,14 @@ mod tests {
         vector.set_size(2)?;
         // SAFETY: the vector is trimmed to the written element before it is read.
         unsafe { vector.set_child_size(3)? };
-        vector.writer()?.set(0, Some(List(vec![Some(1)])))?;
+        vector.writer()?.set(0, Some(&List(vec![Some(1)])))?;
         let error = vector
-            .write_value_slow(1, List(vec![Some(2)]).value(&conn)?)
+            .write_value_slow(1, &List(vec![Some(2)]).value(&conn)?)
             .unwrap_err();
         assert!(error.message.contains("after 2 unwritten"), "{error}");
         // SAFETY: the element below the offset was written.
         unsafe { vector.set_child_size(vector.child_offset())? };
-        vector.write_value_slow(1, List(vec![Some(2)]).value(&conn)?)?;
+        vector.write_value_slow(1, &List(vec![Some(2)]).value(&conn)?)?;
         assert_eq!(
             list_rows(&vector)?,
             [Some(List(vec![Some(1)])), Some(List(vec![Some(2)]))]
@@ -583,7 +568,7 @@ mod tests {
         let mut vector = chunk.get_vector_at_mut::<List<List<i32>>>(0)?;
         vector.set_size(2)?;
         let row = List(vec![Some(List(vec![Some(1), Some(2)])), Some(List(vec![]))]);
-        vector.write_value_slow(0, row.value(&conn)?)?;
+        vector.write_value_slow(0, &row.value(&conn)?)?;
         {
             let mut children = vector.children_mut().unwrap();
             let mut inner = children.get_vector_at_mut::<List<i32>>(0)?;
@@ -593,7 +578,7 @@ mod tests {
         }
         // SAFETY: row 1 writes the new inner list.
         unsafe { vector.set_child_size(3)? };
-        vector.writer()?.set(1, Some(List(vec![Some(List(vec![Some(9)]))])))?;
+        vector.writer()?.set(1, Some(&List(vec![Some(List(vec![Some(9)]))])))?;
         assert_eq!(vector.get_value_slow(0)?.get::<List<List<i32>>>()?, Some(row));
         assert_eq!(
             vector.get_value_slow(1)?.get::<List<List<i32>>>()?,
@@ -608,7 +593,7 @@ mod tests {
         let mut chunk = DataChunk::create(&conn, &[<(List<i32>,)>::logical_type(&conn)?], true)?;
         let mut vector = chunk.get_vector_at_mut::<crate::types::Struct>(0)?;
         vector.set_size(1)?;
-        vector.write_value_slow(0, (List(vec![Some(1), Some(2)]),).value(&conn)?)?;
+        vector.write_value_slow(0, &(List(vec![Some(1), Some(2)]),).value(&conn)?)?;
         let mut children = vector.children_mut().unwrap();
         assert_eq!(children.get_vector_at_mut::<List<i32>>(0)?.child_offset(), 2);
         Ok(())
@@ -629,7 +614,7 @@ mod tests {
         assert_eq!(target.child_offset(), 3);
         // SAFETY: row 1 writes the only new element.
         unsafe { target.set_child_size(4)? };
-        target.writer()?.set(1, Some(List(vec![Some(7)])))?;
+        target.writer()?.set(1, Some(&List(vec![Some(7)])))?;
         assert_eq!(
             target.get_value_slow(0)?.get::<List<i64>>()?,
             Some(List(vec![Some(1), Some(2)]))
@@ -644,7 +629,7 @@ mod tests {
         let mut chunk = DataChunk::create(&conn, &[List::<i32>::logical_type(&conn)?], true)?;
         let mut vector = chunk.get_vector_at_mut::<List<i32>>(0)?;
         vector.set_size(1)?;
-        vector.write_value_slow(0, List(vec![Some(1), Some(2)]).value(&conn)?)?;
+        vector.write_value_slow(0, &List(vec![Some(1), Some(2)]).value(&conn)?)?;
         drop(vector);
         let mut copy = chunk.copy(&conn)?;
         assert_eq!(copy.get_vector_at_mut::<List<i32>>(0)?.child_offset(), 2);
@@ -664,7 +649,7 @@ mod tests {
             chunk
                 .get_vector_at_mut::<List<i32>>(0)?
                 .writer()?
-                .set(row, Some(List(values)))
+                .set(row, Some(&List(values)))
         }
 
         let conn = connection()?;
@@ -689,10 +674,10 @@ mod tests {
         vector.set_size(2)?;
         // SAFETY: row 0 writes both elements; rewinding then rewrites them for row 1.
         unsafe { vector.set_child_size(2)? };
-        vector.writer()?.set(0, Some(List(vec![Some(1), Some(2)])))?;
+        vector.writer()?.set(0, Some(&List(vec![Some(1), Some(2)])))?;
         assert!(vector.set_child_offset(3).is_err());
         vector.set_child_offset(0)?;
-        vector.writer()?.set(1, Some(List(vec![Some(7), Some(8)])))?;
+        vector.writer()?.set(1, Some(&List(vec![Some(7), Some(8)])))?;
         // Both rows now share the rewritten range.
         assert_eq!(
             entries(&vector)?,

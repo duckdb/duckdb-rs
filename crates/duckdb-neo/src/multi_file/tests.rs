@@ -129,7 +129,7 @@ impl TableFunctionCallbacks for KvReader {
             let mut vector = output.get_vector_at_mut::<i64>(index)?;
             vector.set_size(batch.len())?;
             for (row, values) in bind_data.rows[batch.clone()].iter().enumerate() {
-                vector.writer()?.set(row, Some(values[column]))?;
+                vector.writer()?.set(row, Some(&values[column]))?;
             }
         }
 

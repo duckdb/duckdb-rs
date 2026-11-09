@@ -122,13 +122,13 @@ fn vector_writer_allocates_validity_mask() -> crate::Result<()> {
     let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
     vector.set_size(1)?;
     assert!(vector.reader().unwrap().validity().is_none());
-    vector.writer()?.set(0, Some(42))?;
+    vector.writer()?.set(0, Some(&42))?;
     assert!(vector.reader().unwrap().validity().is_some());
     assert_eq!(vector.reader()?.get(0)?, Some(&42));
     vector.writer()?.set(0, None)?;
     assert!(vector.reader().unwrap().validity().is_some());
     assert_eq!(vector.reader()?.get(0)?, None);
-    vector.writer()?.set(0, Some(7))?;
+    vector.writer()?.set(0, Some(&7))?;
     assert_eq!(vector.reader()?.get(0)?, Some(&7));
     Ok(())
 }
@@ -142,7 +142,7 @@ fn vector_writer_unchecked_updates_validity_after_reshape() -> crate::Result<()>
     vector.set_size(65)?;
     for index in 0..vector.len() {
         // SAFETY: The writable flat vector has 65 rows.
-        unsafe { vector.writer()?.set_unchecked(index, Some(index as i32))? };
+        unsafe { vector.writer()?.set_unchecked(index, Some(&(index as i32)))? };
     }
     assert!(vector.reader()?.validity().is_some());
     // SAFETY: Both rows are within the writable flat vector.
@@ -156,17 +156,17 @@ fn vector_writer_unchecked_updates_validity_after_reshape() -> crate::Result<()>
     vector.set_size(4097)?;
     // SAFETY: Resizing retained writable flat storage; all indices are in bounds.
     unsafe {
-        vector.writer()?.set_unchecked(0, Some(42))?;
-        vector.writer()?.set_unchecked(64, Some(64))?;
+        vector.writer()?.set_unchecked(0, Some(&42))?;
+        vector.writer()?.set_unchecked(64, Some(&64))?;
         vector.writer()?.set_unchecked(4096, None)?;
     }
     let reader = vector.reader()?;
     assert_eq!(reader.get(0)?, Some(&42));
     assert_eq!(reader.get(64)?, Some(&64));
     assert_eq!(reader.get(4096)?, None);
-    vector.write_value_slow(0, Value::null(&conn, &i32::logical_type(&conn)?)?)?;
+    vector.write_value_slow(0, &Value::null(&conn, &i32::logical_type(&conn)?)?)?;
     // SAFETY: The value write preserved the writable flat row.
-    unsafe { vector.writer()?.set_unchecked(0, Some(7))? };
+    unsafe { vector.writer()?.set_unchecked(0, Some(&7))? };
     assert_eq!(vector.reader()?.get(0)?, Some(&7));
     Ok(())
 }
@@ -180,7 +180,7 @@ fn vector_fill_validity_handles_empty_and_partial_words() -> crate::Result<()> {
     for count in [0, 1, 63, 64, 65, 129] {
         vector.set_size(count)?;
         for index in 0..count {
-            vector.writer()?.set(index, Some(index as i32))?;
+            vector.writer()?.set(index, Some(&(index as i32)))?;
         }
         // SAFETY: INTEGER has no descendants and every row is initialized.
         unsafe { vector.writer()?.fill_validity(false)? };
@@ -208,7 +208,7 @@ fn vector_fill_validity_rejects_read_only_and_constant_storage() -> crate::Resul
     let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
     let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
     vector.set_size(1)?;
-    vector.writer()?.set(0, Some(42))?;
+    vector.writer()?.set(0, Some(&42))?;
     drop(vector);
     let mut shared =
         super::Vector::<i32>::from_handle(&chunk.get_vector_handle_at(0), super::Access::Shared, &Rc::default())?;
@@ -230,17 +230,17 @@ fn vector_variant_writes_preserve_cast_nullness() -> crate::Result<()> {
     let mut chunk = DataChunk::create(&conn, &[Variant::logical_type(&conn)?], true)?;
     let mut vector = chunk.get_vector_at_mut::<Variant>(0)?;
     vector.set_size(2)?;
-    vector.writer()?.set(0, Some(42_i32.value(&conn)?))?;
+    vector.writer()?.set(0, Some(&42_i32.value(&conn)?))?;
     assert!(!vector.reader()?.is_null(0)?);
     vector
         .writer()?
-        .set(0, Some(Value::null(&conn, &i32::logical_type(&conn)?)?))?;
+        .set(0, Some(&Value::null(&conn, &i32::logical_type(&conn)?)?))?;
     assert!(vector.reader()?.is_null(0)?);
     // SAFETY: The second VARIANT row is writable, flat, and in bounds.
     unsafe {
         vector
             .writer()?
-            .set_unchecked(1, Some(Value::null(&conn, &i32::logical_type(&conn)?)?))?;
+            .set_unchecked(1, Some(&Value::null(&conn, &i32::logical_type(&conn)?)?))?;
     }
     assert!(vector.reader()?.is_null(1)?);
     Ok(())
@@ -254,7 +254,7 @@ fn vector_writer_initializes_and_preserves_validity_mask() -> crate::Result<()> 
     let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
     vector.set_size(65)?;
     for index in 0..vector.len() {
-        vector.writer()?.set(index, Some(index as i32))?;
+        vector.writer()?.set(index, Some(&(index as i32)))?;
     }
     assert!(
         vector
@@ -306,9 +306,9 @@ fn vector_writers_can_swap_without_changing_cached_views() -> crate::Result<()> 
     let mut second = second_chunk.get_vector_at_mut::<i32>(0)?;
     first.set_size(1)?;
     second.set_size(2)?;
-    first.writer()?.set(0, Some(10))?;
-    second.writer()?.set(0, Some(20))?;
-    second.writer()?.set(1, Some(30))?;
+    first.writer()?.set(0, Some(&10))?;
+    second.writer()?.set(0, Some(&20))?;
+    second.writer()?.set(1, Some(&30))?;
     {
         let mut first_view = first.writer()?;
         let mut second_view = second.writer()?;
@@ -493,7 +493,7 @@ fn vector_iterator_reports_remaining_rows() -> crate::Result<()> {
     assert_eq!(empty.next(), None);
 
     vector.set_size(2)?;
-    vector.writer()?.set(0, Some(42))?;
+    vector.writer()?.set(0, Some(&42))?;
     vector.writer()?.set(1, None)?;
     let mut iter = vector.reader()?.iter();
     assert_iterator_traits(&iter);
@@ -538,12 +538,12 @@ fn vector_write_checks_rows_before_dispatch() -> crate::Result<()> {
 
     // SAFETY: Probe rejects writes without changing the vector.
     unsafe impl WritableVectorElement for Probe {
-        type Write<'a> = ();
+        type Write = ();
 
         unsafe fn write(
             _vector: &mut crate::vector::VectorWriter<'_, Self>,
             _index: usize,
-            _value: Option<()>,
+            _value: Option<&()>,
         ) -> crate::Result<()> {
             Err(Error::invalid_input("element writer called"))
         }
@@ -556,12 +556,12 @@ fn vector_write_checks_rows_before_dispatch() -> crate::Result<()> {
         let mut vector = chunk.get_vector_at_mut::<Probe>(0)?;
         vector.set_size(1)?;
         assert_eq!(
-            vector.writer()?.set(0, Some(())).unwrap_err().message,
+            vector.writer()?.set(0, Some(&())).unwrap_err().message,
             "element writer called"
         );
         // SAFETY: Row 0 is in bounds in this writable flat vector.
         assert_eq!(
-            unsafe { vector.writer()?.set_unchecked(0, Some(())) }
+            unsafe { vector.writer()?.set_unchecked(0, Some(&())) }
                 .unwrap_err()
                 .message,
             "element writer called"
@@ -569,14 +569,14 @@ fn vector_write_checks_rows_before_dispatch() -> crate::Result<()> {
         assert_eq!(vector.reader()?.validity().unwrap(), [u64::MAX]);
         for index in [1, usize::MAX] {
             for value in [Some(()), None] {
-                let err = vector.writer()?.set(index, value).unwrap_err();
+                let err = vector.writer()?.set(index, value.as_ref()).unwrap_err();
                 assert!(err.message.contains("out of bounds"), "{}", err.message);
             }
         }
     }
     {
         let mut vector = chunk.get_vector_at_mut::<super::Unknown>(0)?.cast::<Probe>()?;
-        let err = vector.writer()?.set(1, Some(())).unwrap_err();
+        let err = vector.writer()?.set(1, Some(&())).unwrap_err();
         assert!(err.message.contains("out of bounds"), "{}", err.message);
     }
     chunk
@@ -626,10 +626,10 @@ fn vector_nested_writes_check_bounds_before_appending() -> crate::Result<()> {
     list.set_size(1)?;
     // SAFETY: the first row writes the only element.
     unsafe { list.set_child_size(1)? };
-    list.writer()?.set(0, Some(List(vec![Some(42)])))?;
+    list.writer()?.set(0, Some(&List(vec![Some(42)])))?;
     let child_len = list.children().unwrap().row_count()?;
     for index in [1, usize::MAX] {
-        assert!(list.writer()?.set(index, Some(List(vec![Some(7)]))).is_err());
+        assert!(list.writer()?.set(index, Some(&List(vec![Some(7)]))).is_err());
         assert!(list.writer()?.set(index, None).is_err());
         assert_eq!(list.children().unwrap().row_count()?, child_len);
         assert_eq!(list_values(list.reader()?.get(0)?), Some(vec![Some(42)]));
@@ -640,10 +640,10 @@ fn vector_nested_writes_check_bounds_before_appending() -> crate::Result<()> {
     map.set_size(1)?;
     // SAFETY: the first row writes the only entry.
     unsafe { map.set_child_size(1)? };
-    map.writer()?.set(0, Some(Map(vec![(1, Some(42))])))?;
+    map.writer()?.set(0, Some(&Map(vec![(1, Some(42))])))?;
     let child_len = map.children().unwrap().row_count()?;
     for index in [1, usize::MAX] {
-        assert!(map.writer()?.set(index, Some(Map(vec![(2, Some(7))]))).is_err());
+        assert!(map.writer()?.set(index, Some(&Map(vec![(2, Some(7))]))).is_err());
         assert!(map.writer()?.set(index, None).is_err());
         assert_eq!(map.children().unwrap().row_count()?, child_len);
         assert_eq!(
@@ -735,7 +735,7 @@ fn negate_scalar(_ctx: &Context, input: &mut VectorCollection, output: Vector<'_
     output.set_size(input.len())?;
     for (i, v) in input.reader()?.iter().enumerate() {
         match v {
-            Some(x) => output.writer()?.set(i, Some(-x))?,
+            Some(x) => output.writer()?.set(i, Some(&-x))?,
             None => output.writer()?.set(i, None)?,
         }
     }
@@ -757,7 +757,7 @@ fn upper_scalar(_ctx: &Context, input: &mut VectorCollection, output: Vector<'_,
     Ok(())
 }
 
-fn map_scalar(_ctx: &Context, input: &mut VectorCollection, result: Vector<'_, Map<i32, String>>) -> crate::Result<()> {
+fn map_scalar(_ctx: &Context, input: &mut VectorCollection, result: Vector<'_, Map<i32, &str>>) -> crate::Result<()> {
     let keys = input.get_vector_at::<i32>(0)?;
     let values = input.get_vector_at::<String>(1)?;
     let total_len = keys.len();
@@ -779,7 +779,7 @@ fn map_scalar(_ctx: &Context, input: &mut VectorCollection, result: Vector<'_, M
     for (index, (key, value)) in rows.iter().enumerate() {
         result
             .writer()?
-            .set(index, Some(Map(vec![(*key, Some(value.as_str()))])))?;
+            .set(index, Some(&Map(vec![(*key, Some(value.as_str()))])))?;
     }
     let written: Vec<_> = result.reader()?.iter().collect();
     for (row, (key, value)) in written.into_iter().zip(&rows) {
@@ -807,7 +807,7 @@ fn union_scalar(_ctx: &Context, input: &mut VectorCollection, output: Vector<'_,
             2 => TestUnion::Value(value.map(str::to_owned)),
             _ => unimplemented!("Unexpected key value: {}", key),
         };
-        output.writer()?.set(index, Some(row))?;
+        output.writer()?.set(index, Some(&row))?;
     }
     Ok(())
 }
@@ -826,7 +826,7 @@ fn struct_scalar(_ctx: &Context, input: &mut VectorCollection, output: Vector<'_
     for (index, (key, value)) in rows.iter().enumerate() {
         output.writer()?.set(
             index,
-            Some(TestStruct {
+            Some(&TestStruct {
                 key: *key,
                 value: value.clone(),
             }),
@@ -850,7 +850,7 @@ fn struct_key_scalar(_ctx: &Context, input: &mut VectorCollection, output: Vecto
     let mut output = output;
     output.set_size(structs.len())?;
     for (index, row) in structs.reader()?.iter().enumerate() {
-        output.writer()?.set(index, row.and_then(|row| row.key).copied())?;
+        output.writer()?.set(index, row.and_then(|row| row.key))?;
     }
     Ok(())
 }
@@ -868,7 +868,7 @@ fn nullable_struct_scalar(
             key: *key,
             value: "x".into(),
         });
-        output.writer()?.set(index, row)?;
+        output.writer()?.set(index, row.as_ref())?;
     }
     Ok(())
 }
@@ -883,7 +883,7 @@ fn nullable_union_scalar(
     output.set_size(keys.len())?;
     for (index, key) in keys.reader()?.iter().enumerate() {
         let row = key.map(|key| TestUnion::Key(Some(*key)));
-        output.writer()?.set(index, row)?;
+        output.writer()?.set(index, row.as_ref())?;
     }
     Ok(())
 }
@@ -916,7 +916,7 @@ fn struct_member_union_scalar(
         } else {
             NumOrStruct::S(SmallStruct { x: "even".into() })
         };
-        output.writer()?.set(index, Some(row))?;
+        output.writer()?.set(index, Some(&row))?;
     }
     Ok(())
 }
@@ -980,7 +980,7 @@ fn dictionary_probe_scalar(_ctx: &Context, input: &mut VectorCollection, output:
     }
 
     for (i, v) in vector.reader()?.iter().enumerate() {
-        output.writer()?.set(i, v.copied())?;
+        output.writer()?.set(i, v)?;
     }
     Ok(())
 }
@@ -1059,7 +1059,7 @@ fn constant_probe_scalar(_ctx: &Context, input: &mut VectorCollection, output: V
     }
 
     for (i, v) in vector.reader()?.iter().enumerate() {
-        output.writer()?.set(i, v.copied())?;
+        output.writer()?.set(i, v)?;
     }
     Ok(())
 }
@@ -1233,7 +1233,7 @@ fn test_vector_list() -> crate::Result<()> {
         unsafe { output.set_child_size(rows.iter().flatten().map(|row| row.0.len()).sum())? };
         let mut writer = output.writer()?;
         for (i, row) in rows.iter().enumerate() {
-            writer.set_ref(i, row.as_ref())?;
+            writer.set(i, row.as_ref())?;
         }
         Ok(())
     }
@@ -1743,7 +1743,7 @@ fn vector_hugeint_ffi_storage() -> crate::Result<()> {
                 let raw = reader.get(0)?.unwrap();
                 assert_eq!((raw.lower, raw.upper), (expected.lower, expected.upper));
 
-                vector.writer()?.set(index, Some(expected))?;
+                vector.writer()?.set(index, Some(&expected))?;
                 let raw = vector.reader()?.get(index)?.unwrap();
                 assert_eq!((raw.lower, raw.upper), (expected.lower, expected.upper));
                 assert_eq!(vector.get_value_slow(index)?.get::<$primitive>()?, Some(input));
@@ -1853,7 +1853,7 @@ pub fn vector_writable_value_types() -> crate::Result<()> {
             let mut vector = chunk.get_vector_at_mut::<$type>(0)?;
             vector.set_size(2)?;
             let value = $value;
-            vector.writer()?.set(0, Some(value))?;
+            vector.writer()?.set(0, Some(&value))?;
             vector.writer()?.set(1, None)?;
             let reader = vector.reader()?;
             assert_eq!(reader.get(0)?, Some(&value));
@@ -1890,7 +1890,7 @@ pub fn vector_writable_value_types() -> crate::Result<()> {
     assert!(chunk.get_vector_at::<i64>(0).is_err());
     let mut vector = chunk.get_vector_at_mut::<LongDecimal>(0)?;
     vector.set_size(2)?;
-    vector.writer()?.set(0, Some(LongDecimal(-123_456)))?;
+    vector.writer()?.set(0, Some(&LongDecimal(-123_456)))?;
     vector.writer()?.set(1, None)?;
     let reader = vector.reader()?;
     assert_eq!(reader.get(0)?, Some(&LongDecimal(-123_456)));
@@ -1949,7 +1949,7 @@ pub fn vector_writable_value_types() -> crate::Result<()> {
     vector.writer()?.set(1, None)?;
     assert_eq!(vector.children().unwrap().get_untyped_vector_at(0)?.len(), 6);
     // The element count is part of the type, so only full rows can be written.
-    vector.writer()?.set(0, Some(Array([Some(1), None, Some(3)])))?;
+    vector.writer()?.set(0, Some(&Array([Some(1), None, Some(3)])))?;
     let reader = vector.reader()?;
     assert_eq!(
         reader
@@ -2125,7 +2125,7 @@ pub fn test_vector_set_value() -> crate::Result<()> {
             if let Some(value) = value {
                 let lt = LogicalType::from_text(ctx, "VARIANT")?;
                 let result = value.cast(ctx, &lt)?;
-                output.write_value_slow(index, result)?;
+                output.write_value_slow(index, &result)?;
             } else {
                 output.set_null_slow(index)?;
             }
@@ -2391,15 +2391,15 @@ fn test_reference_rebuilds_children() -> crate::Result<()> {
     src.set_size(2)?;
     // SAFETY: the two rows write all four elements.
     unsafe { src.set_child_size(4)? };
-    src.writer()?.set(0, Some(List(vec![Some(1), Some(2), Some(3)])))?;
-    src.writer()?.set(1, Some(List(vec![Some(4)])))?;
+    src.writer()?.set(0, Some(&List(vec![Some(1), Some(2), Some(3)])))?;
+    src.writer()?.set(1, Some(&List(vec![Some(4)])))?;
 
     let mut target = DataChunk::create(&conn, &types, true)?;
     let mut dst = target.get_vector_at_mut::<List<i32>>(0)?;
     dst.set_size(1)?;
     // SAFETY: the row writes the only element.
     unsafe { dst.set_child_size(1)? };
-    dst.writer()?.set(0, Some(List(vec![Some(9)])))?;
+    dst.writer()?.set(0, Some(&List(vec![Some(9)])))?;
 
     // SAFETY: `source` outlives every read of the referenced vector below.
     let mut referenced = unsafe { dst.reference(&src)? };
@@ -2445,7 +2445,7 @@ fn test_make_constant_rebuilds_children() -> crate::Result<()> {
     vector.set_size(1)?;
     // SAFETY: the row writes the only element.
     unsafe { vector.set_child_size(1)? };
-    vector.writer()?.set(0, Some(List(vec![Some(9)])))?;
+    vector.writer()?.set(0, Some(&List(vec![Some(9)])))?;
 
     let vector = vector.make_constant(List(vec![Some(7), Some(8)]).value(&conn)?, 3)?;
 
@@ -2531,7 +2531,7 @@ fn flat_list_scalar(_ctx: &Context, input: &mut VectorCollection, output: Vector
     for (i, row) in list.reader()?.iter().enumerate() {
         output
             .writer()?
-            .set(i, row.map(|v| v.iter().map(|x| x.copied().unwrap_or(0)).sum()))?;
+            .set(i, row.map(|v| v.iter().map(|x| x.copied().unwrap_or(0)).sum()).as_ref())?;
     }
     Ok(())
 }
@@ -2568,11 +2568,11 @@ fn slow_write_input_scalar(ctx: &Context, input: &mut VectorCollection, output: 
     output.set_size(vector.len())?;
 
     assert!(!vector.is_writable());
-    assert!(vector.write_value_slow(0, 999_i32.value(ctx)?).is_err());
+    assert!(vector.write_value_slow(0, &999_i32.value(ctx)?).is_err());
     assert!(vector.set_null_slow(0).is_err());
 
     for (i, v) in vector.reader()?.iter().enumerate() {
-        output.writer()?.set(i, v.copied())?;
+        output.writer()?.set(i, v)?;
     }
     Ok(())
 }
@@ -2621,7 +2621,7 @@ fn array_sum_scalar(_ctx: &Context, input: &mut VectorCollection, output: Vector
     for (i, row) in array.reader()?.iter().enumerate() {
         output
             .writer()?
-            .set(i, row.map(|v| v.iter().map(|x| x.copied().unwrap_or(0)).sum()))?;
+            .set(i, row.map(|v| v.iter().map(|x| x.copied().unwrap_or(0)).sum()).as_ref())?;
     }
     Ok(())
 }
@@ -2678,14 +2678,14 @@ fn test_list_offset_and_map_writes_persist_across_wrappers() -> crate::Result<()
         first.set_size(2)?;
         // SAFETY: the two rows below write all four elements.
         unsafe { first.set_child_size(4)? };
-        first.writer()?.set(0, Some(List(vec![Some(1), Some(2), Some(3)])))?;
+        first.writer()?.set(0, Some(&List(vec![Some(1), Some(2), Some(3)])))?;
         assert_eq!(first.child_offset(), 3);
     }
     // A new wrapper from the same chunk continues after the elements already written.
     let mut second = list_chunk.get_vector_at_mut::<List<i32>>(0)?;
     assert_eq!(second.child_offset(), 3);
     assert!(second.set_child_offset(5).is_err());
-    second.writer()?.set(1, Some(List(vec![Some(9)])))?;
+    second.writer()?.set(1, Some(&List(vec![Some(9)])))?;
     assert_eq!(second.child_offset(), 4);
     drop(second);
 
@@ -2703,11 +2703,11 @@ fn test_list_offset_and_map_writes_persist_across_wrappers() -> crate::Result<()
         first.set_size(2)?;
         // SAFETY: the two rows below write all three entries.
         unsafe { first.set_child_size(3)? };
-        first.writer()?.set(0, Some(Map(vec![(1, Some(10)), (2, Some(20))])))?;
+        first.writer()?.set(0, Some(&Map(vec![(1, Some(10)), (2, Some(20))])))?;
     }
     let mut second = map_chunk.get_vector_at_mut::<Map<i32, i32>>(0)?;
     assert_eq!(second.child_offset(), 2);
-    second.writer()?.set(1, Some(Map(vec![(3, Some(30))])))?;
+    second.writer()?.set(1, Some(&Map(vec![(3, Some(30))])))?;
     drop(second);
 
     let maps = map_chunk.get_vector_at::<Map<i32, i32>>(0)?;
@@ -2748,11 +2748,11 @@ fn test_children_follow_parent() -> crate::Result<()> {
     let mut chunk = DataChunk::create(&conn, &types, true)?;
     let mut list = chunk.get_vector_at_mut::<List<i32>>(1)?;
     // An out-of-range row must not take elements from the child.
-    assert!(list.writer()?.set(0, Some(List(vec![Some(1)]))).is_err());
+    assert!(list.writer()?.set(0, Some(&List(vec![Some(1)]))).is_err());
     list.set_size(1)?;
     // SAFETY: the row below writes both elements.
     unsafe { list.set_child_size(2)? };
-    list.writer()?.set(0, Some(List(vec![Some(1), Some(2)])))?;
+    list.writer()?.set(0, Some(&List(vec![Some(1), Some(2)])))?;
     // The row count is read live, and the cached child view is rebuilt after `children_mut`.
     assert_eq!(list.children().unwrap().row_count()?, 2);
     list.children_mut().unwrap().get_vector_at_mut::<i32>(0)?.flatten()?;
@@ -2781,10 +2781,10 @@ fn test_nested_children_survive_reallocation() -> crate::Result<()> {
         let mut list = list.cast::<List<i32>>()?;
         array.set_size(1)?;
         structs.set_size(1)?;
-        array.writer()?.set(0, Some(Array([Some(3)])))?;
+        array.writer()?.set(0, Some(&Array([Some(3)])))?;
         structs.writer()?.set(
             0,
-            Some(TestStruct {
+            Some(&TestStruct {
                 key: 7,
                 value: "a".into(),
             }),
@@ -2797,10 +2797,10 @@ fn test_nested_children_survive_reallocation() -> crate::Result<()> {
         // Growing the parents evicted the cached child views, so fresh views see the new size.
         assert_eq!(array.children().unwrap().get_untyped_vector_at(0)?.len(), 3000);
         assert_eq!(structs.children().unwrap().get_untyped_vector_at(0)?.len(), 3000);
-        array.writer()?.set(2999, Some(Array([Some(4)])))?;
+        array.writer()?.set(2999, Some(&Array([Some(4)])))?;
         structs.writer()?.set(
             2999,
-            Some(TestStruct {
+            Some(&TestStruct {
                 key: 8,
                 value: "b".into(),
             }),
@@ -2810,7 +2810,7 @@ fn test_nested_children_survive_reallocation() -> crate::Result<()> {
         list.set_size(1)?;
         // SAFETY: the row below writes all 5000 elements.
         unsafe { list.set_child_size(5000)? };
-        list.writer()?.set(0, Some(List((0..5000).map(Some).collect())))?;
+        list.writer()?.set(0, Some(&List((0..5000).map(Some).collect())))?;
     }
     assert_eq!(
         chunk
@@ -2843,8 +2843,8 @@ fn test_nested_writes_reuse_child_wrappers() -> crate::Result<()> {
             .get_vector_at_mut::<List<i32>>(0)?
             .set_child_size(elements)?;
     }
-    lists.writer()?.set(0, Some(List(vec![Some(List(vec![Some(0)]))])))?;
-    lists.writer()?.set(1, Some(List(vec![Some(List(vec![Some(1)]))])))?;
+    lists.writer()?.set(0, Some(&List(vec![Some(List(vec![Some(0)]))])))?;
+    lists.writer()?.set(1, Some(&List(vec![Some(List(vec![Some(1)]))])))?;
     // The cache keeps the writer's wrapper rather than a fresh shared view.
     assert!(lists.children().unwrap().get_untyped_vector_at(0)?.is_writable());
 
@@ -2852,7 +2852,7 @@ fn test_nested_writes_reuse_child_wrappers() -> crate::Result<()> {
     for row in 2..3000 {
         lists
             .writer()?
-            .set(row, Some(List(vec![Some(List(vec![Some(row as i32), None])), None])))?;
+            .set(row, Some(&List(vec![Some(List(vec![Some(row as i32), None])), None])))?;
     }
     assert_eq!(lists.child_offset(), elements);
     let reader = lists.reader()?;
@@ -2872,7 +2872,7 @@ fn test_write_value_slow_null_is_visible() -> crate::Result<()> {
     let mut chunk = DataChunk::create(&conn, std::slice::from_ref(&logical_type), true)?;
     let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
     vector.set_size(1)?;
-    vector.write_value_slow(0, crate::value::Value::null(&conn, &logical_type)?)?;
+    vector.write_value_slow(0, &crate::value::Value::null(&conn, &logical_type)?)?;
     assert!(vector.reader()?.is_null(0)?);
     Ok(())
 }
@@ -3006,7 +3006,7 @@ fn test_list_output_child_starts_empty_in_every_callback() -> crate::Result<()> 
         unsafe { output.set_child_size(2 * input.len())? };
         let mut writer = output.writer()?;
         for (row, value) in input.reader()?.iter().enumerate() {
-            writer.set(row, value.map(|value| List(vec![Some(*value), Some(*value)])))?;
+            writer.set(row, value.map(|value| List(vec![Some(*value), Some(*value)])).as_ref())?;
         }
         Ok(())
     }

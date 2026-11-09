@@ -98,12 +98,12 @@ unsafe impl VectorElement for BigNum {
 
 // SAFETY: a `BigNum` only borrows DuckDB-encoded bytes, which `write_bytes` copies into the vector's arena.
 unsafe impl WritableVectorElement for BigNum {
-    type Write<'a> = &'a BigNum;
+    type Write = BigNum;
 
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<Self::Write<'_>>,
+        value: Option<&Self::Write>,
     ) -> Result<()> {
         // SAFETY: The caller guarantees a writable, flat, in-bounds row.
         unsafe { vector.write_bytes(index, value.map(BigNum::encoded)) }
@@ -171,29 +171,18 @@ unsafe impl VectorElement for BigNumValue {
 
 // SAFETY: `encode_bignum` produces valid bytes, which `write_bytes` copies into the vector's arena.
 unsafe impl WritableVectorElement for BigNumValue {
-    type Write<'a> = &'a BigNumValue;
+    type Write = BigNumValue;
 
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<Self::Write<'_>>,
+        value: Option<&Self::Write>,
     ) -> Result<()> {
         let encoded = value
             .map(|value| Value::encode_bignum(&value.magnitude, value.is_negative))
             .transpose()?;
         // SAFETY: The caller guarantees a writable, flat, in-bounds row.
         unsafe { vector.write_bytes(index, encoded.as_deref()) }
-    }
-}
-
-// SAFETY: the native writer encodes the borrowed value and copies it into the vector's arena.
-unsafe impl crate::vector::OwnedVectorElement for BigNumValue {
-    unsafe fn write_ref(
-        writer: &mut crate::vector::VectorWriter<'_, Self>,
-        index: usize,
-        value: Option<&Self>,
-    ) -> Result<()> {
-        unsafe { writer.set_unchecked(index, value) }
     }
 }
 

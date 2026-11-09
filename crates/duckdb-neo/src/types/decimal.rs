@@ -86,15 +86,13 @@ macro_rules! decimal_storage {
 
             // SAFETY: the vector stores `$type`, the value's own storage type.
             unsafe impl WritableVectorElement for $name {
-                type Write<'a> = $name;
+                type Write = $name;
 
-                unsafe fn write(vector: &mut crate::vector::VectorWriter<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+                unsafe fn write(vector: &mut crate::vector::VectorWriter<'_, Self>, index: usize, value: Option<&Self::Write>) -> Result<()> {
                     // SAFETY: The caller guarantees a writable, flat, in-bounds row.
-                    unsafe { vector.write_internal(index, value) }
+                    unsafe { vector.write_internal(index, value.copied()) }
                 }
             }
-
-            crate::vector::owned_by_copy!($name);
         )+
     };
 }
@@ -275,30 +273,15 @@ unsafe impl<const WIDTH: u8, const SCALE: u8> WritableVectorElement for Decimal<
 where
     Width<WIDTH>: DecimalWidth,
 {
-    type Write<'a> = Self;
+    type Write = Self;
 
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<Self::Write<'_>>,
+        value: Option<&Self::Write>,
     ) -> Result<()> {
         // SAFETY: The caller guarantees a writable, flat, in-bounds row.
-        unsafe { vector.write_internal(index, value) }
-    }
-}
-
-// SAFETY: the native writer receives a copy and maintains its validity.
-unsafe impl<const WIDTH: u8, const SCALE: u8> crate::vector::OwnedVectorElement for Decimal<WIDTH, SCALE>
-where
-    Width<WIDTH>: DecimalWidth,
-{
-    #[inline]
-    unsafe fn write_ref(
-        writer: &mut crate::vector::VectorWriter<'_, Self>,
-        index: usize,
-        value: Option<&Self>,
-    ) -> Result<()> {
-        unsafe { writer.set_unchecked(index, value.copied()) }
+        unsafe { vector.write_internal(index, value.copied()) }
     }
 }
 
@@ -523,7 +506,7 @@ mod tests {
         let mut chunk = DataChunk::create(&conn, &[Decimal::<9, 2>::logical_type(&conn)?], true)?;
         let mut vector = chunk.get_vector_at_mut::<Decimal<9, 2>>(0)?;
         vector.set_size(2)?;
-        vector.writer()?.set(0, Some(Decimal::new(-1)))?;
+        vector.writer()?.set(0, Some(&Decimal::new(-1)))?;
         vector.writer()?.set(1, None)?;
         assert_eq!(vector.reader()?.get(0)?, Some(&Decimal::new(-1)));
         assert_eq!(vector.reader()?.get(1)?, None);

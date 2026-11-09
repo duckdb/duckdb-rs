@@ -148,20 +148,18 @@ macro_rules! declare_writable_vector_element {
     ($type:ty) => {
         // SAFETY: every `$type` value is valid for its logical type.
         unsafe impl WritableVectorElement for $type {
-            type Write<'a> = $type;
+            type Write = $type;
 
             #[inline(always)]
             unsafe fn write(
                 vector: &mut crate::vector::VectorWriter<'_, Self>,
                 index: usize,
-                value: Option<Self::Write<'_>>,
+                value: Option<&Self::Write>,
             ) -> Result<()> {
                 // SAFETY: The caller guarantees a writable, flat, in-bounds row.
-                unsafe { vector.write_internal(index, value) }
+                unsafe { vector.write_internal(index, value.copied()) }
             }
         }
-
-        crate::vector::owned_by_copy!($type);
     };
 }
 

@@ -35,7 +35,7 @@ use crate::{
 /// }
 ///
 /// fn write(vector: &mut Vector<'_, Input>) -> Result<()> {
-///     vector.writer()?.set(0, Some(Input::Str(Some("duck".to_owned()))))
+///     vector.writer()?.set(0, Some(&Input::Str(Some("duck".to_owned()))))
 /// }
 /// ```
 #[derive(Debug)]
@@ -242,7 +242,7 @@ mod tests {
         {
             let mut vector = chunk.get_vector_at_mut::<Union>(0)?;
             vector.set_size(2)?;
-            vector.write_value_slow(0, NumOrText::Num(7).value(&conn)?)?;
+            vector.write_value_slow(0, &NumOrText::Num(7).value(&conn)?)?;
             vector.set_null_slow(1)?;
         }
         let vector = chunk.get_vector_at::<NumOrText>(0)?;
@@ -268,7 +268,7 @@ mod tests {
         {
             let mut vector = chunk.get_vector_at_mut::<Union>(0)?;
             vector.set_size(2)?;
-            vector.write_value_slow(0, value)?;
+            vector.write_value_slow(0, &value)?;
             vector.set_null_slow(1)?;
         }
         assert!(chunk.get_vector_at_mut::<Swapped>(0).is_err());

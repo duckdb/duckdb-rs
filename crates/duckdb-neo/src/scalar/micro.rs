@@ -35,7 +35,7 @@ use crate::{
 ///     |_ctx, input: Vector<'_, i32>, mut output: Vector<'_, i64>| {
 ///         let mut writer = output.writer()?;
 ///         for (row, value) in input.reader()?.iter().enumerate() {
-///             writer.set(row, value.map(|value| i64::from(*value) + 1))?;
+///             writer.set(row, value.map(|value| i64::from(*value) + 1).as_ref())?;
 ///         }
 ///         Ok(())
 ///     },

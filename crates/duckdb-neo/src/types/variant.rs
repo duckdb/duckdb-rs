@@ -37,12 +37,12 @@ unsafe impl VectorElement for Variant {
 
 // SAFETY: rows are written only through DuckDB's value API.
 unsafe impl WritableVectorElement for Variant {
-    type Write<'a> = Value;
+    type Write = Value;
 
     unsafe fn write(
         writer: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<Self::Write<'_>>,
+        value: Option<&Self::Write>,
     ) -> Result<()> {
         match value {
             Some(value) => writer.write_value_slow(index, value),

@@ -219,7 +219,7 @@ mod tests {
                 let input_value = input_value.unwrap();
                 let output_value = input_value.parse::<f32>().unwrap() + self.offset as f32;
 
-                writer.set(i, Some(output_value))?;
+                writer.set(i, Some(&output_value))?;
             }
             Ok(())
         }

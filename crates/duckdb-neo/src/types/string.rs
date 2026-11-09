@@ -66,11 +66,24 @@ impl ToValue for String {
 /// Every non-NULL row read through this marker must contain valid UTF-8.
 /// Invalid UTF-8 causes undefined behavior. Use [`String`] for checked reads.
 #[derive(Debug)]
-pub struct UncheckedString;
+pub struct UncheckedString(pub String);
+
+impl FromValue for UncheckedString {
+    fn _get_inner(value: &Value) -> Result<Self> {
+        let raw = check_api_call!(ffi::duckdb_v2_value_get_varchar, value.raw(), RET)?;
+        Ok(unsafe { UncheckedString(String::from_utf8_unchecked(owned_bytes(raw)?)) })
+    }
+}
 
 impl DuckDBType for UncheckedString {
     fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
-        str::logical_type(link)
+        link.logical_type_create_from_id(LogicalTypeID::Varchar, Parameters::None)
+    }
+}
+
+impl ToValue for UncheckedString {
+    fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
+        link.create_value(ValueInput::Varchar(&self.0))
     }
 }
 
@@ -253,12 +266,12 @@ unsafe impl VectorElement for UncheckedString {
 
 // SAFETY: `&str` is valid UTF-8, and `write_bytes` stores it in the vector's arena.
 unsafe impl WritableVectorElement for UncheckedString {
-    type Write<'a> = &'a str;
+    type Write = str;
 
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<Self::Write<'_>>,
+        value: Option<&Self::Write>,
     ) -> Result<()> {
         // SAFETY: The caller guarantees a writable, flat, in-bounds row.
         unsafe { vector.write_bytes(index, value.map(|v| v.as_bytes())) }
@@ -267,13 +280,13 @@ unsafe impl WritableVectorElement for UncheckedString {
 
 // SAFETY: `&str` is valid UTF-8, and `write_bytes` stores it in the vector's arena.
 unsafe impl WritableVectorElement for String {
-    type Write<'a> = &'a str;
+    type Write = str;
 
     #[inline(always)]
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<Self::Write<'_>>,
+        value: Option<&Self::Write>,
     ) -> Result<()> {
         // SAFETY: The caller guarantees a writable, flat, in-bounds row.
         unsafe { vector.write_bytes(index, value.map(|v| v.as_bytes())) }
@@ -282,12 +295,12 @@ unsafe impl WritableVectorElement for String {
 
 // SAFETY: `write_bytes` stores the bytes in the vector's arena.
 unsafe impl WritableVectorElement for BlobValue {
-    type Write<'a> = &'a [u8];
+    type Write = [u8];
 
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<Self::Write<'_>>,
+        value: Option<&Self::Write>,
     ) -> Result<()> {
         // SAFETY: The caller guarantees a writable, flat, in-bounds row.
         unsafe { vector.write_bytes(index, value) }
@@ -296,7 +309,7 @@ unsafe impl WritableVectorElement for BlobValue {
 
 // SAFETY: `check_bit` rejects invalid BIT bytes before `write_bytes` stores them.
 unsafe impl WritableVectorElement for BitValue {
-    type Write<'a> = &'a [u8];
+    type Write = [u8];
 
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, Self>,
@@ -311,15 +324,9 @@ unsafe impl WritableVectorElement for BitValue {
     }
 }
 
-// SAFETY: the native VARCHAR writer copies the borrowed string into the vector's arena.
-unsafe impl crate::vector::OwnedVectorElement for String {
-    #[inline]
-    unsafe fn write_ref(
-        writer: &mut crate::vector::VectorWriter<'_, Self>,
-        index: usize,
-        value: Option<&Self>,
-    ) -> Result<()> {
-        unsafe { writer.set_unchecked(index, value.map(String::as_str)) }
+impl std::borrow::Borrow<str> for UncheckedString {
+    fn borrow(&self) -> &str {
+        &self.0
     }
 }
 
@@ -348,38 +355,26 @@ impl HasDuckDBBytes for &str {}
 
 // SAFETY: input strings are UTF-8 and are copied into the vector's arena.
 unsafe impl WritableVectorElement for &str {
-    type Write<'a> = Self;
+    type Write = str;
 
     unsafe fn write(
         writer: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<Self>,
+        value: Option<&Self::Write>,
     ) -> Result<()> {
         unsafe { writer.write_bytes(index, value.map(str::as_bytes)) }
     }
 }
 
-crate::vector::owned_by_copy!(&str);
-
-// SAFETY: the native BLOB writer copies bytes into the vector's arena.
-unsafe impl crate::vector::OwnedVectorElement for BlobValue {
-    unsafe fn write_ref(
-        writer: &mut crate::vector::VectorWriter<'_, Self>,
-        index: usize,
-        value: Option<&Self>,
-    ) -> Result<()> {
-        unsafe { writer.set_unchecked(index, value.map(|value| value.0.as_slice())) }
+impl std::borrow::Borrow<[u8]> for BlobValue {
+    fn borrow(&self) -> &[u8] {
+        &self.0
     }
 }
 
-// SAFETY: the native BIT writer validates and copies bytes into the vector's arena.
-unsafe impl crate::vector::OwnedVectorElement for BitValue {
-    unsafe fn write_ref(
-        writer: &mut crate::vector::VectorWriter<'_, Self>,
-        index: usize,
-        value: Option<&Self>,
-    ) -> Result<()> {
-        unsafe { writer.set_unchecked(index, value.map(|value| value.0.as_slice())) }
+impl std::borrow::Borrow<[u8]> for BitValue {
+    fn borrow(&self) -> &[u8] {
+        &self.0
     }
 }
 

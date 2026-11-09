@@ -4,7 +4,7 @@ use crate::raw::RawExt;
 use crate::{Result, check_api_call, ffi, logical_type::LogicalTypeID};
 
 use super::{
-    Arena, DuckDBBytes, HasChildren, HasDuckDBBytes, OwnedVectorElement, StorageKind, Unknown, Vector, VectorElement,
+    Arena, DuckDBBytes, HasChildren, HasDuckDBBytes, StorageKind, Unknown, Vector, VectorElement,
     WritableVectorElement, not_flat, not_writable, out_of_bounds,
 };
 
@@ -51,7 +51,7 @@ use super::{
 /// fn resize(vector: &mut Vector<'_, i32>) -> Result<()> {
 ///     let mut writer = vector.writer()?;
 ///     vector.set_size(10)?;
-///     writer.set(0, Some(42))?;
+///     writer.set(0, Some(&42))?;
 ///     Ok(())
 /// }
 /// ```
@@ -145,9 +145,9 @@ impl<'writer, T: VectorElement> VectorWriter<'writer, T> {
     ///
     /// fn overwrite(vector: &mut Vector<'_, i32>) -> Result<()> {
     ///     let mut writer = vector.writer()?;
-    ///     writer.set(0, Some(1))?;
+    ///     writer.set(0, Some(&1))?;
     ///     let data = unsafe { writer.as_slice_mut() }.unwrap();
-    ///     writer.set(0, Some(2))?;
+    ///     writer.set(0, Some(&2))?;
     ///     data[0] = 3;
     ///     Ok(())
     /// }
@@ -179,7 +179,7 @@ impl<'writer, T: VectorElement> VectorWriter<'writer, T> {
     ///
     /// fn overwrite(vector: &mut Vector<'_, i32>) -> Result<()> {
     ///     let mut writer = vector.writer()?;
-    ///     writer.set(0, Some(1))?;
+    ///     writer.set(0, Some(&1))?;
     ///     let mask = unsafe { writer.validity_mut()? };
     ///     writer.set(0, None)?;
     ///     mask[0] = 0;
@@ -232,7 +232,7 @@ impl<'writer, T: VectorElement> VectorWriter<'writer, T> {
         result
     }
 
-    pub(crate) fn write_value_slow(&mut self, index: usize, value: crate::value::Value) -> Result<()> {
+    pub(crate) fn write_value_slow(&mut self, index: usize, value: &crate::value::Value) -> Result<()> {
         let result = self.vector_mut().write_value_slow(index, value);
         self.refresh_buffers()?;
         result
@@ -286,14 +286,17 @@ impl<'writer, T: HasChildren> VectorWriter<'writer, T> {
     /// The child must be validated as `U`, with `index` in bounds and a fixed type.
     #[doc(hidden)]
     #[inline]
-    pub unsafe fn write_child_ref_unchecked<U: OwnedVectorElement + 'writer>(
+    pub unsafe fn write_child_unchecked<U: WritableVectorElement + 'writer>(
         &mut self,
         child_index: usize,
         index: usize,
-        value: Option<&U>,
+        value: Option<&U::Write>,
     ) -> Result<()> {
         // SAFETY: the caller guarantees the child's type and row bounds.
-        unsafe { U::write_ref(self.child_writer_unchecked::<U>(child_index)?, index, value) }
+        unsafe {
+            self.child_writer_unchecked::<U>(child_index)?
+                .set_unchecked(index, value)
+        }
     }
 
     #[inline]
@@ -311,12 +314,10 @@ impl<'writer, T: HasChildren> VectorWriter<'writer, T> {
 }
 
 impl<T: WritableVectorElement> VectorWriter<'_, T> {
-    /// Encode a value and update its validity. `None` writes SQL NULL.
-    ///
-    /// Nested NULLs propagate to descendants. Logical value checks, such as
-    /// decimal range and array length, remain enforced.
+    /// Copy a borrowed input into the vector and update validity; `None` writes SQL NULL.
+    /// Nested NULLs propagate to descendants, and logical value checks remain enforced.
     #[inline(always)]
-    pub fn set(&mut self, index: usize, value: Option<T::Write<'_>>) -> Result<()> {
+    pub fn set(&mut self, index: usize, value: Option<&T::Write>) -> Result<()> {
         if index >= self.len() {
             return Err(out_of_bounds(index, self.len()));
         }
@@ -331,7 +332,7 @@ impl<T: WritableVectorElement> VectorWriter<'_, T> {
     /// # Safety
     /// `index` must be less than [`Self::len`].
     #[inline(always)]
-    pub unsafe fn set_unchecked(&mut self, index: usize, value: Option<T::Write<'_>>) -> Result<()> {
+    pub unsafe fn set_unchecked(&mut self, index: usize, value: Option<&T::Write>) -> Result<()> {
         let is_valid = value.is_some();
         // SAFETY: The writer guarantees flat, writable storage; the caller guarantees bounds.
         unsafe { T::write(self, index, value)? };
@@ -340,20 +341,6 @@ impl<T: WritableVectorElement> VectorWriter<'_, T> {
             unsafe { self.set_validity_unchecked(index, is_valid) };
         }
         Ok(())
-    }
-}
-
-impl<T: OwnedVectorElement> VectorWriter<'_, T> {
-    /// Write a borrowed Rust value and update its validity. `None` writes SQL NULL.
-    ///
-    /// Strings and nested data are copied into the vector, so `value` is not moved or cloned.
-    #[inline]
-    pub fn set_ref(&mut self, index: usize, value: Option<&T>) -> Result<()> {
-        if index >= self.len() {
-            return Err(out_of_bounds(index, self.len()));
-        }
-        // SAFETY: The writer is flat and writable, and the row is in bounds.
-        unsafe { T::write_ref(self, index, value) }
     }
 }
 

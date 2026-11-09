@@ -628,10 +628,10 @@ impl<T: VectorElement> Vector<'_, T> {
         VectorWriter::new(self)
     }
 
-    /// Write one owned [`Value`] through DuckDB's generic value API.
+    /// Write a borrowed [`Value`] through DuckDB's generic value API.
     ///
     /// This is the slow path; prefer [`VectorWriter::set`] for typed vector access.
-    pub fn write_value_slow(&mut self, index: usize, value: Value) -> Result<()> {
+    pub fn write_value_slow(&mut self, index: usize, value: &Value) -> Result<()> {
         if !self.is_writable() {
             return Err(not_writable());
         }

@@ -230,10 +230,10 @@ pub fn as_vector_element(input: TokenStream) -> TokenStream {
     expand_neo_derive(input, neo::as_vector_element)
 }
 
-/// Derive `WritableVectorElement` and `OwnedVectorElement` for a named struct.
+/// Derive `WritableVectorElement` for a named struct.
 ///
-/// `set` takes the struct by value and `set_ref` borrows it; both write each field by reference.
-/// Requires `VectorElement` and `T` or `Option<T>` fields with `T: OwnedVectorElement`.
+/// `set` borrows the struct and writes each field through its borrowed write input.
+/// Requires `VectorElement` and fields implementing `WritableVectorElement + Borrow<T::Write>`.
 /// Plain fields write non-NULL values; optional fields preserve NULL. Passing `None` as the
 /// entire input nulls every child without requiring `Default` or a separate write struct.
 /// A custom unsafe `VectorElement` implementation must validate the complete named field layout;

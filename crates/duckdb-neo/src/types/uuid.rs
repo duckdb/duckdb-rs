@@ -84,19 +84,17 @@ unsafe impl VectorElement for UuidValueRaw {
     }
 }
 
-crate::vector::owned_by_copy!(UuidValueRaw);
-
 // SAFETY: every `i128` is a valid UUID.
 unsafe impl WritableVectorElement for UuidValueRaw {
-    type Write<'a> = Self;
+    type Write = Self;
 
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<Self::Write<'_>>,
+        value: Option<&Self::Write>,
     ) -> Result<()> {
         // SAFETY: The caller guarantees a writable, flat, in-bounds row.
-        unsafe { vector.write_internal(index, value) }
+        unsafe { vector.write_internal(index, value.copied()) }
     }
 }
 
@@ -193,19 +191,17 @@ mod external {
         }
     }
 
-    crate::vector::owned_by_copy!(Uuid);
-
     // SAFETY: every `Uuid` converts to a valid `UuidValueRaw`.
     unsafe impl WritableVectorElement for Uuid {
-        type Write<'a> = Uuid;
+        type Write = Uuid;
 
         unsafe fn write(
             vector: &mut crate::vector::VectorWriter<'_, Self>,
             index: usize,
-            value: Option<Self::Write<'_>>,
+            value: Option<&Self::Write>,
         ) -> Result<()> {
             // SAFETY: The caller guarantees a writable, flat, in-bounds row.
-            unsafe { vector.write_internal(index, value.map(UuidValueRaw::from)) }
+            unsafe { vector.write_internal(index, value.copied().map(UuidValueRaw::from)) }
         }
     }
 
@@ -250,7 +246,7 @@ mod external {
             let mut values = chunk.get_vector_at_mut::<Uuid>(0)?;
             values.set_size(expected.len() + 1)?;
             for (index, uuid) in expected.into_iter().enumerate() {
-                values.writer()?.set(index, Some(uuid))?;
+                values.writer()?.set(index, Some(&uuid))?;
             }
             values.writer()?.set(expected.len(), None)?;
             let mut all = expected.map(Some).to_vec();

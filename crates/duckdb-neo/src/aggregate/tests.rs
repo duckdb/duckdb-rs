@@ -392,7 +392,7 @@ impl AggregateCallbacks for PaddedSum {
     ) -> crate::Result<()> {
         let mut result = result.cast::<i64>()?;
         for (index, state) in states.iter().enumerate() {
-            result.writer()?.set(result_offset + index, Some(**state))?;
+            result.writer()?.set(result_offset + index, Some(*state))?;
         }
         Ok(())
     }

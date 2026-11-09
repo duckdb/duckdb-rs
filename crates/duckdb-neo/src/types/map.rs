@@ -12,7 +12,7 @@ use crate::{
     logical_type::{LogicalType, LogicalTypeID},
     types::Struct,
     value::{Value, ValueInput},
-    vector::{HasChildren, OwnedVectorElement, Vector, VectorElement, VectorWriter, WritableVectorElement},
+    vector::{HasChildren, Vector, VectorElement, VectorWriter, WritableVectorElement},
 };
 
 /// A `MAP` row of `(key, value)` entries in storage order; a `None` value is SQL NULL.
@@ -145,8 +145,8 @@ unsafe impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
         let list = unsafe { &*data_ptr.add(physical) };
 
         // SAFETY: Map<K, V>::validate checked the entries and both fields.
-        let entries = unsafe { vector.child_reader::<crate::vector::Unknown>(0) };
-        let (keys, values) = unsafe { (entries.child_reader::<K>(0), entries.child_reader::<V>(1)) };
+        let entries = unsafe { vector.child_reader_ref::<crate::vector::Unknown>(0) };
+        let (keys, values) = unsafe { (entries.child_reader_ref::<K>(0), entries.child_reader_ref::<V>(1)) };
         MapRow {
             keys,
             values,
@@ -240,32 +240,15 @@ unsafe fn write_map<'w, K: VectorElement + 'w, V: VectorElement + 'w, E>(
 }
 
 // SAFETY: entries only cover keys and values written through the fields' own writers.
-unsafe impl<K: WritableVectorElement, V: WritableVectorElement> WritableVectorElement for Map<K, V> {
-    type Write<'a> = Map<K::Write<'a>, V::Write<'a>>;
+unsafe impl<K, V> WritableVectorElement for Map<K, V>
+where
+    K: WritableVectorElement + std::borrow::Borrow<K::Write>,
+    V: WritableVectorElement + std::borrow::Borrow<V::Write>,
+{
+    type Write = Self;
 
     #[inline]
-    unsafe fn write(vector: &mut VectorWriter<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
-        // SAFETY: the caller guarantees an in-bounds row; Map<K, V>::validate checked the entries and both fields.
-        unsafe {
-            write_map(
-                vector,
-                index,
-                value.map(|value| value.0.into_iter()),
-                |entries, entry, (key, value)| {
-                    entries
-                        .child_writer_unchecked::<K>(0)?
-                        .set_unchecked(entry, Some(key))?;
-                    entries.child_writer_unchecked::<V>(1)?.set_unchecked(entry, value)
-                },
-            )
-        }
-    }
-}
-
-// SAFETY: entries only cover keys and values written through the fields' own writers.
-unsafe impl<K: OwnedVectorElement, V: OwnedVectorElement> OwnedVectorElement for Map<K, V> {
-    #[inline]
-    unsafe fn write_ref(vector: &mut VectorWriter<'_, Self>, index: usize, value: Option<&Self>) -> Result<()> {
+    unsafe fn write(vector: &mut VectorWriter<'_, Self>, index: usize, value: Option<&Self::Write>) -> Result<()> {
         // SAFETY: the caller guarantees an in-bounds row; Map<K, V>::validate checked the entries and both fields.
         unsafe {
             write_map(
@@ -273,13 +256,15 @@ unsafe impl<K: OwnedVectorElement, V: OwnedVectorElement> OwnedVectorElement for
                 index,
                 value.map(|value| value.0.iter()),
                 |entries, entry, (key, value)| {
-                    K::write_ref(entries.child_writer_unchecked::<K>(0)?, entry, Some(key))?;
-                    V::write_ref(entries.child_writer_unchecked::<V>(1)?, entry, value.as_ref())
+                    entries
+                        .child_writer_unchecked::<K>(0)?
+                        .set_unchecked(entry, Some(key.borrow()))?;
+                    entries
+                        .child_writer_unchecked::<V>(1)?
+                        .set_unchecked(entry, value.as_ref().map(std::borrow::Borrow::borrow))
                 },
-            )?;
-            vector.set_validity_unchecked(index, value.is_some());
+            )
         }
-        Ok(())
     }
 }
 
@@ -288,8 +273,8 @@ unsafe impl<K: OwnedVectorElement, V: OwnedVectorElement> OwnedVectorElement for
 /// Reading a key panics if it is NULL, which DuckDB does not allow in a `MAP`.
 #[derive(Debug)]
 pub struct MapRow<'a, K: VectorElement, V: VectorElement> {
-    keys: crate::vector::VectorReader<'a, K>,
-    values: crate::vector::VectorReader<'a, V>,
+    keys: &'a crate::vector::VectorReader<'a, K>,
+    values: &'a crate::vector::VectorReader<'a, V>,
     pub(crate) offset: usize,
     pub(crate) length: usize,
 }
@@ -363,11 +348,11 @@ mod tests {
         let mut chunk = DataChunk::create(&conn, &[Map::<i32, i32>::logical_type(&conn)?], true)?;
         let mut maps = chunk.get_vector_at_mut::<Map<i32, i32>>(0)?;
         maps.set_size(2)?;
-        maps.write_value_slow(0, Map(vec![(1, Some(10)), (2, Some(20))]).value(&conn)?)?;
+        maps.write_value_slow(0, &Map(vec![(1, Some(10)), (2, Some(20))]).value(&conn)?)?;
         assert_eq!(maps.child_offset(), 2);
         // SAFETY: row 1 writes the only new entry.
         unsafe { maps.set_child_size(3)? };
-        maps.writer()?.set(1, Some(Map(vec![(3, Some(30))])))?;
+        maps.writer()?.set(1, Some(&Map(vec![(3, Some(30))])))?;
         let reader = maps.reader()?;
         let row = reader.get(0)?.unwrap();
         assert_eq!(
@@ -391,8 +376,8 @@ mod tests {
             maps.set_size(3)?;
             // SAFETY: row 0 writes both entries; the others write none.
             unsafe { maps.set_child_size(2)? };
-            maps.writer()?.set(0, Some(Map(vec![(1, None), (2, Some(20))])))?;
-            maps.writer()?.set(1, Some(Map::default()))?;
+            maps.writer()?.set(0, Some(&Map(vec![(1, None), (2, Some(20))])))?;
+            maps.writer()?.set(1, Some(&Map::default()))?;
             maps.writer()?.set(2, None)?;
         }
 
@@ -422,8 +407,8 @@ mod tests {
             // SAFETY: row 0 writes all three entries.
             unsafe { maps.set_child_size(3)? };
             maps.writer()?
-                .set(0, Some(Map(vec![(1, None), (2, Some(20)), (3, Some(30))])))?;
-            maps.writer()?.set(1, Some(Map::default()))?;
+                .set(0, Some(&Map(vec![(1, None), (2, Some(20)), (3, Some(30))])))?;
+            maps.writer()?.set(1, Some(&Map::default()))?;
         }
 
         let maps = chunk.get_vector_at::<Map<i32, i32>>(0)?;
@@ -498,8 +483,8 @@ mod tests {
         }
         {
             let mut writer = maps.writer()?;
-            writer.set(0, Some(Map(vec![(7, Some(70)), (2, None)])))?;
-            writer.set_ref(1, Some(&Map(vec![(9, Some(90)), (4, Some(40))])))?;
+            writer.set(0, Some(&Map(vec![(7, Some(70)), (2, None)])))?;
+            writer.set(1, Some(&Map(vec![(9, Some(90)), (4, Some(40))])))?;
             assert_eq!(writer.child_offset(), 4);
         }
 
@@ -524,15 +509,15 @@ mod tests {
         let mut chunk = DataChunk::create(&conn, &[Map::<i32, String>::logical_type(&conn)?], true)?;
         let mut maps = chunk.get_vector_at_mut::<Map<i32, String>>(0)?;
         maps.set_size(2)?;
-        let error = maps.writer()?.set(0, Some(Map(vec![(1, None)]))).unwrap_err();
+        let error = maps.writer()?.set(0, Some(&Map(vec![(1, None)]))).unwrap_err();
         assert!(error.message.contains("only 0 of 0 remain"), "{error}");
         // SAFETY: the rows below write all three entries.
         unsafe { maps.set_child_size(3)? };
         {
             let mut writer = maps.writer()?;
-            writer.set(1, Some(Map(vec![(1, Some("one")), (2, None)])))?;
+            writer.set(1, Some(&Map(vec![(1, Some("one".to_owned())), (2, None)])))?;
             let error = writer
-                .set(0, Some(Map(vec![(3, Some("three")), (4, None)])))
+                .set(0, Some(&Map(vec![(3, Some("three".to_owned())), (4, None)])))
                 .unwrap_err();
             assert!(
                 error
@@ -541,7 +526,7 @@ mod tests {
                 "{error}"
             );
             assert_eq!(writer.child_offset(), 2);
-            writer.set(0, Some(Map(vec![(3, Some("three"))])))?;
+            writer.set(0, Some(&Map(vec![(3, Some("three".to_owned()))])))?;
         }
         let reader = maps.reader()?;
         let row = reader.get(0)?.unwrap();
@@ -577,7 +562,7 @@ mod tests {
         {
             let mut writer = maps.writer()?;
             for (index, row) in rows.iter().enumerate() {
-                writer.set_ref(index, row.as_ref())?;
+                writer.set(index, row.as_ref())?;
             }
             assert_eq!(writer.child_offset(), 3);
         }
@@ -609,7 +594,7 @@ mod tests {
         }
         // SAFETY: the row below writes all three maps.
         unsafe { lists.set_child_size(3)? };
-        lists.writer()?.set_ref(0, Some(&row))?;
+        lists.writer()?.set(0, Some(&row))?;
         assert_eq!(lists.get_value_slow(0)?.get::<List<Map<i32, String>>>()?, Some(row));
         Ok(())
     }
@@ -628,7 +613,7 @@ mod tests {
         maps.set_size(1).unwrap();
         // SAFETY: the row below writes the only entry.
         unsafe { maps.set_child_size(1).unwrap() };
-        maps.writer().unwrap().set(0, Some(Map(vec![(1, Some(10))]))).unwrap();
+        maps.writer().unwrap().set(0, Some(&Map(vec![(1, Some(10))]))).unwrap();
         {
             let mut children = maps.children_mut().unwrap();
             let mut entries = children.get_vector_at_mut::<Struct>(0).unwrap();

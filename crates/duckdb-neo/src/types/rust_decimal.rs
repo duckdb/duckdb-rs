@@ -93,17 +93,15 @@ unsafe impl VectorElement for rust_decimal::Decimal {
     }
 }
 
-crate::vector::owned_by_copy!(rust_decimal::Decimal);
-
 /// Rescales to the column's scale; fails instead of rounding or overflowing.
 // SAFETY: `write` checks the digit range and writes the storage integer for the vector's width.
 unsafe impl WritableVectorElement for rust_decimal::Decimal {
-    type Write<'a> = rust_decimal::Decimal;
+    type Write = rust_decimal::Decimal;
 
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<Self::Write<'_>>,
+        value: Option<&Self::Write>,
     ) -> Result<()> {
         let Some(value) = value else {
             // SAFETY: The caller guarantees a writable, flat, in-bounds row; no data is written.
@@ -261,20 +259,20 @@ mod tests {
             let mut chunk = DataChunk::create(&conn, &[logical_type], true)?;
             let mut vector = chunk.get_vector_at_mut::<rust_decimal::Decimal>(0)?;
             vector.set_size(4)?;
-            vector.writer()?.set(0, Some(dec("1.5")))?;
-            vector.writer()?.set(1, Some(dec("-12.300")))?;
+            vector.writer()?.set(0, Some(&dec("1.5")))?;
+            vector.writer()?.set(1, Some(&dec("-12.300")))?;
             vector.writer()?.set(2, None)?;
-            vector.writer()?.set(3, Some(dec("99.99")))?;
+            vector.writer()?.set(3, Some(&dec("99.99")))?;
             assert_eq!(
                 vector.reader()?.iter().collect::<Vec<_>>(),
                 vec![Some(dec("1.50")), Some(dec("-12.30")), None, Some(dec("99.99"))]
             );
 
-            assert!(vector.writer()?.set(0, Some(dec("1.234"))).is_err());
+            assert!(vector.writer()?.set(0, Some(&dec("1.234"))).is_err());
             let too_big = 10i128.pow(u32::from(width) - 2);
             let error = vector
                 .writer()?
-                .set(0, Some(rust_decimal::Decimal::from_i128_with_scale(too_big, 0)))
+                .set(0, Some(&rust_decimal::Decimal::from_i128_with_scale(too_big, 0)))
                 .unwrap_err();
             assert!(
                 error

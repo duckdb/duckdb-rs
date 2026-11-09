@@ -529,8 +529,8 @@ mod tests {
         let mut chunk = DataChunk::create(&conn, &[i64::logical_type(&conn)?], true)?;
         let mut vec = chunk.get_vector_at_mut::<i64>(0)?;
         vec.set_size(2)?;
-        vec.writer()?.set(0, Some(1))?;
-        vec.writer()?.set(1, Some(2))?;
+        vec.writer()?.set(0, Some(&1))?;
+        vec.writer()?.set(1, Some(&2))?;
         cdc.append(&mut chunk)?;
 
         let statement = Statements::parse(&conn, "SELECT sum(x)::BIGINT FROM cdc")?
