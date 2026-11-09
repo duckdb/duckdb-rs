@@ -57,25 +57,30 @@ ffi_enum_redeclaration! {
 
 type LogicalTypeFn = fn(&dyn FFILink) -> Result<LogicalType>;
 
-enum ParameterType {
+enum TypeDeclaration {
     Rust(LogicalTypeFn),
     Resolved(LogicalType),
 }
 
-impl ParameterType {
+impl TypeDeclaration {
+    fn rust_type<T: DuckDBType>() -> Self {
+        // A non-capturing closure, since `T::logical_type::<dyn FFILink>` would require `'static`.
+        Self::Rust(|link| T::logical_type(link))
+    }
+
     fn resolve(self, link: &dyn FFILink) -> Result<LogicalType> {
         match self {
-            ParameterType::Rust(create) => create(link),
-            ParameterType::Resolved(logical_type) => Ok(logical_type),
+            Self::Rust(create) => create(link),
+            Self::Resolved(logical_type) => Ok(logical_type),
         }
     }
 }
 
-impl fmt::Debug for ParameterType {
+impl fmt::Debug for TypeDeclaration {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ParameterType::Rust(_) => f.write_str("Rust"),
-            ParameterType::Resolved(logical_type) => f.debug_tuple("Resolved").field(logical_type).finish(),
+            Self::Rust(_) => f.write_str("Rust"),
+            Self::Resolved(logical_type) => f.debug_tuple("Resolved").field(logical_type).finish(),
         }
     }
 }
@@ -98,19 +103,19 @@ impl<T: ToValue> ErasedToValue for T {
 pub struct FunctionParameter {
     name: String,
     kind: FunctionParameterKind,
-    logical_type: ParameterType,
+    logical_type: TypeDeclaration,
     default_value: Option<Box<dyn ErasedToValue>>,
 }
 
 impl FunctionParameter {
     /// Declare a required parameter whose type is the Rust type `T`.
     pub fn new<T: DuckDBType>(name: impl Into<String>) -> Self {
-        Self::declare(name.into(), Self::rust_type::<T>(), None)
+        Self::declare(name.into(), TypeDeclaration::rust_type::<T>(), None)
     }
 
     /// Declare a parameter that callers may omit, using `value` in its place.
     pub fn with_default<T: DuckDBType + ToValue + 'static>(name: impl Into<String>, value: T) -> Self {
-        Self::declare(name.into(), Self::rust_type::<T>(), Some(Box::new(value)))
+        Self::declare(name.into(), TypeDeclaration::rust_type::<T>(), Some(Box::new(value)))
     }
 
     /// Declare a variadic tail accepting zero or more arguments of type `T`.
@@ -120,7 +125,7 @@ impl FunctionParameter {
 
     /// Declare a required parameter with an explicit logical type.
     pub fn with_type(name: impl Into<String>, logical_type: LogicalType) -> Self {
-        Self::declare(name.into(), ParameterType::Resolved(logical_type), None)
+        Self::declare(name.into(), TypeDeclaration::Resolved(logical_type), None)
     }
 
     /// Set the default value while preserving the declared logical type.
@@ -135,12 +140,7 @@ impl FunctionParameter {
         self
     }
 
-    fn rust_type<T: DuckDBType>() -> ParameterType {
-        // A non-capturing closure, since `T::logical_type::<dyn FFILink>` would require `'static`.
-        ParameterType::Rust(|link| T::logical_type(link))
-    }
-
-    fn declare(name: String, logical_type: ParameterType, default_value: Option<Box<dyn ErasedToValue>>) -> Self {
+    fn declare(name: String, logical_type: TypeDeclaration, default_value: Option<Box<dyn ErasedToValue>>) -> Self {
         FunctionParameter {
             name,
             kind: FunctionParameterKind::Standard,
@@ -231,7 +231,7 @@ impl FunctionDocumentationBuilder {
 #[derive(Debug, Default)]
 pub struct SignatureBuilder {
     parameters: Vec<FunctionParameter>,
-    return_type: Option<ParameterType>,
+    return_type: Option<TypeDeclaration>,
     documentation: Option<FunctionDocumentationBuilder>,
 }
 
@@ -253,13 +253,13 @@ impl SignatureBuilder {
     /// Scalar and aggregate functions require one. Table functions leave it
     /// unset and declare their result columns when binding.
     pub fn return_type(mut self, logical_type: LogicalType) -> Self {
-        self.return_type = Some(ParameterType::Resolved(logical_type));
+        self.return_type = Some(TypeDeclaration::Resolved(logical_type));
         self
     }
 
     /// Set the return type from `T`, resolving its logical type at registration.
     pub fn return_type_of<T: DuckDBType>(mut self) -> Self {
-        self.return_type = Some(FunctionParameter::rust_type::<T>());
+        self.return_type = Some(TypeDeclaration::rust_type::<T>());
         self
     }
 
