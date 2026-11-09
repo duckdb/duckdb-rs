@@ -77,6 +77,23 @@ fn write_api_bindings(header: &HeaderLocation, api: CApi, out_path: &Path) {
 pub(crate) fn write_bindings(header_dir: &Path, out_dir: &str) {
     let header = HeaderLocation::IncludeDir(header_dir.to_path_buf());
     write_all_bindings(&header, Path::new(out_dir));
+    // Downstream C/C++ builds find bundled headers through DEP_DUCKDB_INCLUDE.
+    println!("cargo:include={}", header_dir.display());
+}
+
+#[cfg(feature = "bundled")]
+pub(crate) fn build_static_extension_autoregister(loader_dir: &Path, wrapper: &Path, out_dir: &str) {
+    let lib_name = "duckdb_static_extension_autoregister";
+    cc::Build::new()
+        .cpp(true)
+        .file(wrapper)
+        .include(loader_dir)
+        .warnings(false)
+        .cargo_metadata(false)
+        .compile(lib_name);
+    println!("cargo:rustc-link-search=native={out_dir}");
+    // Nothing references the constructor object, so retain its static initializer.
+    println!("cargo:rustc-link-lib=static:+whole-archive={lib_name}");
 }
 
 #[cfg(all(feature = "bundled", not(feature = "bundled-cmake")))]

@@ -6,8 +6,7 @@ use std::{
 };
 
 pub(crate) const AUTOREGISTER_WRAPPER: &str = "static_extension_autoregister_rs.cpp";
-const AUTOREGISTER_SOURCE: &str =
-    "#include \"static_extension_autoregister.cpp\"\nextern \"C\" int duckdb_rs_static_extension_autoregister = 1;\n";
+const AUTOREGISTER_SOURCE: &str = include_str!("../static_extension_autoregister_rs.cpp");
 const COMPLETE: &str = ".complete";
 
 pub(crate) fn unpack(archive_path: &Path, out_dir: &Path) -> io::Result<PathBuf> {
@@ -113,7 +112,10 @@ mod tests {
 
         assert_eq!(unpack(&archive_path, out_dir.path()).unwrap(), source_dir);
         assert!(source_dir.join("duckdb/src/include/duckdb.h").is_file());
-        assert!(source_dir.join(AUTOREGISTER_WRAPPER).is_file());
+        assert_eq!(
+            fs::read_to_string(source_dir.join(AUTOREGISTER_WRAPPER)).unwrap(),
+            AUTOREGISTER_SOURCE,
+        );
         assert!(source_dir.join(COMPLETE).is_file());
     }
 
