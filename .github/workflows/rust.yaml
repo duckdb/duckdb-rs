@@ -233,8 +233,8 @@ jobs:
 
   cmake-arm64:
     # GNU ld (the arm64 Linux default) is single-pass and catches link-order bugs that lld hides.
-    # Release tags and v*.*-* branches only, to keep regular CI fast.
-    if: startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/v') || startsWith(github.base_ref, 'v')
+    # Skipped on PRs to main to keep regular CI fast; pushes to main still catch regressions.
+    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/v') || startsWith(github.base_ref, 'v')
     needs: test
     name: Bundled CMake ${{ matrix.name }}
     strategy:
