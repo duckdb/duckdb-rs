@@ -4,12 +4,12 @@ use std::rc::Rc;
 use duckdb_loadable_macros::AsDuckDB;
 
 use crate::logical_type::LogicalTypeID;
-use crate::scalar::ScalarFunctionBuilder;
+use crate::scalar::MicroScalar;
 use crate::types::Any;
 use crate::{
     Parameters, ToValue,
-    builder_helpers::scalar_callback,
-    data_chunk::DataChunk,
+    connection::Context,
+    data_chunk::{DataChunk, VectorCollection},
     environment::{Environment, StorageLocation},
     error::{DuckDBError, Error},
     logical_type::LogicalType,
@@ -22,7 +22,7 @@ use crate::{
         UuidValueRaw, Variant, WordDecimal,
     },
     value::Value,
-    vector::StorageKind,
+    vector::{StorageKind, Vector},
 };
 
 #[test]
@@ -730,7 +730,7 @@ enum SwappedNumOrStr {
     Str(i32),
 }
 
-scalar_callback!(NegateScalar, i32, |input, output, _ctx, _user_data| {
+fn negate_scalar(_ctx: &Context, input: &mut VectorCollection, output: Vector<'_, i32>) -> crate::Result<()> {
     let input = input.get_vector_at::<i32>(0)?;
     let mut output = output;
     output.set_size(input.len())?;
@@ -743,9 +743,9 @@ scalar_callback!(NegateScalar, i32, |input, output, _ctx, _user_data| {
     let written: Vec<_> = output.reader()?.iter().map(|value| value.copied()).collect();
     assert_eq!(written, vec![Some(-1), Some(-2), Some(-3), Some(-4), Some(-5)]);
     Ok(())
-});
+}
 
-scalar_callback!(UpperScalar, String, |input, output, _ctx, _user_data| {
+fn upper_scalar(_ctx: &Context, input: &mut VectorCollection, output: Vector<'_, String>) -> crate::Result<()> {
     let input = input.get_vector_at::<String>(0)?;
     let mut output = output;
     output.set_size(input.len())?;
@@ -756,17 +756,15 @@ scalar_callback!(UpperScalar, String, |input, output, _ctx, _user_data| {
         }
     }
     Ok(())
-});
+}
 
-scalar_callback!(
-    MapScalar,
-    Map<i32, String>,
-    |input, result, _ctx, _user_data| {
+fn map_scalar(_ctx: &Context, input: &mut VectorCollection, result: Vector<'_, Map<i32, String>>) -> crate::Result<()> {
     let keys = input.get_vector_at::<i32>(0)?;
     let values = input.get_vector_at::<String>(1)?;
     let total_len = keys.len();
     let rows: Vec<_> = keys
-        .reader()?.iter()
+        .reader()?
+        .iter()
         .zip(values.reader()?.iter())
         .map(|(key, value)| {
             (
@@ -780,20 +778,18 @@ scalar_callback!(
     // SAFETY: every row below writes one entry.
     unsafe { result.set_child_size(rows.len())? };
     for (index, (key, value)) in rows.iter().enumerate() {
-        result.writer()?.set(
-            index,
-            Some(HashMap::from([(*key, Some(value.as_str()))])),
-        )?;
+        result
+            .writer()?
+            .set(index, Some(HashMap::from([(*key, Some(value.as_str()))])))?;
     }
     let written: Vec<_> = result.reader()?.iter().collect();
     for (row, (key, value)) in written.into_iter().zip(&rows) {
         assert_eq!(row.as_ref().unwrap().get(key), Some(Some(value.as_str())));
     }
     Ok(())
-    }
-);
+}
 
-scalar_callback!(UnionScalar, TestUnion, |input, output, _ctx, _user_data| {
+fn union_scalar(_ctx: &Context, input: &mut VectorCollection, output: Vector<'_, TestUnion>) -> crate::Result<()> {
     let keys = input.get_vector_at::<i32>(0)?;
     let values = input.get_vector_at::<String>(1)?;
     let rows: Vec<(i32, Option<&str>)> = keys
@@ -815,9 +811,9 @@ scalar_callback!(UnionScalar, TestUnion, |input, output, _ctx, _user_data| {
         output.writer()?.set(index, Some(row))?;
     }
     Ok(())
-});
+}
 
-scalar_callback!(StructScalar, TestStruct, |input, output, _ctx, _user_data| {
+fn struct_scalar(_ctx: &Context, input: &mut VectorCollection, output: Vector<'_, TestStruct>) -> crate::Result<()> {
     let keys = input.get_vector_at::<i32>(0)?;
     let values = input.get_vector_at::<String>(1)?;
     let rows: Vec<_> = keys
@@ -843,14 +839,14 @@ scalar_callback!(StructScalar, TestStruct, |input, output, _ctx, _user_data| {
         assert_eq!(row.value, Some(value.as_str()));
     }
     Ok(())
-});
+}
 
 #[derive(Debug, AsDuckDB)]
 struct SequenceStruct {
     key: i64,
 }
 
-scalar_callback!(StructKeyScalar, i64, |input, output, _ctx, _user_data| {
+fn struct_key_scalar(_ctx: &Context, input: &mut VectorCollection, output: Vector<'_, i64>) -> crate::Result<()> {
     let structs = input.get_vector_at::<SequenceStruct>(0)?;
     let mut output = output;
     output.set_size(structs.len())?;
@@ -858,10 +854,13 @@ scalar_callback!(StructKeyScalar, i64, |input, output, _ctx, _user_data| {
         output.writer()?.set(index, row.and_then(|row| row.key).copied())?;
     }
     Ok(())
-});
+}
 
-// Writes a NULL row whenever the key is NULL.
-scalar_callback!(NullableStructScalar, TestStruct, |input, output, _ctx, _user_data| {
+fn nullable_struct_scalar(
+    _ctx: &Context,
+    input: &mut VectorCollection,
+    output: Vector<'_, TestStruct>,
+) -> crate::Result<()> {
     let keys = input.get_vector_at::<i32>(0)?;
     let mut output = output;
     output.set_size(keys.len())?;
@@ -873,10 +872,13 @@ scalar_callback!(NullableStructScalar, TestStruct, |input, output, _ctx, _user_d
         output.writer()?.set(index, row)?;
     }
     Ok(())
-});
+}
 
-// Writes a NULL row whenever the key is NULL.
-scalar_callback!(NullableUnionScalar, TestUnion, |input, output, _ctx, _user_data| {
+fn nullable_union_scalar(
+    _ctx: &Context,
+    input: &mut VectorCollection,
+    output: Vector<'_, TestUnion>,
+) -> crate::Result<()> {
     let keys = input.get_vector_at::<i32>(0)?;
     let mut output = output;
     output.set_size(keys.len())?;
@@ -885,7 +887,7 @@ scalar_callback!(NullableUnionScalar, TestUnion, |input, output, _ctx, _user_dat
         output.writer()?.set(index, row)?;
     }
     Ok(())
-});
+}
 
 #[derive(Debug, AsDuckDB)]
 struct SmallStruct {
@@ -900,42 +902,41 @@ enum NumOrStruct {
     S(SmallStruct),
 }
 
-// Odd keys pick the INTEGER member, even keys the STRUCT member.
-scalar_callback!(
-    StructMemberUnionScalar,
-    NumOrStruct,
-    |input, output, _ctx, _user_data| {
-        let keys = input.get_vector_at::<i32>(0)?;
-        let mut output = output;
-        output.set_size(keys.len())?;
-        for (index, key) in keys.reader()?.iter().enumerate() {
-            let key = *key.unwrap();
-            let row = if key % 2 == 1 {
-                NumOrStruct::Num(key)
-            } else {
-                NumOrStruct::S(SmallStruct { x: "even".into() })
-            };
-            output.writer()?.set(index, Some(row))?;
-        }
-        Ok(())
+fn struct_member_union_scalar(
+    _ctx: &Context,
+    input: &mut VectorCollection,
+    output: Vector<'_, NumOrStruct>,
+) -> crate::Result<()> {
+    let keys = input.get_vector_at::<i32>(0)?;
+    let mut output = output;
+    output.set_size(keys.len())?;
+    for (index, key) in keys.reader()?.iter().enumerate() {
+        let key = *key.unwrap();
+        let row = if key % 2 == 1 {
+            NumOrStruct::Num(key)
+        } else {
+            NumOrStruct::S(SmallStruct { x: "even".into() })
+        };
+        output.writer()?.set(index, Some(row))?;
     }
-);
+    Ok(())
+}
 
-scalar_callback!(ConstantScalar, i32, |_input, result, ctx, _user_data| {
+fn constant_scalar(ctx: &Context, _input: &mut VectorCollection, result: Vector<'_, i32>) -> crate::Result<()> {
     let val = 42_i32.value(&ctx)?;
     let result = result.make_constant(val, 10)?;
     assert_eq!(unsafe { result.reader().unwrap().as_slice() }.unwrap(), &[42]);
     Ok(())
-});
+}
 
-scalar_callback!(SequenceScalar, i32, |input, result, _ctx, _user_data| {
+fn sequence_scalar(_ctx: &Context, input: &mut VectorCollection, result: Vector<'_, i32>) -> crate::Result<()> {
     let input_len = input.row_count()?;
 
     result.make_sequence(42, 10, input_len)?;
     Ok(())
-});
+}
 
-scalar_callback!(CopyStringScalar, String, |input, result, _ctx, _user_data| {
+fn copy_string_scalar(_ctx: &Context, input: &mut VectorCollection, result: Vector<'_, String>) -> crate::Result<()> {
     let mut vector = input.get_vector_at_mut::<String>(0)?;
     if vector.storage_kind() == StorageKind::Other {
         vector.flatten()?;
@@ -946,9 +947,9 @@ scalar_callback!(CopyStringScalar, String, |input, result, _ctx, _user_data| {
         result.writer()?.set(i, item)?;
     }
     Ok(())
-});
+}
 
-scalar_callback!(DictionaryProbeScalar, i32, |input, output, _ctx, _user_data| {
+fn dictionary_probe_scalar(_ctx: &Context, input: &mut VectorCollection, output: Vector<'_, i32>) -> crate::Result<()> {
     let mut vector = input.get_vector_at_mut::<i32>(0)?;
     let mut output = output;
     output.set_size(vector.len())?;
@@ -983,7 +984,7 @@ scalar_callback!(DictionaryProbeScalar, i32, |input, output, _ctx, _user_data| {
         output.writer()?.set(i, v.copied())?;
     }
     Ok(())
-});
+}
 
 #[test]
 pub fn test_vector_dictionary() -> crate::Result<()> {
@@ -991,12 +992,12 @@ pub fn test_vector_dictionary() -> crate::Result<()> {
     let instance = env.open(StorageLocation::InMemory)?;
     let conn = instance.connect()?;
 
-    ScalarFunctionBuilder::new(
+    MicroScalar::with_signature(
         "dict_probe",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("in"))
             .return_type(i32::logical_type(&conn)?),
-        DictionaryProbeScalar,
+        dictionary_probe_scalar,
     )
     .register(&conn)?;
 
@@ -1004,7 +1005,7 @@ pub fn test_vector_dictionary() -> crate::Result<()> {
     // below without an intervening `Fetch`, so `dict_probe` observes the
     // table function's chunks in their native storage kind: FLAT, CONSTANT,
     // DICTIONARY, then OTHER (SEQUENCE) - in that fixed order. The
-    // DICTIONARY chunk is the one asserted on inside `DictionaryProbeScalar`.
+    // DICTIONARY chunk is the one asserted on inside `dictionary_probe_scalar`.
     let mut result = conn.query(
         "SELECT dict_probe(test_vector) FROM test_vector_types(NULL::INTEGER)",
         Parameters::None,
@@ -1037,7 +1038,7 @@ pub fn test_vector_dictionary() -> crate::Result<()> {
     Ok(())
 }
 
-scalar_callback!(ConstantProbeScalar, i32, |input, output, _ctx, _user_data| {
+fn constant_probe_scalar(_ctx: &Context, input: &mut VectorCollection, output: Vector<'_, i32>) -> crate::Result<()> {
     let mut vector = input.get_vector_at_mut::<i32>(0)?;
     let mut output = output;
     output.set_size(vector.len())?;
@@ -1062,7 +1063,7 @@ scalar_callback!(ConstantProbeScalar, i32, |input, output, _ctx, _user_data| {
         output.writer()?.set(i, v.copied())?;
     }
     Ok(())
-});
+}
 
 #[test]
 pub fn test_vector_constant() -> crate::Result<()> {
@@ -1070,12 +1071,12 @@ pub fn test_vector_constant() -> crate::Result<()> {
     let instance = env.open(StorageLocation::InMemory)?;
     let conn = instance.connect()?;
 
-    ScalarFunctionBuilder::new(
+    MicroScalar::with_signature(
         "const_probe",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("in"))
             .return_type(i32::logical_type(&conn)?),
-        ConstantProbeScalar,
+        constant_probe_scalar,
     )
     .register(&conn)?;
 
@@ -1120,12 +1121,12 @@ fn test_vector_read_write() -> crate::Result<()> {
         .expect("Failed to open in-memory database");
     let conn = instance.connect().expect("Failed to connect to database");
 
-    ScalarFunctionBuilder::new(
+    MicroScalar::with_signature(
         "test",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("input"))
             .return_type(i32::logical_type(&conn)?),
-        NegateScalar,
+        negate_scalar,
     )
     .register(&conn)
     .expect("Failed to register scalar function");
@@ -1180,12 +1181,12 @@ fn test_vector_string() -> crate::Result<()> {
     let instance = env.open(StorageLocation::InMemory)?;
     let conn = instance.connect()?;
 
-    ScalarFunctionBuilder::new(
+    MicroScalar::with_signature(
         "to_upper",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<String>("IN"))
             .return_type(String::logical_type(&conn)?),
-        UpperScalar,
+        upper_scalar,
     )
     .register(&conn)?;
 
@@ -1216,7 +1217,11 @@ fn test_vector_string() -> crate::Result<()> {
 
 #[test]
 fn test_vector_list() -> crate::Result<()> {
-    scalar_callback!(ListMultScalar, List<i32>, |input, output, _ctx, _user_data| {
+    fn list_mult_scalar(
+        _ctx: &Context,
+        input: &mut VectorCollection,
+        output: Vector<'_, List<i32>>,
+    ) -> crate::Result<()> {
         let input = input.get_vector_at::<List<i32>>(0)?;
         let rows: Vec<Option<List<i32>>> = input
             .reader()?
@@ -1232,7 +1237,7 @@ fn test_vector_list() -> crate::Result<()> {
             writer.set_ref(i, row.as_ref())?;
         }
         Ok(())
-    });
+    }
 
     let env = Environment::new()?;
     let instance = env.open(StorageLocation::InMemory)?;
@@ -1240,12 +1245,12 @@ fn test_vector_list() -> crate::Result<()> {
 
     let list_logical_type = List::<i32>::logical_type(&conn)?;
 
-    ScalarFunctionBuilder::new(
+    MicroScalar::with_signature(
         "list_mult",
         SignatureBuilder::new()
             .param(FunctionParameter::with_type("IN", list_logical_type.clone()))
             .return_type(list_logical_type),
-        ListMultScalar,
+        list_mult_scalar,
     )
     .register(&conn)?;
 
@@ -1449,13 +1454,13 @@ pub fn vector_complex_write() -> crate::Result<()> {
 
     let ltype = MapValue::<i32, String>::logical_type(&conn)?;
 
-    ScalarFunctionBuilder::new(
+    MicroScalar::with_signature(
         "to_map",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("key"))
             .param(FunctionParameter::new::<String>("value"))
             .return_type(ltype),
-        MapScalar,
+        map_scalar,
     )
     .register(&conn)?;
 
@@ -1512,13 +1517,13 @@ pub fn vector_union_write() -> crate::Result<()> {
 
     let union_type = TestUnion::logical_type(&conn)?;
 
-    ScalarFunctionBuilder::new(
+    MicroScalar::with_signature(
         "to_union",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("key"))
             .param(FunctionParameter::new::<String>("value"))
             .return_type(union_type),
-        UnionScalar,
+        union_scalar,
     )
     .register(&conn)?;
 
@@ -1552,13 +1557,13 @@ pub fn vector_struct_write() -> crate::Result<()> {
     let instance = env.open(StorageLocation::InMemory)?;
     let conn = instance.connect()?;
 
-    ScalarFunctionBuilder::new(
+    MicroScalar::with_signature(
         "to_struct",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("key"))
             .param(FunctionParameter::new::<String>("value"))
             .return_type(TestStruct::logical_type(&conn)?),
-        StructScalar,
+        struct_scalar,
     )
     .register(&conn)?;
 
@@ -1586,20 +1591,20 @@ pub fn vector_nested_null_write() -> crate::Result<()> {
     let conn = instance.connect()?;
 
     let key = || FunctionParameter::new::<i32>("key");
-    ScalarFunctionBuilder::new(
+    MicroScalar::with_signature(
         "to_struct_or_null",
         SignatureBuilder::new()
             .param(key())
             .return_type(TestStruct::logical_type(&conn)?),
-        NullableStructScalar,
+        nullable_struct_scalar,
     )
     .register(&conn)?;
-    ScalarFunctionBuilder::new(
+    MicroScalar::with_signature(
         "to_union_or_null",
         SignatureBuilder::new()
             .param(key())
             .return_type(TestUnion::logical_type(&conn)?),
-        NullableUnionScalar,
+        nullable_union_scalar,
     )
     .register(&conn)?;
 
@@ -1637,7 +1642,7 @@ pub fn vector_union_inactive_struct_member_is_null() -> crate::Result<()> {
     let instance = env.open(StorageLocation::InMemory)?;
     let conn = instance.connect()?;
 
-    ScalarFunctionBuilder::new(
+    MicroScalar::with_signature(
         "to_union_struct",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("key"))
@@ -1645,7 +1650,7 @@ pub fn vector_union_inactive_struct_member_is_null() -> crate::Result<()> {
                 &conn,
                 "UNION(num INTEGER, s STRUCT(x VARCHAR))",
             )?),
-        StructMemberUnionScalar,
+        struct_member_union_scalar,
     )
     .register(&conn)?;
 
@@ -1668,12 +1673,12 @@ pub fn vector_struct_unreadable_child() -> crate::Result<()> {
     let instance = env.open(StorageLocation::InMemory)?;
     let conn = instance.connect()?;
 
-    ScalarFunctionBuilder::new(
+    MicroScalar::with_signature(
         "struct_key",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<SequenceStruct>("s"))
             .return_type(i64::logical_type(&conn)?),
-        StructKeyScalar,
+        struct_key_scalar,
     )
     .register(&conn)?;
 
@@ -1974,12 +1979,12 @@ pub fn test_vector_make_constant() -> crate::Result<()> {
     let instance = env.open(StorageLocation::InMemory)?;
     let conn = instance.connect()?;
 
-    ScalarFunctionBuilder::new(
+    MicroScalar::with_signature(
         "to_constant",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("in"))
             .return_type(i32::logical_type(&conn)?),
-        ConstantScalar,
+        constant_scalar,
     )
     .register(&conn)?;
 
@@ -2015,12 +2020,12 @@ pub fn test_vector_make_sequence() -> crate::Result<()> {
     let instance = env.open(StorageLocation::InMemory)?;
     let conn = instance.connect()?;
 
-    ScalarFunctionBuilder::new(
+    MicroScalar::with_signature(
         "to_sequence",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("in"))
             .return_type(i32::logical_type(&conn)?),
-        SequenceScalar,
+        sequence_scalar,
     )
     .register(&conn)?;
 
@@ -2056,12 +2061,12 @@ pub fn test_vector_types() -> crate::Result<()> {
     let instance = env.open(StorageLocation::InMemory)?;
     let conn = instance.connect()?;
 
-    ScalarFunctionBuilder::new(
+    MicroScalar::with_signature(
         "test",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<String>("in"))
             .return_type(String::logical_type(&conn)?),
-        CopyStringScalar,
+        copy_string_scalar,
     )
     .register(&conn)?;
 
@@ -2100,7 +2105,7 @@ pub fn test_vector_types() -> crate::Result<()> {
 
 #[test]
 pub fn test_vector_set_value() -> crate::Result<()> {
-    scalar_callback!(ToVariant, Variant, |input, output, ctx, _user_data| {
+    fn to_variant(ctx: &Context, input: &mut VectorCollection, output: Vector<'_, Variant>) -> crate::Result<()> {
         let mut output = output;
 
         output.set_size(input.row_count()?)?;
@@ -2135,7 +2140,7 @@ pub fn test_vector_set_value() -> crate::Result<()> {
         }
 
         Ok(())
-    });
+    }
 
     let env = Environment::new()?;
     let instance = env.open(StorageLocation::InMemory)?;
@@ -2143,12 +2148,12 @@ pub fn test_vector_set_value() -> crate::Result<()> {
 
     let rt = LogicalType::from_text(&conn, "VARIANT")?;
 
-    ScalarFunctionBuilder::new(
+    MicroScalar::with_signature(
         "to_variant",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<Any>("in"))
             .return_type(rt),
-        ToVariant,
+        to_variant,
     )
     .register(&conn)?;
 
@@ -2176,7 +2181,7 @@ pub fn test_vector_set_value() -> crate::Result<()> {
     Ok(())
 }
 
-scalar_callback!(RefScalar, String, |input, output, _ctx, _user_data| {
+fn ref_scalar(_ctx: &Context, input: &mut VectorCollection, output: Vector<'_, String>) -> crate::Result<()> {
     let input = input.get_vector_at::<String>(0)?;
     let output = output;
 
@@ -2187,7 +2192,7 @@ scalar_callback!(RefScalar, String, |input, output, _ctx, _user_data| {
     assert!(!referenced.is_writable());
 
     Ok(())
-});
+}
 
 #[test]
 pub fn test_vector_reference_input() -> crate::Result<()> {
@@ -2195,12 +2200,12 @@ pub fn test_vector_reference_input() -> crate::Result<()> {
     let instance = env.open(StorageLocation::InMemory)?;
     let conn = instance.connect()?;
 
-    ScalarFunctionBuilder::new(
+    MicroScalar::with_signature(
         "reference",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<String>("in"))
             .return_type(String::logical_type(&conn)?),
-        RefScalar,
+        ref_scalar,
     )
     .register(&conn)?;
 
@@ -2525,7 +2530,7 @@ fn test_large_constant_selection_stays_in_bounds() -> crate::Result<()> {
     Ok(())
 }
 
-scalar_callback!(FlatListScalar, i32, |input, output, _ctx, _user_data| {
+fn flat_list_scalar(_ctx: &Context, input: &mut VectorCollection, output: Vector<'_, i32>) -> crate::Result<()> {
     let mut list = input.get_vector_at_mut::<List<i32>>(1)?;
     let mut output = output;
     output.set_size(list.len())?;
@@ -2537,7 +2542,7 @@ scalar_callback!(FlatListScalar, i32, |input, output, _ctx, _user_data| {
             .set(i, row.map(|v| v.iter().map(|x| x.copied().unwrap_or(0)).sum()))?;
     }
     Ok(())
-});
+}
 
 #[test]
 fn test_flatten_rebuilds_children() -> crate::Result<()> {
@@ -2545,13 +2550,13 @@ fn test_flatten_rebuilds_children() -> crate::Result<()> {
     let instance = env.open(StorageLocation::InMemory)?;
     let conn = instance.connect()?;
 
-    ScalarFunctionBuilder::new(
+    MicroScalar::with_signature(
         "flat_list",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i64>("row"))
             .param(FunctionParameter::new::<List<i32>>("list"))
             .return_type(i32::logical_type(&conn)?),
-        FlatListScalar,
+        flat_list_scalar,
     )
     .register(&conn)?;
 
@@ -2565,7 +2570,7 @@ fn test_flatten_rebuilds_children() -> crate::Result<()> {
     Ok(())
 }
 
-scalar_callback!(SlowWriteInputScalar, i32, |input, output, ctx, _user_data| {
+fn slow_write_input_scalar(ctx: &Context, input: &mut VectorCollection, output: Vector<'_, i32>) -> crate::Result<()> {
     let mut vector = input.get_vector_at_mut::<i32>(0)?;
     let mut output = output;
     output.set_size(vector.len())?;
@@ -2578,7 +2583,7 @@ scalar_callback!(SlowWriteInputScalar, i32, |input, output, ctx, _user_data| {
         output.writer()?.set(i, v.copied())?;
     }
     Ok(())
-});
+}
 
 #[test]
 fn test_slow_writes_reject_read_only_input() -> crate::Result<()> {
@@ -2586,12 +2591,12 @@ fn test_slow_writes_reject_read_only_input() -> crate::Result<()> {
     let instance = env.open(StorageLocation::InMemory)?;
     let conn = instance.connect()?;
 
-    ScalarFunctionBuilder::new(
+    MicroScalar::with_signature(
         "mutate",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("in"))
             .return_type(i32::logical_type(&conn)?),
-        SlowWriteInputScalar,
+        slow_write_input_scalar,
     )
     .register(&conn)?;
 
@@ -2616,7 +2621,7 @@ fn test_slow_writes_reject_read_only_input() -> crate::Result<()> {
     Ok(())
 }
 
-scalar_callback!(ArraySumScalar, i32, |input, output, _ctx, _user_data| {
+fn array_sum_scalar(_ctx: &Context, input: &mut VectorCollection, output: Vector<'_, i32>) -> crate::Result<()> {
     let array = input.get_vector_at::<Array<i32, 3>>(1)?;
     let mut output = output;
     output.set_size(array.len())?;
@@ -2627,7 +2632,7 @@ scalar_callback!(ArraySumScalar, i32, |input, output, _ctx, _user_data| {
             .set(i, row.map(|v| v.iter().map(|x| x.copied().unwrap_or(0)).sum()))?;
     }
     Ok(())
-});
+}
 
 #[test]
 fn test_array_reads_use_type_size() -> crate::Result<()> {
@@ -2635,13 +2640,13 @@ fn test_array_reads_use_type_size() -> crate::Result<()> {
     let instance = env.open(StorageLocation::InMemory)?;
     let conn = instance.connect()?;
 
-    ScalarFunctionBuilder::new(
+    MicroScalar::with_signature(
         "arr_sum",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i64>("row"))
             .param(FunctionParameter::new::<Array<i32, 3>>("arr"))
             .return_type(i32::logical_type(&conn)?),
-        ArraySumScalar,
+        array_sum_scalar,
     )
     .register(&conn)?;
 
@@ -2912,7 +2917,7 @@ fn test_collection_append() -> crate::Result<()> {
     Ok(())
 }
 
-scalar_callback!(CopyOver, i64, |input, result, ctx, _ud| {
+fn copy_over(ctx: &Context, input: &mut VectorCollection, result: Vector<'_, i64>) -> crate::Result<()> {
     let vec = input.get_vector_at::<String>(0)?;
     let has_bad_row = vec.reader()?.iter().any(|row| row == Some("abc"));
 
@@ -2927,7 +2932,7 @@ scalar_callback!(CopyOver, i64, |input, result, ctx, _ud| {
     }
 
     Ok(())
-});
+}
 
 #[test]
 fn test_vector_cast() -> crate::Result<()> {
@@ -2935,12 +2940,12 @@ fn test_vector_cast() -> crate::Result<()> {
     let instance = env.open(StorageLocation::InMemory)?;
     let conn = instance.connect()?;
 
-    ScalarFunctionBuilder::new(
+    MicroScalar::with_signature(
         "copy_over",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<String>("in"))
             .return_type(i64::logical_type(&conn)?),
-        CopyOver,
+        copy_over,
     )
     .register(&conn)?;
 
@@ -2960,12 +2965,12 @@ fn test_vector_cast() -> crate::Result<()> {
     Ok(())
 }
 
-scalar_callback!(CopyOverStrict, i64, |input, result, ctx, _ud| {
+fn copy_over_strict(ctx: &Context, input: &mut VectorCollection, result: Vector<'_, i64>) -> crate::Result<()> {
     let vec = input.get_vector_at::<String>(0)?;
     // SAFETY: the callback input and output are not changed after the cast.
     unsafe { result.cast_rows(vec, ctx)? };
     Ok(())
-});
+}
 
 #[test]
 fn test_vector_cast_fails() -> crate::Result<()> {
@@ -2973,12 +2978,12 @@ fn test_vector_cast_fails() -> crate::Result<()> {
     let instance = env.open(StorageLocation::InMemory)?;
     let conn = instance.connect()?;
 
-    ScalarFunctionBuilder::new(
+    MicroScalar::with_signature(
         "copy_over_strict",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<String>("in"))
             .return_type(i64::logical_type(&conn)?),
-        CopyOverStrict,
+        copy_over_strict,
     )
     .register(&conn)?;
 
@@ -3000,7 +3005,7 @@ fn test_vector_cast_fails() -> crate::Result<()> {
 #[test]
 fn test_list_output_child_starts_empty_in_every_callback() -> crate::Result<()> {
     static ENTRY_CHILD: std::sync::Mutex<Vec<(usize, usize)>> = std::sync::Mutex::new(Vec::new());
-    scalar_callback!(Pair, List<i32>, |input, output, _ctx, _user_data| {
+    fn pair(_ctx: &Context, input: &mut VectorCollection, output: Vector<'_, List<i32>>) -> crate::Result<()> {
         let input = input.get_vector_at::<i32>(0)?;
         let mut output = output;
         let child_len = output.children().unwrap().get_untyped_vector_at(0)?.len();
@@ -3013,18 +3018,18 @@ fn test_list_output_child_starts_empty_in_every_callback() -> crate::Result<()> 
             writer.set(row, value.map(|value| List(vec![Some(*value), Some(*value)])))?;
         }
         Ok(())
-    });
+    }
 
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
     conn.config()?
         .set_text("threads", "1", crate::connection::SettingScope::Default)?;
-    ScalarFunctionBuilder::new(
+    MicroScalar::with_signature(
         "pair",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("x"))
             .return_type(List::<i32>::logical_type(&conn)?),
-        Pair,
+        pair,
     )
     .register(&conn)?;
     let mut result = conn.query(

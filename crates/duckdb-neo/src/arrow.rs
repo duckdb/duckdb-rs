@@ -332,21 +332,21 @@ mod tests {
     use crate::{
         Parameters,
         arrow::{ArrowExporter, ArrowImporter, ArrowSchema},
-        builder_helpers::scalar_callback,
+        connection::Context,
+        data_chunk::VectorCollection,
         environment::{Environment, StorageLocation},
-        scalar::ScalarFunctionBuilder,
+        scalar::MicroScalar,
         signature::{FunctionParameter, SignatureBuilder},
         types::DuckDBType,
+        vector::Vector,
     };
 
-    scalar_callback!(ToArrowTest, i64, |input, result, ctx, user_data| {
+    fn to_arrow(ctx: &Context, input: &mut VectorCollection, mut result: Vector<'_, i64>) -> crate::Result<()> {
         let columns = [
             ("val1", input.get_untyped_vector_at(0)?.logical_type().clone()),
             ("val2", input.get_untyped_vector_at(1)?.logical_type().clone()),
             ("val3", input.get_untyped_vector_at(2)?.logical_type().clone()),
         ];
-
-        let mut result = result;
 
         let data_chunk = input.to_data_chunk(&ctx)?;
 
@@ -396,7 +396,6 @@ mod tests {
         let val2 = chunk.get_vector_at::<bool>(1)?.reader()?;
         let val3 = chunk.get_vector_at::<String>(2)?.reader()?;
 
-        result.set_size(chunk.row_count()?)?;
         let mut writer = result.writer()?;
 
         for row in 0..chunk.row_count()? {
@@ -412,7 +411,7 @@ mod tests {
         }
 
         Ok(())
-    });
+    }
 
     #[test]
     fn test_arrow_conversion() -> crate::Result<()> {
@@ -420,14 +419,14 @@ mod tests {
         let instance = env.open(StorageLocation::InMemory)?;
         let conn = instance.connect()?;
 
-        ScalarFunctionBuilder::new(
+        MicroScalar::with_signature(
             "to_arrow",
             SignatureBuilder::new()
                 .param(FunctionParameter::new::<i64>("val1"))
                 .param(FunctionParameter::new::<bool>("val2"))
                 .param(FunctionParameter::new::<String>("val3"))
                 .return_type(i64::logical_type(&conn)?),
-            ToArrowTest,
+            to_arrow,
         )
         .register(&conn)?;
 
