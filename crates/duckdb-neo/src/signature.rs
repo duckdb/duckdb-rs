@@ -57,13 +57,13 @@ ffi_enum_redeclaration! {
 
 type LogicalTypeFn = fn(&dyn FFILink) -> Result<LogicalType>;
 
-enum TypeDeclaration {
+pub(crate) enum TypeDeclaration {
     Rust(LogicalTypeFn),
     Resolved(LogicalType),
 }
 
 impl TypeDeclaration {
-    fn rust_type<T: DuckDBType>() -> Self {
+    pub(crate) fn rust_type<T: DuckDBType>() -> Self {
         // A non-capturing closure, since `T::logical_type::<dyn FFILink>` would require `'static`.
         Self::Rust(|link| T::logical_type(link))
     }
@@ -231,7 +231,7 @@ impl FunctionDocumentationBuilder {
 #[derive(Debug, Default)]
 pub struct SignatureBuilder {
     parameters: Vec<FunctionParameter>,
-    return_type: Option<TypeDeclaration>,
+    pub(crate) return_type: Option<TypeDeclaration>,
     documentation: Option<FunctionDocumentationBuilder>,
 }
 
@@ -254,12 +254,6 @@ impl SignatureBuilder {
     /// unset and declare their result columns when binding.
     pub fn return_type(mut self, logical_type: LogicalType) -> Self {
         self.return_type = Some(TypeDeclaration::Resolved(logical_type));
-        self
-    }
-
-    /// Set the return type from `T`, resolving its logical type at registration.
-    pub fn return_type_of<T: DuckDBType>(mut self) -> Self {
-        self.return_type = Some(TypeDeclaration::rust_type::<T>());
         self
     }
 
@@ -371,23 +365,18 @@ mod test {
     }
 
     #[test]
-    fn test_return_type_of_replaces_previous_type() -> crate::Result<()> {
+    fn test_return_type_replaces_previous_type() -> crate::Result<()> {
         let env = Environment::new()?;
         let conn = env.open(StorageLocation::InMemory)?.connect()?;
-        for (name, signature) in [
-            (
-                "rust_return",
-                SignatureBuilder::new()
-                    .return_type(i32::logical_type(&conn)?)
-                    .return_type_of::<u64>(),
-            ),
-            (
-                "resolved_return",
-                SignatureBuilder::new()
-                    .return_type_of::<i32>()
-                    .return_type(u64::logical_type(&conn)?),
-            ),
+        for (name, return_type) in [
+            ("rust_return", TypeDeclaration::rust_type::<i32>()),
+            ("resolved_return", TypeDeclaration::Resolved(i32::logical_type(&conn)?)),
         ] {
+            let signature = SignatureBuilder {
+                return_type: Some(return_type),
+                ..SignatureBuilder::new()
+            }
+            .return_type(u64::logical_type(&conn)?);
             MicroScalar::with_signature(name, signature, vararg).register(&conn)?;
             assert_eq!(query_u64(&conn, &format!("SELECT {name}()"))?, Some(0));
         }
@@ -395,7 +384,7 @@ mod test {
     }
 
     #[test]
-    fn test_return_type_of_defers_errors_to_registration() -> crate::Result<()> {
+    fn test_inferred_return_type_defers_errors_to_registration() -> crate::Result<()> {
         struct InvalidType;
 
         impl DuckDBType for InvalidType {
@@ -404,7 +393,10 @@ mod test {
             }
         }
 
-        let signature = SignatureBuilder::new().return_type_of::<InvalidType>();
+        let signature = SignatureBuilder {
+            return_type: Some(TypeDeclaration::rust_type::<InvalidType>()),
+            ..SignatureBuilder::new()
+        };
         let env = Environment::new()?;
         let conn = env.open(StorageLocation::InMemory)?.connect()?;
         let error = MicroScalar::with_signature("invalid_return", signature, vararg)

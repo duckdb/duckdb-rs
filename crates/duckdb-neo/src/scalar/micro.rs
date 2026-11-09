@@ -5,7 +5,7 @@ use crate::{
     DuckDBType, Result,
     connection::Context,
     data_chunk::VectorCollection,
-    signature::{FunctionParameter, SignatureBuilder},
+    signature::{FunctionParameter, SignatureBuilder, TypeDeclaration},
     vector::{Unknown, Vector, VectorElement, WritableVectorElement},
 };
 
@@ -61,13 +61,11 @@ impl MicroScalar {
         O: DuckDBType + WritableVectorElement + 'static,
         F: Fn(&Context, Vector<'_, I>, Vector<'_, O>) -> Result<()> + Send + Sync + 'static,
     {
-        Self::with_signature(
-            name,
-            SignatureBuilder::new()
-                .param(FunctionParameter::new::<I>("input"))
-                .return_type_of::<O>(),
-            move |context, input, output| function(context, input.get_vector_at_mut::<I>(0)?, output),
-        )
+        let mut signature = SignatureBuilder::new().param(FunctionParameter::new::<I>("input"));
+        signature.return_type = Some(TypeDeclaration::rust_type::<O>());
+        Self::with_signature(name, signature, move |context, input, output| {
+            function(context, input.get_vector_at_mut::<I>(0)?, output)
+        })
     }
 
     /// Wrap a closure with an explicit signature and checked output element type.

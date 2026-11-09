@@ -167,7 +167,7 @@ fn explicit_signature_sizes_variadic_batches() -> Result<()> {
         "micro_sum",
         SignatureBuilder::new()
             .param(FunctionParameter::vararg::<i32>("values"))
-            .return_type_of::<i64>(),
+            .return_type(i64::logical_type(&conn)?),
         move |ctx, input, mut output: Vector<'_, i64>| {
             assert_eq!(output.logical_type(), &i64::logical_type(ctx)?);
             assert_eq!(output.len(), input.row_count()?);
@@ -220,7 +220,7 @@ fn explicit_signature_checks_output_type() -> Result<()> {
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
     MicroScalar::with_signature(
         "micro_mismatched",
-        SignatureBuilder::new().return_type_of::<String>(),
+        SignatureBuilder::new().return_type(String::logical_type(&conn)?),
         |_ctx, _input, _output: Vector<'_, i32>| panic!("mismatched output must not reach the closure"),
     )
     .register(&conn)?;
