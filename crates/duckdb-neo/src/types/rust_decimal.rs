@@ -242,7 +242,10 @@ mod tests {
         assert!(chunk.get_vector_at::<rust_decimal::Decimal>(5).is_err());
 
         let map = chunk.get_vector_at::<crate::types::Map<i32, rust_decimal::Decimal>>(6)?;
-        assert_eq!(map.reader()?.get(0)?.unwrap().get(&1), Some(Some(dec("1.21"))));
+        assert_eq!(
+            map.reader()?.get(0)?.unwrap().get(0),
+            Some((Some(&1), Some(dec("1.21"))))
+        );
 
         Ok(())
     }

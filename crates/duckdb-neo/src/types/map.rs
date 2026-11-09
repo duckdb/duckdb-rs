@@ -256,29 +256,6 @@ pub struct MapRow<'a, K: VectorElement, V: VectorElement> {
     pub(crate) length: usize,
 }
 
-impl<'a, K: Debug + VectorElement, V: VectorElement + Debug> MapRow<'a, K, V>
-where
-    for<'b> K::Ref<'b>: PartialEq<&'b K> + Eq + std::hash::Hash,
-    for<'b> <V as VectorElement>::Ref<'b>: Debug,
-{
-    /// Convert the map row into a `HashMap`.
-    ///
-    /// # ! Experimental. Subject to change.
-    /// TODO: REVIEW
-    pub fn to_hash_map(&self) -> Result<HashMap<K::Ref<'a>, Option<V::Ref<'a>>>> {
-        let mut map = HashMap::new();
-        map.reserve(self.length);
-
-        for (key, value) in self.iter() {
-            if let Some(key) = key {
-                map.insert(key, value);
-            }
-        }
-
-        Ok(map)
-    }
-}
-
 impl<'a, K: VectorElement + 'a, V: VectorElement + 'a> MapRow<'a, K, V> {
     /// Return the number of entries in the map.
     pub fn len(&self) -> usize {
@@ -298,6 +275,19 @@ impl<'a, K: VectorElement + 'a, V: VectorElement + 'a> MapRow<'a, K, V> {
             .map(move |logical| unsafe { (keys.get_unchecked(logical), values.get_unchecked(logical)) })
     }
 
+    pub fn get(&self, index: usize) -> Option<(Option<K::Ref<'a>>, Option<V::Ref<'a>>)> {
+        if index >= self.length {
+            return None;
+        }
+        // SAFETY: the caller checked the index is in bounds.
+        unsafe {
+            Some((
+                self.keys.get_unchecked(self.offset + index),
+                self.values.get_unchecked(self.offset + index),
+            ))
+        }
+    }
+
     /// Return the map's keys in storage order, aligned with [`Self::values`].
     pub fn keys(&self) -> Vec<Option<K::Ref<'a>>> {
         self.iter().map(|(key, _)| key).collect()
@@ -306,19 +296,6 @@ impl<'a, K: VectorElement + 'a, V: VectorElement + 'a> MapRow<'a, K, V> {
     /// Return the map's values in storage order, aligned with [`Self::keys`].
     pub fn values(&self) -> Vec<Option<V::Ref<'a>>> {
         self.iter().map(|(_, value)| value).collect()
-    }
-}
-
-impl<'a, K: VectorElement, V: VectorElement> MapRow<'a, K, V>
-where
-    for<'b> K::Ref<'b>: PartialEq<&'b K>,
-{
-    /// Return the associated value; outer `None` means missing, inner `None` means NULL.
-    pub fn get(&self, key: &K) -> Option<Option<V::Ref<'a>>> {
-        // SAFETY: The parent reader cached all descendant views before constructing this row.
-        (self.offset..self.offset + self.length)
-            .find(|&logical| unsafe { self.keys.get_unchecked(logical) }.is_some_and(|value| value == key))
-            .map(|logical| unsafe { self.values.get_unchecked(logical) })
     }
 }
 
@@ -353,8 +330,12 @@ mod tests {
         maps.writer()?.set(1, Some(HashMap::from([(3, Some(30))])))?;
         let reader = maps.reader()?;
         let row = reader.get(0)?.unwrap();
-        assert_eq!((row.get(&1), row.get(&2)), (Some(Some(&10)), Some(Some(&20))));
-        assert_eq!(reader.get(1)?.unwrap().get(&3), Some(Some(&30)));
+        assert_eq!(
+            (row.get(0), row.get(1)),
+            (Some((Some(&1), Some(&10))), Some((Some(&2), Some(&20))))
+        );
+        assert_eq!(row.get(2), None);
+        assert_eq!(reader.get(1)?.unwrap().get(0), Some((Some(&3), Some(&30))));
         Ok(())
     }
 
@@ -378,9 +359,10 @@ mod tests {
         let maps = chunk.get_vector_at::<Map<i32, i32>>(0)?;
         let maps_reader = maps.reader()?;
         let row = maps_reader.get(0)?.expect("row 0 is not NULL");
-        assert_eq!(row.get(&1), Some(None));
-        assert_eq!(row.get(&2), Some(Some(&20)));
-        assert_eq!(row.get(&3), None);
+        let mut entries = [row.get(0).unwrap(), row.get(1).unwrap()];
+        entries.sort();
+        assert_eq!(entries, [(Some(&1), None), (Some(&2), Some(&20))]);
+        assert_eq!(row.get(2), None);
         let mut values = row.values();
         values.sort();
         assert_eq!(values, [None, Some(&20)]);
@@ -414,6 +396,11 @@ mod tests {
         assert!(!row.is_empty());
         let mut entries: Vec<_> = row.iter().collect();
         assert_eq!(row.keys().into_iter().zip(row.values()).collect::<Vec<_>>(), entries);
+        for (index, entry) in entries.iter().enumerate() {
+            assert_eq!(row.get(index), Some(*entry));
+        }
+        assert_eq!(row.get(row.len()), None);
+        assert_eq!(row.get(usize::MAX), None);
         entries.sort();
         assert_eq!(
             entries,
@@ -424,6 +411,7 @@ mod tests {
         assert_eq!(empty.len(), 0);
         assert!(empty.is_empty());
         assert_eq!(empty.iter().count(), 0);
+        assert_eq!(empty.get(0), None);
         Ok(())
     }
 
@@ -449,6 +437,12 @@ mod tests {
                 (Some(vec![Some(&3)]), None)
             ]
         );
+
+        for (index, entry) in entries.iter().enumerate() {
+            let (key, value) = row.get(index).unwrap();
+            assert_eq!((key.map(|key| key.iter().collect::<Vec<_>>()), value), *entry);
+        }
+        assert!(row.get(row.len()).is_none());
 
         let keys: Vec<_> = row
             .keys()
@@ -489,10 +483,13 @@ mod tests {
         let reader = maps.reader()?;
         let row = reader.get(0)?.unwrap();
         assert_eq!(row.offset, 2);
-        assert_eq!(row.get(&3), Some(Some("three")));
+        assert_eq!(row.get(0), Some((Some(&3), Some("three"))));
+        assert_eq!(row.get(1), None);
         let row = reader.get(1)?.unwrap();
         assert_eq!(row.offset, 0);
-        assert_eq!((row.get(&1), row.get(&2)), (Some(Some("one")), Some(None)));
+        let mut entries = [row.get(0).unwrap(), row.get(1).unwrap()];
+        entries.sort();
+        assert_eq!(entries, [(Some(&1), Some("one")), (Some(&2), None)]);
         Ok(())
     }
 }
