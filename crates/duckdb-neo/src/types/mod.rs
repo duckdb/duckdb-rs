@@ -63,7 +63,7 @@ pub use decimal::{
     MAX_DECIMAL_WIDTH, ShortDecimal, Width, WordDecimal,
 };
 pub use list::{List, ListIndex, ListIterator, ListRef};
-pub use map::{Map, MapRow, MapValue};
+pub use map::{Map, MapRow};
 pub use primitive::Any;
 pub use primitive::{HugeInt, UHugeInt};
 pub use string::{BitValue, BlobValue, UncheckedString};

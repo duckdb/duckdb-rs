@@ -232,7 +232,7 @@ impl Clone for LogicalType {
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod test {
-    use crate::{DuckDBType, environment::Environment, environment::StorageLocation, types::MapValue};
+    use crate::{DuckDBType, environment::Environment, environment::StorageLocation, types::Map};
 
     use super::*;
 
@@ -340,7 +340,7 @@ mod test {
         let instance = env.open(StorageLocation::InMemory)?;
         let conn = instance.connect()?;
 
-        let ltype = MapValue::<i32, String>::logical_type(&conn)?;
+        let ltype = Map::<i32, String>::logical_type(&conn)?;
 
         let alias_ltype = ltype.with_alias(&conn, "my_map")?;
 

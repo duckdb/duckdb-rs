@@ -16,7 +16,7 @@ use crate::{
     signature::{FunctionParameter, SignatureBuilder},
     types::{
         Array, BigNum, BigNumValue, BitValue, BlobValue, DateValue, DecimalSignature, DecimalValue, DuckDBType,
-        IntervalValue, List, ListRef, LongDecimal, Map, MapValue, ShortDecimal, TimeNsValue, TimeTzValue, TimeValue,
+        IntervalValue, List, ListRef, LongDecimal, Map, ShortDecimal, TimeNsValue, TimeTzValue, TimeValue,
         TimestampMsValue, TimestampNsValue, TimestampSecValue, TimestampTzNsValue, TimestampTzValue, TimestampValue,
         UuidValueRaw, Variant, WordDecimal,
     },
@@ -635,20 +635,20 @@ fn vector_nested_writes_check_bounds_before_appending() -> crate::Result<()> {
         assert_eq!(list_values(list.reader()?.get(0)?), Some(vec![Some(42)]));
     }
 
-    let mut maps = DataChunk::create(&conn, &[MapValue::<i32, i32>::logical_type(&conn)?], true)?;
+    let mut maps = DataChunk::create(&conn, &[Map::<i32, i32>::logical_type(&conn)?], true)?;
     let mut map = maps.get_vector_at_mut::<Map<i32, i32>>(0)?;
     map.set_size(1)?;
     // SAFETY: the first row writes the only entry.
     unsafe { map.set_child_size(1)? };
-    map.writer()?.set(0, Some((vec![Some(1)], vec![Some(42)])))?;
+    map.writer()?.set(0, Some(Map(vec![(1, Some(42))])))?;
     let child_len = map.children().unwrap().row_count()?;
     for index in [1, usize::MAX] {
-        assert!(map.writer()?.set(index, Some((vec![Some(2)], vec![Some(7)]))).is_err());
+        assert!(map.writer()?.set(index, Some(Map(vec![(2, Some(7))]))).is_err());
         assert!(map.writer()?.set(index, None).is_err());
         assert_eq!(map.children().unwrap().row_count()?, child_len);
         assert_eq!(
             map.reader()?.get(0)?.unwrap().iter().collect::<Vec<_>>(),
-            [(Some(&1), Some(&42))]
+            [(&1, Some(&42))]
         );
     }
     Ok(())
@@ -777,14 +777,13 @@ fn map_scalar(_ctx: &Context, input: &mut VectorCollection, result: Vector<'_, M
     // SAFETY: every row below writes one entry.
     unsafe { result.set_child_size(rows.len())? };
     for (index, (key, value)) in rows.iter().enumerate() {
-        result.writer()?.set(
-            index,
-            Some((vec![Some(*key)], vec![Some(value.as_str())])),
-        )?;
+        result
+            .writer()?
+            .set(index, Some(Map(vec![(*key, Some(value.as_str()))])))?;
     }
     let written: Vec<_> = result.reader()?.iter().collect();
     for (row, (key, value)) in written.into_iter().zip(&rows) {
-        assert_eq!(row.as_ref().unwrap().get(0), Some((Some(key), Some(value.as_str()))));
+        assert_eq!(row.as_ref().unwrap().get_index(0), Some((key, Some(value.as_str()))));
     }
     Ok(())
 }
@@ -1414,24 +1413,24 @@ pub fn test_vector_map() -> crate::Result<()> {
 
     let row = reader.next().unwrap().unwrap();
 
-    assert_eq!(row.keys(), vec![Some(&1), Some(&2)]);
+    assert_eq!(row.keys(), vec![&1, &2]);
     assert_eq!(row.values(), vec![Some(&ShortDecimal(121)), Some(&ShortDecimal(412))]);
 
-    assert_eq!(row.get(0), Some((Some(&1), Some(&ShortDecimal(121)))));
-    assert_eq!(row.get(1), Some((Some(&2), Some(&ShortDecimal(412)))));
-    assert_eq!(row.get(2), None);
+    assert_eq!(row.get_index(0), Some((&1, Some(&ShortDecimal(121)))));
+    assert_eq!(row.get_index(1), Some((&2, Some(&ShortDecimal(412)))));
+    assert_eq!(row.get_index(2), None);
 
     let row = reader.next().unwrap().unwrap();
 
-    assert_eq!(row.get(0), Some((Some(&1), Some(&ShortDecimal(1121)))));
-    assert_eq!(row.get(1), Some((Some(&2), Some(&ShortDecimal(1412)))));
-    assert_eq!(row.get(2), None);
+    assert_eq!(row.get_index(0), Some((&1, Some(&ShortDecimal(1121)))));
+    assert_eq!(row.get_index(1), Some((&2, Some(&ShortDecimal(1412)))));
+    assert_eq!(row.get_index(2), None);
 
     let row = reader.next().unwrap().unwrap();
 
-    assert_eq!(row.get(0), Some((Some(&1), None)));
-    assert_eq!(row.get(1), Some((Some(&2), Some(&ShortDecimal(412)))));
-    assert_eq!(row.get(2), None);
+    assert_eq!(row.get_index(0), Some((&1, None)));
+    assert_eq!(row.get_index(1), Some((&2, Some(&ShortDecimal(412)))));
+    assert_eq!(row.get_index(2), None);
     assert_eq!(row.values(), vec![None, Some(&ShortDecimal(412))]);
 
     assert!(reader.next().is_none());
@@ -1445,7 +1444,7 @@ pub fn vector_complex_write() -> crate::Result<()> {
     let instance = env.open(StorageLocation::InMemory)?;
     let conn = instance.connect()?;
 
-    let ltype = MapValue::<i32, String>::logical_type(&conn)?;
+    let ltype = Map::<i32, String>::logical_type(&conn)?;
 
     MicroScalar::with_signature(
         "to_map",
@@ -1475,11 +1474,11 @@ pub fn vector_complex_write() -> crate::Result<()> {
 
         let item = reader.next().unwrap().unwrap();
 
-        assert_eq!(item.get(0), Some((Some(&12), Some("AA"))));
+        assert_eq!(item.get_index(0), Some((&12, Some("AA"))));
 
         let item = reader.next().unwrap().unwrap();
 
-        assert_eq!(item.get(0), Some((Some(&15), Some("BB"))));
+        assert_eq!(item.get_index(0), Some((&15, Some("BB"))));
     }
     assert_eq!(chunk_count, 1);
 
@@ -1494,7 +1493,7 @@ pub fn vector_complex_write() -> crate::Result<()> {
         let expected = [(1, "A"), (2, "B"), (3, "C")];
 
         for (item, (key, value)) in res.reader()?.iter().zip(expected) {
-            assert_eq!(item.unwrap().get(0), Some((Some(&key), Some(value))));
+            assert_eq!(item.unwrap().get_index(0), Some((&key, Some(value))));
         }
 
         return Ok(());
@@ -2698,29 +2697,27 @@ fn test_list_offset_and_map_writes_persist_across_wrappers() -> crate::Result<()
         .collect();
     assert_eq!(items, [Some(vec![Some(1), Some(2), Some(3)]), Some(vec![Some(9)])]);
 
-    let mut map_chunk = DataChunk::create(&conn, &[MapValue::<i32, i32>::logical_type(&conn)?], true)?;
+    let mut map_chunk = DataChunk::create(&conn, &[Map::<i32, i32>::logical_type(&conn)?], true)?;
     {
         let mut first = map_chunk.get_vector_at_mut::<Map<i32, i32>>(0)?;
         first.set_size(2)?;
         // SAFETY: the two rows below write all three entries.
         unsafe { first.set_child_size(3)? };
-        first
-            .writer()?
-            .set(0, Some((vec![Some(1), Some(2)], vec![Some(10), Some(20)])))?;
+        first.writer()?.set(0, Some(Map(vec![(1, Some(10)), (2, Some(20))])))?;
     }
     let mut second = map_chunk.get_vector_at_mut::<Map<i32, i32>>(0)?;
     assert_eq!(second.child_offset(), 2);
-    second.writer()?.set(1, Some((vec![Some(3)], vec![Some(30)])))?;
+    second.writer()?.set(1, Some(Map(vec![(3, Some(30))])))?;
     drop(second);
 
     let maps = map_chunk.get_vector_at::<Map<i32, i32>>(0)?;
     let mut rows = maps.reader()?.iter();
     let row = rows.next().unwrap().unwrap();
-    let entries = [row.get(0).unwrap(), row.get(1).unwrap()];
-    assert_eq!(entries, [(Some(&1), Some(&10)), (Some(&2), Some(&20))]);
+    let entries = [row.get_index(0).unwrap(), row.get_index(1).unwrap()];
+    assert_eq!(entries, [(&1, Some(&10)), (&2, Some(&20))]);
     let row = rows.next().unwrap().unwrap();
-    assert_eq!(row.keys(), vec![Some(&3)]);
-    assert_eq!(row.get(0), Some((Some(&3), Some(&30))));
+    assert_eq!(row.keys(), vec![&3]);
+    assert_eq!(row.get_index(0), Some((&3, Some(&30))));
 
     Ok(())
 }

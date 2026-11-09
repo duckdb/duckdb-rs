@@ -243,8 +243,8 @@ mod tests {
 
         let map = chunk.get_vector_at::<crate::types::Map<i32, rust_decimal::Decimal>>(6)?;
         assert_eq!(
-            map.reader()?.get(0)?.unwrap().get(0),
-            Some((Some(&1), Some(dec("1.21"))))
+            map.reader()?.get(0)?.unwrap().get_index(0),
+            Some((&1, Some(dec("1.21"))))
         );
 
         Ok(())
