@@ -1,4 +1,4 @@
-use crate::{is_compiler, link_windows_system_libs, win_target, write_bindings};
+use crate::{build_static_extension_autoregister, is_compiler, link_windows_system_libs, win_target, write_bindings};
 use std::{
     collections::BTreeSet,
     env::{self, VarError},
@@ -38,11 +38,6 @@ pub fn main(out_dir: &str) {
 
     let include_path = source_dir.join("src/include").canonicalize().unwrap();
     write_bindings(&include_path, out_dir);
-
-    // Publish the include directory so downstream crates that compile
-    // their own C/C++ code can read it from `DEP_DUCKDB_INCLUDE`.
-    // See the matching emission in build_bundled_cc.rs.
-    println!("cargo:include={}", include_path.display());
 
     if let Some(configs) = env_var("DUCKDB_EXTENSION_CONFIGS") {
         if !configs.trim().is_empty() {
@@ -438,7 +433,6 @@ fn render_static_extension_loader(template: &str, extensions: &[&str]) -> String
 fn build_static_extension_loader(source_dir: &Path, out_dir: &str, extensions: &[&str]) {
     let loader_dir = source_dir.join("extension/loader");
     let template_path = loader_dir.join("static_extension_loader.c.in");
-    let autoregister_path = loader_dir.join("static_extension_autoregister.cpp");
     let template = fs::read_to_string(&template_path)
         .unwrap_or_else(|err| panic!("failed to read {}: {err}", template_path.display()));
 
@@ -447,18 +441,27 @@ fn build_static_extension_loader(source_dir: &Path, out_dir: &str, extensions: &
     fs::write(&loader_path, render_static_extension_loader(&template, extensions))
         .unwrap_or_else(|err| panic!("failed to write {}: {err}", loader_path.display()));
 
+    // The upstream file has no global symbols, which makes ranlib warn about an empty table of contents.
+    let autoregister_wrapper = Path::new(out_dir).join("static_extension_autoregister_rs.cpp");
+    fs::write(
+        &autoregister_wrapper,
+        include_str!("static_extension_autoregister_rs.cpp"),
+    )
+    .unwrap_or_else(|err| panic!("failed to write {}: {err}", autoregister_wrapper.display()));
+
     let lib_name = "duckdb_static_extension_loader";
     cc::Build::new()
         .cpp(true)
         .file(&loader_path)
-        .file(&autoregister_path)
         .include(source_dir.join("src/include"))
         .define("DUCKDB_STATIC_BUILD", None)
         .cargo_metadata(false)
         .compile(lib_name);
-    println!("cargo:rustc-link-search=native={out_dir}");
-    // Nothing references the autoregister object, so keep the linker from dropping its static initializer.
-    println!("cargo:rustc-link-lib=static:+whole-archive={lib_name}");
+
+    build_static_extension_autoregister(&loader_dir, &autoregister_wrapper, out_dir);
+    // Rustc places whole-archive libraries after the rlib, so keep the loader and the extensions it pulls in
+    // inside the rlib, where the reference in src/lib.rs lets single-pass linkers resolve them.
+    println!("cargo:rustc-link-lib=static={lib_name}");
 }
 
 fn link_static_library(lib_dir: &Path, cmake_build_type: &str, name: &str) {

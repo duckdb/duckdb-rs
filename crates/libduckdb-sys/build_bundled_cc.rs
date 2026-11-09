@@ -1,4 +1,4 @@
-use crate::{is_compiler, link_windows_system_libs, win_target, write_bindings};
+use crate::{build_static_extension_autoregister, is_compiler, link_windows_system_libs, win_target, write_bindings};
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
@@ -44,35 +44,12 @@ fn extension_enabled(extension: &str) -> bool {
 
 const STATIC_EXTENSION_AUTOREGISTER: &str = "duckdb/extension/loader/static_extension_autoregister.cpp";
 
-fn build_static_extension_autoregister(source_root: &Path, out_dir: &str) {
-    let lib_name = "duckdb_static_extension_autoregister";
-    // The upstream file has no global symbols, which makes ranlib warn about an empty table of contents.
-    let wrapper = source_root.join(crate::bundled_sources::AUTOREGISTER_WRAPPER);
-    let source_dir = source_root.join(STATIC_EXTENSION_AUTOREGISTER);
-    cc::Build::new()
-        .cpp(true)
-        .file(&wrapper)
-        .include(source_dir.parent().expect("autoregister source directory"))
-        .warnings(false)
-        .cargo_metadata(false)
-        .compile(lib_name);
-    println!("cargo:rustc-link-search=native={out_dir}");
-    println!("cargo:rustc-link-lib=static:+whole-archive={lib_name}");
-}
-
 pub fn main(out_dir: &str) {
     let source_root = crate::bundled_sources::unpack(Path::new("duckdb.tar.gz"), Path::new(out_dir))
         .expect("unpacking bundled DuckDB sources");
 
     let include_path = source_root.join("duckdb/src/include");
     write_bindings(&include_path, out_dir);
-
-    // Publish the include directory so downstream crates that compile
-    // their own C/C++ code (e.g. extension shims that #include
-    // "duckdb.hpp") can pick it up from `DEP_DUCKDB_INCLUDE` without
-    // having to glob the target tree. Requires `links = "duckdb"` in
-    // the package manifest.
-    println!("cargo:include={}", include_path.display());
 
     let manifest_file = std::fs::File::open(source_root.join("duckdb/manifest.json")).expect("manifest file");
     let manifest: Manifest = serde_json::from_reader(manifest_file).expect("reading manifest file");
@@ -104,9 +81,14 @@ pub fn main(out_dir: &str) {
 
     println!("cargo:rerun-if-changed=duckdb.tar.gz");
 
-    // Keep the constructor even though Rust code does not reference it directly.
     if cpp_files.remove(STATIC_EXTENSION_AUTOREGISTER) {
-        build_static_extension_autoregister(&source_root, out_dir);
+        let source = source_root.join(STATIC_EXTENSION_AUTOREGISTER);
+        let wrapper = source_root.join(crate::bundled_sources::AUTOREGISTER_WRAPPER);
+        build_static_extension_autoregister(
+            source.parent().expect("autoregister source directory"),
+            &wrapper,
+            out_dir,
+        );
     }
 
     let mut include_dirs: Vec<_> = include_dirs.into_iter().collect();

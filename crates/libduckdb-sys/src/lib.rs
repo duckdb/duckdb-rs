@@ -5,7 +5,7 @@
 #![allow(improper_ctypes)]
 
 // Keep the loader reachable before GNU ld scans the separate constructor archive.
-#[cfg(all(feature = "bundled", not(feature = "bundled-cmake")))]
+#[cfg(feature = "bundled")]
 #[used]
 static STATIC_EXTENSION_LOADER: unsafe extern "C" fn() -> std::ffi::c_int = {
     unsafe extern "C" {
