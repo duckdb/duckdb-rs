@@ -595,6 +595,7 @@ impl<'stmt> Row<'stmt> {
                 ValueRef::Array(arr, row)
             }
             DataType::Union(..) => ValueRef::Union(column, row),
+            DataType::Null => ValueRef::Null,
             _ => unreachable!("invalid value: {}", column.data_type()),
         }
     }
@@ -1409,6 +1410,18 @@ mod tests {
 
         let retrieved_uuid: Uuid = conn.query_row("SELECT id FROM test", [], |r| r.get(0))?;
         assert_eq!(original_uuid, retrieved_uuid);
+        Ok(())
+    }
+
+    #[test]
+    fn test_null_typed_values_read_as_null() -> Result<()> {
+        let conn = Connection::open_in_memory()?;
+
+        let is_null = conn.query_row("SELECT NULL", [], |r| Ok(r.get_ref(0)? == ValueRef::Null))?;
+        assert!(is_null);
+
+        let list: Value = conn.query_row("SELECT [NULL]", [], |r| r.get(0))?;
+        assert_eq!(list, Value::List(vec![Value::Null]));
         Ok(())
     }
 }
