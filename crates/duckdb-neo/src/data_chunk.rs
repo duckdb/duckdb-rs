@@ -190,25 +190,6 @@ impl VectorCollection {
         self.cache[index].get().expect("vector views are cached before reads")
     }
 
-    /// Borrow the cached wrapper of `index` for writing, so nested writers reuse it across rows.
-    ///
-    /// The wrapper is only validated as `T` when built, so callers must use the
-    /// same `T` for an index; nested writers do, since the parent's type fixes it.
-    pub(crate) fn cached_mut<T: VectorElement>(&mut self, index: usize) -> Result<&mut Vector<'_, T>> {
-        // Writes through the wrapper may evict its own children.
-        self.complete.set(false);
-        if self.cache[index]
-            .get()
-            .is_none_or(|vector| vector.access != self.access)
-        {
-            let vector = self.wrap::<T>(index, self.access)?.cast_unchecked();
-            self.cache[index] = OnceCell::from(vector);
-        }
-        let vector = self.cache[index].get_mut().expect("view was just cached");
-        // SAFETY: The repr(C) wrappers differ only in direct and nested markers; the vector was validated as T.
-        Ok(unsafe { &mut *(vector as *mut Vector<'_, Unknown> as *mut Vector<'_, T>) })
-    }
-
     pub(crate) fn cached_iter_mut(&mut self) -> Result<impl Iterator<Item = &mut Vector<'_, Unknown>>> {
         self.complete.set(false);
         for index in 0..self.cache.len() {

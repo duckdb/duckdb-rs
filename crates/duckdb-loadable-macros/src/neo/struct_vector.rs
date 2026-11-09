@@ -3,7 +3,7 @@ use quote::{format_ident, quote};
 
 use super::struct_fields::{StructFields, bounded_generics, fresh_type_ident, option_inner_type};
 
-fn row_lifetime(input: &syn::DeriveInput) -> syn::Lifetime {
+pub(super) fn row_lifetime(input: &syn::DeriveInput) -> syn::Lifetime {
     let mut name = "__duckdb_row".to_owned();
     while input.generics.lifetimes().any(|param| param.lifetime.ident == name) {
         name.push('_');
@@ -11,7 +11,7 @@ fn row_lifetime(input: &syn::DeriveInput) -> syn::Lifetime {
     syn::Lifetime::new(&format!("'{name}"), input.ident.span())
 }
 
-fn ref_bounded_generics(
+pub(super) fn ref_bounded_generics(
     generics: &syn::Generics,
     types: &[&syn::Type],
     lifetime: &syn::Lifetime,
@@ -41,6 +41,7 @@ pub(crate) fn as_vector_element(input: &syn::DeriveInput) -> syn::Result<TokenSt
     let vis = &input.vis;
     let field_idents = &fields.idents;
     let field_names = &fields.names;
+    let rust_names = &fields.rust_names;
     let field_vis = fields.fields.iter().map(|field| &field.vis);
     let indexes = (0..types.len()).collect::<Vec<_>>();
     let count = types.len();
@@ -96,7 +97,7 @@ pub(crate) fn as_vector_element(input: &syn::DeriveInput) -> syn::Result<TokenSt
         impl #debug_impl_generics ::core::fmt::Debug for #ref_ident #ref_type_generics #debug_where_clause {
             fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                 f.debug_struct(::core::stringify!(#ref_ident))
-                    #(.field(#field_names, &self.#field_idents))*
+                    #(.field(#rust_names, &self.#field_idents))*
                     .finish()
             }
         }

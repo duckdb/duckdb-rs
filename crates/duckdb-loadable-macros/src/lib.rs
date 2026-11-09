@@ -191,8 +191,9 @@ pub fn derive_drop_handle(input: TokenStream) -> TokenStream {
 ///
 /// Each field must implement `DuckDBType`; field names and order define the SQL `STRUCT` type.
 /// Raw identifiers drop their `r#` prefix, and names that differ only in case are rejected.
+/// `#[duckdb(rename = "name")]` on a field sets its SQL name; every struct derive honors it.
 #[cfg(feature = "neo")]
-#[proc_macro_derive(AsDuckDBType)]
+#[proc_macro_derive(AsDuckDBType, attributes(duckdb))]
 pub fn as_duckdb_type(input: TokenStream) -> TokenStream {
     expand_neo_derive(input, neo::as_duckdb_type)
 }
@@ -201,7 +202,7 @@ pub fn as_duckdb_type(input: TokenStream) -> TokenStream {
 ///
 /// Each field must implement `ToValue`; field names and order define the SQL `STRUCT` value.
 #[cfg(feature = "neo")]
-#[proc_macro_derive(AsToValue)]
+#[proc_macro_derive(AsToValue, attributes(duckdb))]
 pub fn as_to_value(input: TokenStream) -> TokenStream {
     expand_neo_derive(input, neo::as_to_value)
 }
@@ -211,7 +212,7 @@ pub fn as_to_value(input: TokenStream) -> TokenStream {
 /// Fields are matched by name in any order, preferring exact over case-insensitive matches;
 /// missing or extra fields are errors. `Option<T>` fields preserve SQL NULL; other fields reject it.
 #[cfg(feature = "neo")]
-#[proc_macro_derive(AsFromValue)]
+#[proc_macro_derive(AsFromValue, attributes(duckdb))]
 pub fn as_from_value(input: TokenStream) -> TokenStream {
     expand_neo_derive(input, neo::as_from_value)
 }
@@ -224,7 +225,7 @@ pub fn as_from_value(input: TokenStream) -> TokenStream {
 /// match. Whole-row NULLs remain separate. `NameRef` implements `Debug`, `Clone`, `Copy`,
 /// `PartialEq`, `Eq`, and `Hash` whenever every field's borrowed form does.
 #[cfg(feature = "neo")]
-#[proc_macro_derive(AsVectorElement)]
+#[proc_macro_derive(AsVectorElement, attributes(duckdb))]
 pub fn as_vector_element(input: TokenStream) -> TokenStream {
     expand_neo_derive(input, neo::as_vector_element)
 }
@@ -238,7 +239,7 @@ pub fn as_vector_element(input: TokenStream) -> TokenStream {
 /// A custom unsafe `VectorElement` implementation must validate the complete named field layout;
 /// derive `AsVectorElement` to generate that validation. Writes do not revalidate the schema.
 #[cfg(feature = "neo")]
-#[proc_macro_derive(AsWritableVectorElement)]
+#[proc_macro_derive(AsWritableVectorElement, attributes(duckdb))]
 pub fn as_writable_vector_element(input: TokenStream) -> TokenStream {
     expand_neo_derive(input, neo::as_writable_vector_element)
 }
@@ -249,9 +250,23 @@ pub fn as_writable_vector_element(input: TokenStream) -> TokenStream {
 /// Generates `NameRef<'a>` for borrowed reads; writes take `Name` or `&Name`. Plain and
 /// optional fields, owned strings, `List<T>` and `Array<T, N>` fields, and nested structs are supported.
 #[cfg(feature = "neo")]
-#[proc_macro_derive(AsDuckDB)]
+#[proc_macro_derive(AsDuckDB, attributes(duckdb))]
 pub fn as_duckdb(input: TokenStream) -> TokenStream {
     expand_neo_derive(input, neo::as_duckdb)
+}
+
+/// Derive `DuckDBType`, `ToValue`, `FromValue`, and the vector element traits for an enum as a SQL `UNION`.
+///
+/// Every variant must hold exactly one unnamed `T` or `Option<T>`; variant names and order define the
+/// members and their tags; `#[duckdb(rename = "name")]` on a variant sets its member name. Raw
+/// identifiers drop their `r#` prefix, and names that differ only in case are rejected. `Option<T>` members preserve a NULL member value inside a non-NULL union.
+/// `FromValue` matches members by name in any order, preferring exact over case-insensitive matches.
+/// Vectors are matched by position like `AsVectorElement`, and reads return a generated `NameRef<'a>`
+/// enum whose variants hold `Option<T::Ref<'a>>`. Writes take `Name` or `&Name`.
+#[cfg(feature = "neo")]
+#[proc_macro_derive(AsDuckDBUnion, attributes(duckdb))]
+pub fn as_duckdb_union(input: TokenStream) -> TokenStream {
+    expand_neo_derive(input, neo::as_duckdb_union)
 }
 
 #[cfg(feature = "neo")]
