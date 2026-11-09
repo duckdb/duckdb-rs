@@ -488,32 +488,28 @@ mod test {
 
     use crate::{
         DuckDBType, Parameters,
-        builder_helpers::scalar_callback,
         environment::{Environment, StorageLocation},
         replacement_scan::{ReplacementScanBuilder, ReplacementScanCallbacks, ReplacementType},
-        scalar::ScalarFunctionBuilder,
+        scalar::MicroScalar,
         signature::SignatureBuilder,
+        vector::Vector,
     };
 
     use super::*;
 
     #[test]
     fn test_collection_from_context() -> crate::Result<()> {
-        scalar_callback!(CollectionIsEmpty, bool, |_input, output, context, _user_data| {
-            let collection = ColumnDataCollection::new(context, [i32::logical_type(context)?])?;
-            let mut output = output;
-            output.set_size(1)?;
-            output.writer()?.set(0, Some(collection.is_empty()?))
-        });
-
         let env = Environment::new()?;
         let instance = env.open(StorageLocation::InMemory)?;
         let conn = instance.connect()?;
 
-        ScalarFunctionBuilder::new(
+        MicroScalar::with_signature(
             "collection_is_empty",
             SignatureBuilder::new().return_type(bool::logical_type(&conn)?),
-            CollectionIsEmpty,
+            |context, _input, mut output: Vector<'_, bool>| {
+                let collection = ColumnDataCollection::new(context, [i32::logical_type(context)?])?;
+                output.writer()?.set(0, Some(collection.is_empty()?))
+            },
         )
         .register(&conn)?;
 

@@ -1,6 +1,7 @@
 //! User-defined scalar functions.
 //!
-//! Implement [`ScalarCallbacks`] to evaluate input chunks into an output vector.
+//! Use [`MicroScalar`] for typed unary closures, or implement [`ScalarCallbacks`]
+//! to evaluate input chunks into an output vector.
 //! Register with [`ScalarFunctionBuilder`]; opt into binding and worker-local
 //! state with [`ScalarBindCallbacks`] and [`ScalarInitCallbacks`]. Functions whose concrete
 //! result type depends on the arguments implement [`ScalarResolveTypesCallbacks`]
@@ -28,6 +29,9 @@ use crate::{
     connection::{Context, FFILink},
     raw::{FromRaw, RawExt},
 };
+
+mod micro;
+pub use micro::MicroScalar;
 
 unsafe extern "C" fn resolve_types_callback<T: ScalarResolveTypesCallbacks>(
     info: ffi::duckdb_v2_function_bind_info_handle,

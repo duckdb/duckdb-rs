@@ -2,14 +2,12 @@ use duckdb_loadable_macros::AsDuckDB;
 
 use crate::{
     Parameters, Result, ToValue,
-    builder_helpers::scalar_callback,
     data_chunk::DataChunk,
     environment::{Environment, StorageLocation},
-    scalar::ScalarFunctionBuilder,
-    signature::{FunctionParameter, SignatureBuilder},
+    scalar::MicroScalar,
     types::{Array, BlobValue, DuckDBType, List, UncheckedString, Variant},
     value::Value,
-    vector::{StorageKind, Unknown, VectorWriter},
+    vector::{StorageKind, Unknown, Vector, VectorWriter},
 };
 
 #[test]
@@ -393,34 +391,26 @@ fn writer_cast_slow_writes_refresh_cached_validity() -> Result<()> {
     Ok(())
 }
 
-scalar_callback!(WriterInputProbe, i32, |input, output, _ctx, _user_data| {
-    let mut vector = input.get_vector_at_mut::<i32>(0)?;
-    let original_kind = vector.storage_kind();
-    assert!(vector.writer().is_err());
-    assert_eq!(vector.storage_kind(), original_kind);
-    if original_kind == StorageKind::Other {
-        vector.flatten()?;
-    }
-    let reader = vector.reader()?;
-    let mut output = output;
-    output.set_size(reader.len())?;
-    let mut writer = output.writer()?;
-    for (index, value) in reader.iter().enumerate() {
-        writer.set(index, value.copied())?;
-    }
-    Ok(())
-});
-
 #[test]
 fn writer_rejects_native_input_layouts() -> Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
-    ScalarFunctionBuilder::new(
+    MicroScalar::create(
         "writer_input_probe",
-        SignatureBuilder::new()
-            .param(FunctionParameter::new::<i32>("input"))
-            .return_type(i32::logical_type(&conn)?),
-        WriterInputProbe,
+        |_ctx, mut vector: Vector<'_, i32>, mut output: Vector<'_, i32>| {
+            let original_kind = vector.storage_kind();
+            assert!(vector.writer().is_err());
+            assert_eq!(vector.storage_kind(), original_kind);
+            if original_kind == StorageKind::Other {
+                vector.flatten()?;
+            }
+            let reader = vector.reader()?;
+            let mut writer = output.writer()?;
+            for (index, value) in reader.iter().enumerate() {
+                writer.set(index, value.copied())?;
+            }
+            Ok(())
+        },
     )
     .register(&conn)?;
     let mut result = conn.query(

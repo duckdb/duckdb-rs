@@ -684,13 +684,13 @@ unsafe impl Send for DataChunk<'_> {}
 mod tests {
 
     use crate::AsRaw;
-    use crate::builder_helpers::scalar_callback;
-    use crate::scalar::ScalarFunctionBuilder;
+    use crate::scalar::MicroScalar;
     use crate::signature::{FunctionParameter, SignatureBuilder};
     use crate::types::DuckDBType;
     use crate::{
         data_chunk::DataChunk,
         environment::{Environment, StorageLocation},
+        vector::Vector,
     };
 
     #[test]
@@ -734,39 +734,31 @@ mod tests {
 
     #[test]
     fn test_copy_data_chunk() -> crate::Result<()> {
-        scalar_callback!(ChunkCopy, i32, |input, result, context, _ud| {
-            let mut dc = DataChunk::create(&context, &[i32::logical_type(&context)?], true)?;
-
-            let vec = dc.get_vector_at_mut::<i32>(0)?;
-
-            let input = input.get_vector_at::<i32>(0)?;
-
-            // SAFETY: the callback input outlives dc and is not mutated while dc references it.
-            unsafe {
-                vec.reference(input)?;
-            };
-            let copy = dc.copy(context)?;
-            let vec = copy.get_vector_at::<i32>(0)?;
-            let mut result = result;
-            result.set_size(vec.len())?;
-
-            for (index, value) in vec.reader()?.iter().enumerate() {
-                result.writer()?.set(index, value.copied())?;
-            }
-
-            Ok(())
-        });
-
         let env = Environment::new()?;
         let instance = env.open(StorageLocation::InMemory)?;
         let conn = instance.connect()?;
 
-        ScalarFunctionBuilder::new(
+        MicroScalar::with_signature(
             "chunk_copy",
             SignatureBuilder::new()
                 .param(FunctionParameter::new::<i32>("in"))
                 .return_type(i32::logical_type(&conn)?),
-            ChunkCopy,
+            |context, input, mut result: Vector<'_, i32>| {
+                let mut dc = DataChunk::create(context, &[i32::logical_type(context)?], true)?;
+                let vec = dc.get_vector_at_mut::<i32>(0)?;
+                let input = input.get_vector_at::<i32>(0)?;
+
+                // SAFETY: the callback input outlives dc and is not mutated while dc references it.
+                unsafe {
+                    vec.reference(input)?;
+                };
+                let copy = dc.copy(context)?;
+                let vec = copy.get_vector_at::<i32>(0)?;
+                for (index, value) in vec.reader()?.iter().enumerate() {
+                    result.writer()?.set(index, value.copied())?;
+                }
+                Ok(())
+            },
         )
         .register(&conn)?;
 

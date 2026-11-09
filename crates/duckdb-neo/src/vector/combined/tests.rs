@@ -1,14 +1,12 @@
 use super::CombinedVectorIterator;
 use crate::{
     Parameters, Result, ToValue,
-    builder_helpers::scalar_callback,
     data_chunk::DataChunk,
     environment::{Environment, StorageLocation},
-    scalar::ScalarFunctionBuilder,
-    signature::{FunctionParameter, SignatureBuilder},
+    scalar::MicroScalar,
     types::{DateValue, DuckDBType, Variant},
     value::Value,
-    vector::{StorageKind, VectorReader},
+    vector::{StorageKind, Vector, VectorReader},
 };
 
 #[test]
@@ -298,38 +296,30 @@ fn enumerated_rows_are_exact_size_and_fused() -> Result<()> {
     Ok(())
 }
 
-scalar_callback!(CombinedProbe, i32, |input, output, ctx, _user_data| {
-    let mut vector = input.get_vector_at_mut::<i32>(0)?;
-    if vector.storage_kind() == StorageKind::Other {
-        vector.flatten()?;
-    }
-    let reader = vector.reader()?;
-    let mut scratch = DataChunk::create(ctx, &[i32::logical_type(ctx)?], true)?;
-    let constant = scratch
-        .get_vector_at_mut::<i32>(0)?
-        .make_constant(9_i32.value(ctx)?, reader.len())?;
-    let rows = CombinedVectorIterator::new((reader.clone(), constant.reader()?, reader))?;
-    let mut output = output;
-    output.set_size(rows.len())?;
-    let mut writer = output.writer()?;
-    for (index, (first, constant, repeated)) in rows.enumerate() {
-        assert_eq!(constant, Some(&9));
-        assert_eq!(first, repeated);
-        writer.set(index, first.copied())?;
-    }
-    Ok(())
-});
-
 #[test]
 fn combined_iterator_handles_native_dictionary_layouts() -> Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
-    ScalarFunctionBuilder::new(
+    MicroScalar::create(
         "combined_probe",
-        SignatureBuilder::new()
-            .param(FunctionParameter::new::<i32>("input"))
-            .return_type(i32::logical_type(&conn)?),
-        CombinedProbe,
+        |ctx, mut vector: Vector<'_, i32>, mut output: Vector<'_, i32>| {
+            if vector.storage_kind() == StorageKind::Other {
+                vector.flatten()?;
+            }
+            let reader = vector.reader()?;
+            let mut scratch = DataChunk::create(ctx, &[i32::logical_type(ctx)?], true)?;
+            let constant = scratch
+                .get_vector_at_mut::<i32>(0)?
+                .make_constant(9_i32.value(ctx)?, reader.len())?;
+            let rows = CombinedVectorIterator::new((reader.clone(), constant.reader()?, reader))?;
+            let mut writer = output.writer()?;
+            for (index, (first, constant, repeated)) in rows.enumerate() {
+                assert_eq!(constant, Some(&9));
+                assert_eq!(first, repeated);
+                writer.set(index, first.copied())?;
+            }
+            Ok(())
+        },
     )
     .register(&conn)?;
     let mut result = conn.query(
