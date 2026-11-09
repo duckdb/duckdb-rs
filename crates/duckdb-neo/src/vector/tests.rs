@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use duckdb_loadable_macros::AsDuckDB;
@@ -641,10 +640,10 @@ fn vector_nested_writes_check_bounds_before_appending() -> crate::Result<()> {
     map.set_size(1)?;
     // SAFETY: the first row writes the only entry.
     unsafe { map.set_child_size(1)? };
-    map.writer()?.set(0, Some(HashMap::from([(1, Some(42))])))?;
+    map.writer()?.set(0, Some((vec![Some(1)], vec![Some(42)])))?;
     let child_len = map.children().unwrap().row_count()?;
     for index in [1, usize::MAX] {
-        assert!(map.writer()?.set(index, Some(HashMap::from([(2, Some(7))]))).is_err());
+        assert!(map.writer()?.set(index, Some((vec![Some(2)], vec![Some(7)]))).is_err());
         assert!(map.writer()?.set(index, None).is_err());
         assert_eq!(map.children().unwrap().row_count()?, child_len);
         assert_eq!(
@@ -778,9 +777,10 @@ fn map_scalar(_ctx: &Context, input: &mut VectorCollection, result: Vector<'_, M
     // SAFETY: every row below writes one entry.
     unsafe { result.set_child_size(rows.len())? };
     for (index, (key, value)) in rows.iter().enumerate() {
-        result
-            .writer()?
-            .set(index, Some(HashMap::from([(*key, Some(value.as_str()))])))?;
+        result.writer()?.set(
+            index,
+            Some((vec![Some(*key)], vec![Some(value.as_str())])),
+        )?;
     }
     let written: Vec<_> = result.reader()?.iter().collect();
     for (row, (key, value)) in written.into_iter().zip(&rows) {
@@ -2706,18 +2706,17 @@ fn test_list_offset_and_map_writes_persist_across_wrappers() -> crate::Result<()
         unsafe { first.set_child_size(3)? };
         first
             .writer()?
-            .set(0, Some(HashMap::from([(1, Some(10)), (2, Some(20))])))?;
+            .set(0, Some((vec![Some(1), Some(2)], vec![Some(10), Some(20)])))?;
     }
     let mut second = map_chunk.get_vector_at_mut::<Map<i32, i32>>(0)?;
     assert_eq!(second.child_offset(), 2);
-    second.writer()?.set(1, Some(HashMap::from([(3, Some(30))])))?;
+    second.writer()?.set(1, Some((vec![Some(3)], vec![Some(30)])))?;
     drop(second);
 
     let maps = map_chunk.get_vector_at::<Map<i32, i32>>(0)?;
     let mut rows = maps.reader()?.iter();
     let row = rows.next().unwrap().unwrap();
-    let mut entries = [row.get(0).unwrap(), row.get(1).unwrap()];
-    entries.sort();
+    let entries = [row.get(0).unwrap(), row.get(1).unwrap()];
     assert_eq!(entries, [(Some(&1), Some(&10)), (Some(&2), Some(&20))]);
     let row = rows.next().unwrap().unwrap();
     assert_eq!(row.keys(), vec![Some(&3)]);

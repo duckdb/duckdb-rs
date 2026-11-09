@@ -1,6 +1,5 @@
 //! The `MAP` logical type.
 
-use std::collections::HashMap;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
@@ -19,7 +18,7 @@ use crate::{
 
 /// Reads and writes `MAP` vectors with key type `K` and value type `V`.
 ///
-/// Rows are written from a `HashMap`, in its iteration order. Like a `LIST`, the entries
+/// Rows are written from separate key and value vectors, in their order. Like a `LIST`, the entries
 /// child is sized with [`Vector::set_child_size`] and each row takes the next entries; the
 /// [`List`](super::List) docs describe the initialization contract and trimming to
 /// [`Vector::child_offset`].
@@ -207,12 +206,18 @@ unsafe impl<K: VectorElement, V: VectorElement> HasChildren for Map<K, V> {
 
 // SAFETY: entries only cover keys and values written through the fields' own writers.
 unsafe impl<K: WritableVectorElement, V: WritableVectorElement> WritableVectorElement for Map<K, V> {
-    type Write<'a> = HashMap<K::Write<'a>, Option<V::Write<'a>>>;
+    type Write<'a> = (Vec<Option<K::Write<'a>>>, Vec<Option<V::Write<'a>>>);
 
     #[inline]
     unsafe fn write(vector: &mut VectorWriter<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
-        let Some(value) = value else { return Ok(()) };
-        let len = value.len();
+        let Some((keys, values)) = value else { return Ok(()) };
+        let len = keys.len();
+        if len != values.len() {
+            return Err(Error::invalid_input(
+                "MAP row must have the same number of keys and values",
+            ));
+        }
+
         let offset = vector.vector().child_offset_cell().get();
         // SAFETY: Map<K, V>::validate checked the STRUCT(key, value) entries and both fields.
         let entries = unsafe { vector.child_writer_unchecked::<Struct>(0)? };
@@ -223,16 +228,25 @@ unsafe impl<K: WritableVectorElement, V: WritableVectorElement> WritableVectorEl
                 size - offset.min(size)
             ))
         })?;
-        for (entry, (key, value)) in (offset..end).zip(value) {
+
+        // SAFETY: Map<K, V>::validate checked both fields of the entries.
+        let key_writer = unsafe { entries.child_writer_unchecked::<K>(0)? };
+        for (entry, key) in (offset..end).zip(keys) {
             // SAFETY: the entry is in bounds, and the fields have one row per entry.
-            unsafe {
-                entries
-                    .child_writer_unchecked::<K>(0)?
-                    .set_unchecked(entry, Some(key))?;
-                entries.child_writer_unchecked::<V>(1)?.set_unchecked(entry, value)?;
-                entries.set_validity_unchecked(entry, true);
-            }
+            unsafe { key_writer.set_unchecked(entry, key)? };
         }
+
+        // SAFETY: Map<K, V>::validate checked both fields of the entries.
+        let value_writer = unsafe { entries.child_writer_unchecked::<V>(1)? };
+        for (entry, value) in (offset..end).zip(values) {
+            // SAFETY: the entry is in bounds, and the fields have one row per entry.
+            unsafe { value_writer.set_unchecked(entry, value)? };
+        }
+        for entry in offset..end {
+            // SAFETY: both fields of this in-bounds entry have been initialized.
+            unsafe { entries.set_validity_unchecked(entry, true) };
+        }
+
         vector.vector().child_offset_cell().set(end);
         // SAFETY: the caller guarantees an in-bounds row, and the entry covers the entries just written.
         unsafe {
@@ -327,7 +341,7 @@ mod tests {
         assert_eq!(maps.child_offset(), 2);
         // SAFETY: row 1 writes the only new entry.
         unsafe { maps.set_child_size(3)? };
-        maps.writer()?.set(1, Some(HashMap::from([(3, Some(30))])))?;
+        maps.writer()?.set(1, Some((vec![Some(3)], vec![Some(30)])))?;
         let reader = maps.reader()?;
         let row = reader.get(0)?.unwrap();
         assert_eq!(
@@ -351,21 +365,19 @@ mod tests {
             maps.set_size(3)?;
             // SAFETY: row 0 writes both entries; the others write none.
             unsafe { maps.set_child_size(2)? };
-            maps.writer()?.set(0, Some(HashMap::from([(1, None), (2, Some(20))])))?;
-            maps.writer()?.set(1, Some(HashMap::new()))?;
+            maps.writer()?
+                .set(0, Some((vec![Some(1), Some(2)], vec![None, Some(20)])))?;
+            maps.writer()?.set(1, Some((vec![], vec![])))?;
             maps.writer()?.set(2, None)?;
         }
 
         let maps = chunk.get_vector_at::<Map<i32, i32>>(0)?;
         let maps_reader = maps.reader()?;
         let row = maps_reader.get(0)?.expect("row 0 is not NULL");
-        let mut entries = [row.get(0).unwrap(), row.get(1).unwrap()];
-        entries.sort();
+        let entries = [row.get(0).unwrap(), row.get(1).unwrap()];
         assert_eq!(entries, [(Some(&1), None), (Some(&2), Some(&20))]);
         assert_eq!(row.get(2), None);
-        let mut values = row.values();
-        values.sort();
-        assert_eq!(values, [None, Some(&20)]);
+        assert_eq!(row.values(), [None, Some(&20)]);
 
         assert!(maps_reader.get(1)?.expect("row 1 is not NULL").keys().is_empty());
         assert!(maps_reader.get(2)?.is_none());
@@ -384,9 +396,11 @@ mod tests {
             maps.set_size(2)?;
             // SAFETY: row 0 writes all three entries.
             unsafe { maps.set_child_size(3)? };
-            maps.writer()?
-                .set(0, Some(HashMap::from([(1, None), (2, Some(20)), (3, Some(30))])))?;
-            maps.writer()?.set(1, Some(HashMap::new()))?;
+            maps.writer()?.set(
+                0,
+                Some((vec![Some(1), Some(2), Some(3)], vec![None, Some(20), Some(30)])),
+            )?;
+            maps.writer()?.set(1, Some((vec![], vec![])))?;
         }
 
         let maps = chunk.get_vector_at::<Map<i32, i32>>(0)?;
@@ -394,14 +408,13 @@ mod tests {
         let row = maps_reader.get(0)?.expect("row 0 is not NULL");
         assert_eq!(row.len(), 3);
         assert!(!row.is_empty());
-        let mut entries: Vec<_> = row.iter().collect();
+        let entries: Vec<_> = row.iter().collect();
         assert_eq!(row.keys().into_iter().zip(row.values()).collect::<Vec<_>>(), entries);
         for (index, entry) in entries.iter().enumerate() {
             assert_eq!(row.get(index), Some(*entry));
         }
         assert_eq!(row.get(row.len()), None);
         assert_eq!(row.get(usize::MAX), None);
-        entries.sort();
         assert_eq!(
             entries,
             [(Some(&1), None), (Some(&2), Some(&20)), (Some(&3), Some(&30))]
@@ -455,21 +468,57 @@ mod tests {
     }
 
     #[test]
+    fn map_writes_initialize_all_entries() -> Result<()> {
+        let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+        let mut chunk = DataChunk::create(&conn, &[MapValue::<i32, i32>::logical_type(&conn)?], true)?;
+        let mut maps = chunk.get_vector_at_mut::<Map<i32, i32>>(0)?;
+        maps.set_size(2)?;
+        // SAFETY: all entries are initialized below, before any reads.
+        unsafe { maps.set_child_size(4)? };
+        {
+            let mut children = maps.children_mut().unwrap();
+            let mut entries = children.get_vector_at_mut::<Struct>(0)?;
+            for index in 0..4 {
+                entries.set_null_slow(index)?;
+            }
+        }
+        {
+            let mut writer = maps.writer()?;
+            writer.set(0, Some((vec![Some(7), Some(2)], vec![Some(70), None])))?;
+            writer.set(1, Some((vec![Some(9), Some(4)], vec![Some(90), Some(40)])))?;
+            assert_eq!(writer.child_offset(), 4);
+        }
+
+        let reader = maps.reader()?;
+        assert_eq!(
+            reader.get(0)?.unwrap().iter().collect::<Vec<_>>(),
+            [(Some(&7), Some(&70)), (Some(&2), None)]
+        );
+        assert_eq!(
+            reader.get(1)?.unwrap().iter().collect::<Vec<_>>(),
+            [(Some(&9), Some(&90)), (Some(&4), Some(&40))]
+        );
+        let entries = maps.children().unwrap().get_vector_at::<Struct>(0)?;
+        assert!(entries.reader()?.iter().all(|entry| entry.is_some()));
+        Ok(())
+    }
+
+    #[test]
     fn map_rows_take_entries_in_write_order() -> Result<()> {
         let env = Environment::new()?;
         let conn = env.open(StorageLocation::InMemory)?.connect()?;
         let mut chunk = DataChunk::create(&conn, &[MapValue::<i32, String>::logical_type(&conn)?], true)?;
         let mut maps = chunk.get_vector_at_mut::<Map<i32, String>>(0)?;
         maps.set_size(2)?;
-        let error = maps.writer()?.set(0, Some(HashMap::from([(1, None)]))).unwrap_err();
+        let error = maps.writer()?.set(0, Some((vec![Some(1)], vec![None]))).unwrap_err();
         assert!(error.message.contains("only 0 of 0 remain"), "{error}");
         // SAFETY: the rows below write all three entries.
         unsafe { maps.set_child_size(3)? };
         {
             let mut writer = maps.writer()?;
-            writer.set(1, Some(HashMap::from([(1, Some("one")), (2, None)])))?;
+            writer.set(1, Some((vec![Some(1), Some(2)], vec![Some("one"), None])))?;
             let error = writer
-                .set(0, Some(HashMap::from([(3, Some("three")), (4, None)])))
+                .set(0, Some((vec![Some(3), Some(4)], vec![Some("three"), None])))
                 .unwrap_err();
             assert!(
                 error
@@ -478,7 +527,7 @@ mod tests {
                 "{error}"
             );
             assert_eq!(writer.child_offset(), 2);
-            writer.set(0, Some(HashMap::from([(3, Some("three"))])))?;
+            writer.set(0, Some((vec![Some(3)], vec![Some("three")])))?;
         }
         let reader = maps.reader()?;
         let row = reader.get(0)?.unwrap();
@@ -487,8 +536,7 @@ mod tests {
         assert_eq!(row.get(1), None);
         let row = reader.get(1)?.unwrap();
         assert_eq!(row.offset, 0);
-        let mut entries = [row.get(0).unwrap(), row.get(1).unwrap()];
-        entries.sort();
+        let entries = [row.get(0).unwrap(), row.get(1).unwrap()];
         assert_eq!(entries, [(Some(&1), Some("one")), (Some(&2), None)]);
         Ok(())
     }
