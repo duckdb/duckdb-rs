@@ -1,11 +1,12 @@
 use super::{
-    UUID_BYTE_WIDTH, UUID_EXTENSION_NAME, data_chunk_to_arrow, flat_vector_to_arrow_array,
-    record_batch_to_duckdb_data_chunk, to_duckdb_logical_type, to_duckdb_logical_type_for_field,
+    data_chunk_to_arrow, flat_vector_to_arrow_array, record_batch_to_duckdb_data_chunk, to_duckdb_logical_type,
+    to_duckdb_logical_type_for_field,
 };
 use crate::{
     Connection, Result,
-    arrow_interop::test_support::{ARROW_EXTENSION_NAME_KEY, uuid_field, uuid_metadata},
+    arrow_interop::test_support::{uuid_field, uuid_metadata},
     core::{DataChunkHandle, Inserter, LogicalTypeHandle, LogicalTypeId},
+    types::extension::{ARROW_EXTENSION_NAME_KEY, UUID_BYTE_WIDTH, UUID_EXTENSION_NAME},
     vtab::arrow::{ArrowBatchRegistration, ArrowVTab},
 };
 use arrow::{

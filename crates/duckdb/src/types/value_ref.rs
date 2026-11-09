@@ -1,4 +1,4 @@
-use super::{Type, Value};
+use super::{Type, Value, variant::variant_to_value};
 use crate::types::{Decimal, FromSqlError, FromSqlResult, OrderedMap};
 
 use crate::{Error, Result, Row};
@@ -7,7 +7,7 @@ use arrow::{
         Array, ArrayRef, DictionaryArray, FixedSizeListArray, LargeListArray, ListArray, MapArray, StringArray,
         StructArray, UnionArray,
     },
-    datatypes::{UInt8Type, UInt16Type, UInt32Type},
+    datatypes::{DataType, Field, UInt8Type, UInt16Type, UInt32Type},
 };
 
 /// An absolute length of time in seconds, milliseconds, microseconds or nanoseconds.
@@ -122,6 +122,12 @@ pub enum ValueRef<'a> {
     Map(&'a MapArray, usize),
     /// The value is a union.
     Union(&'a ArrayRef, usize),
+    /// The value is a `VARIANT`, stored as an `arrow.parquet.variant` struct.
+    ///
+    /// [`to_owned`](Self::to_owned) decodes objects to [`Value::Struct`],
+    /// arrays to [`Value::List`], and primitives to the matching scalar
+    /// [`Value`]; UUIDs decode to [`Value::Text`].
+    Variant(&'a StructArray, usize),
 }
 
 /// Wrapper type for different list sizes
@@ -180,6 +186,7 @@ impl ValueRef<'_> {
             },
             ValueRef::Enum(..) => Type::Enum,
             ValueRef::Union(arr, _) => arr.data_type().into(),
+            ValueRef::Variant(..) => Type::Variant,
         }
     }
 
@@ -290,6 +297,7 @@ impl From<ValueRef<'_>> for Value {
             ValueRef::Map(arr, idx) => from_map(arr, idx),
             ValueRef::Array(items, idx) => from_array(items, idx),
             ValueRef::Union(column, idx) => from_union(column, idx),
+            ValueRef::Variant(array, idx) => variant_to_value(array, idx),
         }
     }
 }
@@ -301,6 +309,7 @@ fn from_list_value(items: ListType<'_>, idx: usize) -> Value {
             from_list(
                 offsets[idx].try_into().unwrap(),
                 offsets[idx + 1].try_into().unwrap(),
+                items.data_type(),
                 items.values(),
             )
         }
@@ -309,17 +318,26 @@ fn from_list_value(items: ListType<'_>, idx: usize) -> Value {
             from_list(
                 offsets[idx].try_into().unwrap(),
                 offsets[idx + 1].try_into().unwrap(),
+                items.data_type(),
                 items.values(),
             )
         }
     }
 }
 
-fn from_list(start: usize, end: usize, values: &ArrayRef) -> Value {
+fn from_list(start: usize, end: usize, data_type: &DataType, values: &ArrayRef) -> Value {
+    let field = list_child_field(data_type);
     let capacity = end - start;
     let mut list_vec = Vec::with_capacity(capacity);
-    list_vec.extend((start..end).map(|row| Row::value_ref_internal(row, values).to_owned()));
+    list_vec.extend((start..end).map(|row| Row::value_ref_internal(row, field, values).to_owned()));
     Value::List(list_vec)
+}
+
+fn list_child_field(data_type: &DataType) -> &Field {
+    match data_type {
+        DataType::List(field) | DataType::LargeList(field) | DataType::FixedSizeList(field, _) => field,
+        other => panic!("expected a list type, got {other}"),
+    }
 }
 
 fn from_struct(items: &StructArray, idx: usize) -> Value {
@@ -329,8 +347,13 @@ fn from_struct(items: &StructArray, idx: usize) -> Value {
         items
             .columns()
             .iter()
-            .zip(items.fields().iter().map(|f| f.name().to_owned()))
-            .map(|(column, name)| -> (String, Value) { (name, Row::value_ref_internal(idx, column).to_owned()) }),
+            .zip(items.fields().iter())
+            .map(|(column, field)| -> (String, Value) {
+                (
+                    field.name().to_owned(),
+                    Row::value_ref_internal(idx, field, column).to_owned(),
+                )
+            }),
     );
     Value::Struct(OrderedMap::from(value))
 }
@@ -338,35 +361,44 @@ fn from_struct(items: &StructArray, idx: usize) -> Value {
 fn from_map(arr: &MapArray, idx: usize) -> Value {
     let keys = arr.keys();
     let values = arr.values();
+    let fields = arr.entries().fields();
     let offsets = arr.offsets();
     let range = offsets[idx]..offsets[idx + 1];
     let capacity = range.len();
     let mut map_vec = Vec::with_capacity(capacity);
     map_vec.extend(range.map(|row| {
         let row = row.try_into().unwrap();
-        let key = Row::value_ref_internal(row, keys).to_owned();
-        let value = Row::value_ref_internal(row, values).to_owned();
+        let key = Row::value_ref_internal(row, &fields[0], keys).to_owned();
+        let value = Row::value_ref_internal(row, &fields[1], values).to_owned();
         (key, value)
     }));
     Value::Map(OrderedMap::from(map_vec))
 }
 
 fn from_array(items: &FixedSizeListArray, idx: usize) -> Value {
+    let field = list_child_field(items.data_type());
     let value_length = usize::try_from(items.value_length()).unwrap();
     let range = (idx * value_length)..((idx + 1) * value_length);
     let mut array_vec = Vec::with_capacity(value_length);
-    array_vec.extend(range.map(|row| Row::value_ref_internal(row, items.values()).to_owned()));
+    array_vec.extend(range.map(|row| Row::value_ref_internal(row, field, items.values()).to_owned()));
     Value::Array(array_vec)
 }
 
 fn from_union(column: &ArrayRef, idx: usize) -> Value {
     let column = column.as_any().downcast_ref::<UnionArray>().unwrap();
     let type_id = column.type_id(idx);
+    let DataType::Union(fields, _) = column.data_type() else {
+        unreachable!("UnionArray has a union type")
+    };
+    let (_, field) = fields
+        .iter()
+        .find(|(id, _)| *id == type_id)
+        .expect("union type id has a field");
     // Arrow's value offset is the row in the active child array. DuckDB
     // currently emits sparse unions where this equals `idx`, but using the
     // offset keeps the decoder correct for dense unions too.
     let value_offset = column.value_offset(idx);
-    let tag = Row::value_ref_internal(value_offset, column.child(type_id));
+    let tag = Row::value_ref_internal(value_offset, field, column.child(type_id));
     Value::Union(Box::new(tag.to_owned()))
 }
 

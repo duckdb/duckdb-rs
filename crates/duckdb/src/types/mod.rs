@@ -65,6 +65,7 @@ pub use self::{
 };
 pub(crate) use decimal::to_duckdb_decimal;
 pub(crate) use value_ref::{binding_unsupported_value, value_ref_from_value};
+pub(crate) use variant::is_variant_field;
 
 mod bind_container;
 pub(crate) use bind_container::{OwnedDuckValue, create_owned_container, is_owned_container};
@@ -84,8 +85,11 @@ mod to_sql;
 mod url;
 mod value;
 mod value_ref;
+mod variant;
 
 mod decimal;
+#[cfg_attr(not(feature = "vtab-arrow"), allow(dead_code))]
+pub(crate) mod extension;
 mod ordered_map;
 mod string;
 

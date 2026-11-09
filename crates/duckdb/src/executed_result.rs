@@ -15,12 +15,10 @@ use arrow::{
 
 use super::{Result, ffi};
 use crate::{
-    Error,
     core::{LogicalTypeHandle, LogicalTypeId},
     error::{
         arrow_conversion_failure, duckdb_failure_from_message, result_error_message, result_from_duckdb_error_data,
     },
-    types::Type,
 };
 #[cfg(feature = "polars")]
 use polars_core::utils::arrow as polars_arrow;
@@ -181,7 +179,6 @@ impl ExecutedResult {
 
             for idx in 0..column_count {
                 let logical_type = Self::try_result_column_logical_type(result, idx)?;
-                reject_unsupported_result_logical_type(idx, &logical_type)?;
 
                 let name = ffi::duckdb_column_name(result, idx as u64);
                 if name.is_null() {
@@ -322,19 +319,6 @@ pub(crate) unsafe fn logical_type_from_duckdb_column(
     }
     Ok(unsafe { LogicalTypeHandle::new(ptr) })
 }
-
-pub(crate) fn reject_unsupported_result_logical_type(idx: usize, logical_type: &LogicalTypeHandle) -> Result<()> {
-    if logical_type.contains_type_id(LogicalTypeId::Variant) {
-        return Err(Error::FromSqlConversionFailure(
-            idx,
-            Type::Variant,
-            "decoding Variant columns is not supported".into(),
-        ));
-    }
-
-    Ok(())
-}
-
 /// Owned DuckDB result handle.
 ///
 /// DuckDB advances result state while fetching chunks, so the raw result lives

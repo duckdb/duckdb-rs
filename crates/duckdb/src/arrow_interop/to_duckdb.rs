@@ -17,13 +17,10 @@ use num::{ToPrimitive, cast::AsPrimitive};
 
 use crate::{
     core::{ArrayVector, DataChunkHandle, FlatVector, Inserter, ListVector, LogicalTypeId, StructVector},
-    types::Decimal,
+    types::{Decimal, extension::UUID_BYTE_WIDTH},
 };
 
-use super::{
-    UUID_BYTE_WIDTH,
-    schema::{invalid_uuid_storage_error, validate_arrow_decimal_metadata},
-};
+use super::schema::{invalid_uuid_storage_error, validate_arrow_decimal_metadata};
 
 struct DataChunkHandleSlice<'a> {
     chunk: &'a mut DataChunkHandle,
