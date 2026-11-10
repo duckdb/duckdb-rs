@@ -138,6 +138,132 @@ fn writer_borrows_non_clone_fields_and_values() -> Result<()> {
 }
 
 #[test]
+fn writer_rewrites_nulls_across_mask_words() -> Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    for count in [0, 1, 15, 16, 17, 31, 32, 33, 47, 48, 49, 63, 64, 65, 129, 2048, 5000] {
+        let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
+        let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
+        vector.set_size(count)?;
+        {
+            let mut writer = vector.writer()?;
+            for index in 0..count {
+                writer.set(index, None)?;
+            }
+            for index in 0..count {
+                writer.set(index, Some(&(index as i32)))?;
+            }
+            if count > 0 {
+                for index in [count / 2, count - 1, 0] {
+                    writer.set(index, None)?;
+                    writer.set(index, Some(&(index as i32)))?;
+                }
+                writer.set(count / 2, None)?;
+            }
+        }
+        if count > 0 {
+            vector.writer()?.set(count / 2, Some(&((count / 2) as i32)))?;
+        }
+        for (index, value) in vector.reader()?.iter().enumerate() {
+            assert_eq!(value.copied(), Some(index as i32));
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn writer_validity_groups_preserve_neighboring_rows() -> Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
+    vector.set_size(129)?;
+    let mut expected = vec![Some(42); 129];
+    {
+        let mut writer = vector.writer()?;
+        for index in 0..writer.len() {
+            writer.set(index, Some(&42))?;
+        }
+        for group in (0..8).step_by(2) {
+            for (index, value) in expected.iter_mut().enumerate().skip(group * 16).take(16) {
+                writer.set(index, None)?;
+                *value = None;
+            }
+        }
+        for index in [0, 15, 16, 31, 32, 47, 48, 63, 64, 79, 80, 95, 96, 111, 112, 127, 128] {
+            writer.set(index, None)?;
+            writer.set(index, Some(&(index as i32)))?;
+            expected[index] = Some(index as i32);
+        }
+    }
+    assert_eq!(
+        vector.reader()?.iter().map(|value| value.copied()).collect::<Vec<_>>(),
+        expected
+    );
+    Ok(())
+}
+
+#[test]
+fn writer_handles_manual_validity_and_padding() -> Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
+    vector.set_size(65)?;
+    {
+        let mut writer = vector.writer()?;
+        for index in 0..writer.len() {
+            writer.set(index, Some(&(index as i32)))?;
+        }
+        // SAFETY: Every INTEGER row was initialized; there are no descendants.
+        unsafe {
+            writer.fill_validity(false)?;
+            writer.set_row_validity(0, false)?;
+            writer.set_row_validity(64, true)?;
+            writer.fill_validity(true)?;
+            writer.set_row_validity(63, false)?;
+            writer.set_row_validity(63, true)?;
+            writer.fill_validity(true)?;
+            writer.validity_mut()?[0] &= !(1 << 2);
+        }
+        writer.set(2, Some(&2))?;
+        // SAFETY: Only padding bits outside the vector's rows are cleared.
+        unsafe { writer.validity_mut()?[1] = 1 };
+    }
+    vector.writer()?.set(64, Some(&64))?;
+    for (index, value) in vector.reader()?.iter().enumerate() {
+        assert_eq!(value.copied(), Some(index as i32));
+    }
+    Ok(())
+}
+
+#[test]
+fn writer_restores_validity_after_slow_writes() -> Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
+    vector.set_size(3)?;
+    {
+        let mut writer = vector.writer()?;
+        for index in 0..writer.len() {
+            writer.set(index, Some(&(index as i32)))?;
+        }
+        writer.set_null_slow(1)?;
+        writer.set(1, Some(&1))?;
+        // SAFETY: Every INTEGER row has been initialized.
+        unsafe { writer.fill_validity(true)? };
+        writer.write_value_slow(2, &Value::null(&conn, &i32::logical_type(&conn)?)?)?;
+        writer.set(2, Some(&2))?;
+    }
+    assert_eq!(
+        vector.reader()?.iter().collect::<Vec<_>>(),
+        [Some(&0), Some(&1), Some(&2)]
+    );
+    Ok(())
+}
+
+#[test]
 fn writer_supports_raw_access_without_a_typed_encoder() -> Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;

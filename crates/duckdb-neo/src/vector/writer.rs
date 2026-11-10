@@ -360,13 +360,13 @@ impl<T: VectorElement> VectorWriter<'_, T> {
     pub(crate) unsafe fn set_validity_unchecked(&mut self, index: usize, is_valid: bool) {
         // SAFETY: The owning writer guarantees flat, writable storage; the caller guarantees bounds.
         let word = unsafe { self.validity.add(index / 64) };
+        let current = unsafe { *word };
+        if is_valid && current == u64::MAX || !is_valid && current == 0 {
+            return;
+        }
         let mask = 1u64 << (index % 64);
         unsafe {
-            if is_valid {
-                *word |= mask;
-            } else {
-                *word &= !mask;
-            }
+            *word = if is_valid { current | mask } else { current & !mask };
         }
     }
 }
