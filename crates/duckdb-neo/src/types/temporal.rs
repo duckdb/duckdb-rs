@@ -50,6 +50,7 @@ macro_rules! declare_storage_value {
         unsafe impl WritableVectorElement for $name {
             type Write = Self;
 
+            #[inline]
             unsafe fn write(vector: &mut crate::vector::VectorWriter<'_, Self>, index: usize, value: Option<&Self::Write>) -> Result<()> {
                 // SAFETY: The caller guarantees a writable, flat, in-bounds row.
                 unsafe { vector.write_internal(index, value.copied()) }
@@ -234,6 +235,7 @@ declare_vector_element!(IntervalValue, Interval);
 unsafe impl WritableVectorElement for IntervalValue {
     type Write = Self;
 
+    #[inline]
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,

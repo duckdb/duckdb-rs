@@ -98,6 +98,7 @@ unsafe impl VectorElement for rust_decimal::Decimal {
 unsafe impl WritableVectorElement for rust_decimal::Decimal {
     type Write = rust_decimal::Decimal;
 
+    #[inline]
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,

@@ -39,6 +39,7 @@ unsafe impl VectorElement for Variant {
 unsafe impl WritableVectorElement for Variant {
     type Write = Value;
 
+    #[inline]
     unsafe fn write(
         writer: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,

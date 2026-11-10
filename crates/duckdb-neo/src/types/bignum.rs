@@ -100,6 +100,7 @@ unsafe impl VectorElement for BigNum {
 unsafe impl WritableVectorElement for BigNum {
     type Write = BigNum;
 
+    #[inline]
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
@@ -173,6 +174,7 @@ unsafe impl VectorElement for BigNumValue {
 unsafe impl WritableVectorElement for BigNumValue {
     type Write = BigNumValue;
 
+    #[inline]
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,

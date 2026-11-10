@@ -268,6 +268,7 @@ unsafe impl VectorElement for UncheckedString {
 unsafe impl WritableVectorElement for UncheckedString {
     type Write = str;
 
+    #[inline(always)]
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
@@ -297,6 +298,7 @@ unsafe impl WritableVectorElement for String {
 unsafe impl WritableVectorElement for BlobValue {
     type Write = [u8];
 
+    #[inline]
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
@@ -311,6 +313,7 @@ unsafe impl WritableVectorElement for BlobValue {
 unsafe impl WritableVectorElement for BitValue {
     type Write = [u8];
 
+    #[inline]
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
@@ -357,6 +360,7 @@ impl HasDuckDBBytes for &str {}
 unsafe impl WritableVectorElement for &str {
     type Write = str;
 
+    #[inline(always)]
     unsafe fn write(
         writer: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
