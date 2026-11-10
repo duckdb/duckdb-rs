@@ -149,6 +149,7 @@ pub(crate) fn as_vector_element(input: &syn::DeriveInput) -> syn::Result<TokenSt
                 ::core::result::Result::Ok(true)
             }
 
+            #[inline]
             unsafe fn get<#lifetime, #reader_type: #bound>(
                 reader: &::duckdb_neo::vector::VectorReader<#lifetime, #reader_type>,
                 _physical: ::core::primitive::usize,
@@ -248,6 +249,44 @@ pub(crate) fn as_writable_vector_element(input: &syn::DeriveInput) -> syn::Resul
 #[cfg(test)]
 mod tests {
     use super::{as_vector_element, as_writable_vector_element};
+
+    #[test]
+    fn generated_gets_are_inline() {
+        let structure = syn::parse_quote!(
+            struct Row {
+                value: i32,
+            }
+        );
+        let union = syn::parse_quote!(
+            enum Input {
+                Num(i32),
+                Text(String),
+            }
+        );
+        for (tokens, expected) in [
+            (as_vector_element(&structure).unwrap(), 1),
+            (super::super::union::as_duckdb_union(&union).unwrap(), 2),
+        ] {
+            let output = syn::parse2::<syn::File>(tokens).unwrap();
+            let getters = output
+                .items
+                .iter()
+                .filter_map(|item| match item {
+                    syn::Item::Impl(item) => Some(&item.items),
+                    _ => None,
+                })
+                .flatten()
+                .filter_map(|item| match item {
+                    syn::ImplItem::Fn(method) if method.sig.ident == "get" => Some(method),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(getters.len(), expected);
+            for getter in getters {
+                assert!(getter.attrs.iter().any(|attr| attr.meta == syn::parse_quote!(inline)));
+            }
+        }
+    }
 
     #[test]
     fn vector_derives_require_named_fields() {

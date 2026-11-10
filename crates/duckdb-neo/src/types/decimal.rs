@@ -75,6 +75,7 @@ macro_rules! decimal_storage {
                     Ok(matches!(DecimalSignature::from_logical_type(other)?.width, $min..=$max))
                 }
 
+                #[inline]
                 unsafe fn get<'a, U: VectorElement>(vector: &crate::vector::VectorReader<'a, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
                 where
                     Self: 'a,
@@ -256,6 +257,7 @@ where
             })
     }
 
+    #[inline]
     unsafe fn get<'a, U: VectorElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,

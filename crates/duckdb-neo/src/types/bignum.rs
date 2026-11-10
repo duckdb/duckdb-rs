@@ -83,6 +83,7 @@ unsafe impl VectorElement for BigNum {
 
     type Ref<'a> = &'a BigNum;
 
+    #[inline]
     unsafe fn get<'a, U: VectorElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
@@ -157,6 +158,7 @@ unsafe impl VectorElement for BigNumValue {
 
     type Ref<'a> = &'a BigNum;
 
+    #[inline]
     unsafe fn get<'a, U: VectorElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,

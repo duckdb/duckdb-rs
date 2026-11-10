@@ -114,6 +114,7 @@ macro_rules! declare_vector_element {
 
             type Ref<'a> = &'a $type;
 
+            #[inline]
             unsafe fn get<'a, U: $crate::vector::VectorElement>(
                 vector: &$crate::vector::VectorReader<'a, U>,
                 physical: usize,

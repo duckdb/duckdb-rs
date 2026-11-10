@@ -111,6 +111,7 @@ unsafe impl<T: VectorElement, const N: usize> VectorElement for Array<T, N> {
         Ok(array_size(other)? == N)
     }
 
+    #[inline]
     unsafe fn get<'a, U: VectorElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
@@ -327,18 +328,22 @@ mod tests {
             .next_chunk()?
             .unwrap();
         let vector = chunk.get_vector_at::<Array<Array<String, 2>, 2>>(0)?;
-        let row = {
-            let reader = vector.reader()?;
-            reader.get(0)?.unwrap()
+        let text = {
+            let mut iter = {
+                let inner = {
+                    let row = {
+                        let reader = vector.reader()?;
+                        reader.get(0)?.unwrap()
+                    };
+                    row.iter().next().unwrap().unwrap()
+                };
+                inner.iter()
+            };
+            let text = iter.next().unwrap().unwrap();
+            assert_eq!(iter.next(), Some(None));
+            assert_eq!(iter.next(), None);
+            text
         };
-        let inner = row.iter().next().unwrap().unwrap();
-        drop(row);
-        let mut iter = inner.iter();
-        drop(inner);
-        let text = iter.next().unwrap().unwrap();
-        assert_eq!(iter.next(), Some(None));
-        assert_eq!(iter.next(), None);
-        drop(iter);
         assert_eq!(text, "a string longer than the inline storage");
         Ok(())
     }

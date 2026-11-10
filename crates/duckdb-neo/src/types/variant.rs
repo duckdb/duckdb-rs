@@ -23,6 +23,7 @@ unsafe impl VectorElement for Variant {
 
     type Ref<'a> = Value;
 
+    #[inline]
     unsafe fn get<'a, U: VectorElement>(
         reader: &crate::vector::VectorReader<'a, U>,
         _physical: usize,

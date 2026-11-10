@@ -32,6 +32,7 @@ unsafe impl VectorElement for Struct {
         Ok(matches!(other.id()?, LogicalTypeID::Struct | LogicalTypeID::Tuple))
     }
 
+    #[inline]
     unsafe fn get<'a, U: VectorElement>(
         _reader: &crate::vector::VectorReader<'a, U>,
         _physical: usize,

@@ -154,6 +154,7 @@ unsafe impl<T: VectorElement> VectorElement for List<T> {
         children.get_untyped_vector_at(0)?.validate_as::<T>().map(|()| true)
     }
 
+    #[inline]
     unsafe fn get<'a, U: VectorElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
@@ -175,6 +176,7 @@ unsafe impl<T: VectorElement> VectorElement for List<T> {
 impl<T: VectorElement> crate::vector::VectorReader<'_, List<T>> {
     /// Return a row's range in the child vector, or `None` for SQL NULL, without reading its elements.
     /// Out-of-range indices are errors.
+    #[inline]
     pub fn get_list_entry(&self, index: usize) -> Result<Option<ListIndex>> {
         // SAFETY: LIST rows are stored as list entries.
         unsafe { self.list_entry(index) }
@@ -292,6 +294,7 @@ pub struct ListRef<'a, T: VectorElement> {
 
 impl<'a, T: VectorElement> ListRef<'a, T> {
     /// Return an element; outer `None` means the index is out of bounds.
+    #[inline]
     pub fn get(&self, index: usize) -> Option<Option<T::Ref<'a>>> {
         // SAFETY: The parent reader cached all descendant views before constructing this row.
         (index < self.len()).then(|| unsafe { self.child.get_unchecked(self.list.offset as usize + index) })

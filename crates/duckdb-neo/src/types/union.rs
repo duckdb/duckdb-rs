@@ -50,6 +50,7 @@ unsafe impl VectorElement for Union {
         Self: 'a;
     type Internal<'a> = ();
 
+    #[inline]
     unsafe fn get<'a, U: VectorElement>(
         _reader: &crate::vector::VectorReader<'a, U>,
         _physical: usize,
@@ -179,7 +180,7 @@ pub mod derive_support {
 
     /// Report a valid row whose tag names no member, which DuckDB never produces.
     #[cold]
-    pub fn invalid_union_tag(tag: Option<u8>, count: usize) -> ! {
+    pub fn invalid_union_tag(tag: Option<&u8>, count: usize) -> ! {
         panic!("UNION row has tag {tag:?}, but the union has {count} members")
     }
 }

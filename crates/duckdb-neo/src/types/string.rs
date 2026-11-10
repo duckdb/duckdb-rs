@@ -182,6 +182,7 @@ unsafe impl VectorElement for BlobValue {
 
     type Ref<'a> = &'a [u8];
 
+    #[inline]
     unsafe fn get<'a, U: VectorElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
@@ -203,6 +204,7 @@ unsafe impl VectorElement for BitValue {
 
     type Ref<'a> = &'a [u8];
 
+    #[inline]
     unsafe fn get<'a, U: VectorElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
@@ -226,6 +228,7 @@ unsafe impl VectorElement for String {
 
     type Ref<'a> = &'a str;
 
+    #[inline]
     unsafe fn get<'a, U: VectorElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
@@ -250,6 +253,7 @@ unsafe impl VectorElement for UncheckedString {
 
     type Ref<'a> = &'a str;
 
+    #[inline]
     unsafe fn get<'a, U: VectorElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
@@ -342,6 +346,7 @@ unsafe impl VectorElement for &str {
     where
         Self: 'a;
 
+    #[inline]
     unsafe fn get<'a, U: VectorElement>(
         reader: &crate::vector::VectorReader<'a, U>,
         physical: usize,

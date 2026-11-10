@@ -300,6 +300,7 @@ fn vector_element(input: &syn::DeriveInput, variants: &UnionVariants<'_>) -> Tok
                 ::core::result::Result::Ok(true)
             }
 
+            #[inline]
             unsafe fn get<#lifetime, #reader_type: #bound>(
                 reader: &::duckdb_neo::vector::VectorReader<#lifetime, #reader_type>,
                 _physical: ::core::primitive::usize,
@@ -308,8 +309,8 @@ fn vector_element(input: &syn::DeriveInput, variants: &UnionVariants<'_>) -> Tok
             where Self: #lifetime {
                 // SAFETY: validation checked the tag child, and the reader prepared every child reader.
                 let tag = unsafe { reader.get_child_value_unchecked::<::core::primitive::u8>(0, logical) };
-                match tag.copied() {
-                    #(::core::option::Option::Some(#tags) => #ref_ident::#idents(
+                match tag {
+                    #(::core::option::Option::Some(&#tags) => #ref_ident::#idents(
                         // SAFETY: validation checked this member's child type.
                         unsafe { reader.get_child_value_unchecked::<#types>(#child_indexes, logical) }
                     ),)*
@@ -332,6 +333,7 @@ fn vector_element(input: &syn::DeriveInput, variants: &UnionVariants<'_>) -> Tok
                 <#ident #type_generics as #bound>::validate(other, children)
             }
 
+            #[inline]
             unsafe fn get<#read_lifetime, #reader_type: #bound>(
                 reader: &::duckdb_neo::vector::VectorReader<#read_lifetime, #reader_type>,
                 physical: ::core::primitive::usize,

@@ -229,6 +229,7 @@ unsafe impl VectorElement for Unknown {
         Ok(true)
     }
 
+    #[inline]
     unsafe fn get<'a, U: VectorElement>(
         _reader: &VectorReader<'a, U>,
         _physical: usize,

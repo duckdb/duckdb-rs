@@ -71,6 +71,7 @@ unsafe impl VectorElement for UuidValueRaw {
     where
         Self: 'a;
 
+    #[inline]
     unsafe fn get<'a, U: VectorElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
@@ -179,6 +180,7 @@ mod external {
 
         type Ref<'a> = Uuid;
 
+        #[inline]
         unsafe fn get<'a, U: VectorElement>(
             vector: &crate::vector::VectorReader<'a, U>,
             physical: usize,
