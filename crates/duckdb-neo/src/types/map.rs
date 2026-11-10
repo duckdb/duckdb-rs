@@ -19,7 +19,7 @@ use crate::{
 ///
 /// As a vector element, `Map<K, V>` reads and writes `MAP` vectors with key type `K` and value type `V`.
 /// Like a `LIST`, the entries child is sized with [`Vector::set_child_size`] and each row takes the next
-/// entries; the [`List`](super::List) docs describe the initialization contract and trimming to
+/// entries; the [`List`](super::List) docs describe initialization and trimming to
 /// [`Vector::child_offset`]. DuckDB requires unique keys, which writes do not check.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Map<K, V>(pub Vec<(K, Option<V>)>);
@@ -161,11 +161,13 @@ impl<K: VectorElement, V: VectorElement> Vector<'_, Map<K, V>> {
     /// Size the entries child to exactly `entries`; writes continue at [`Self::child_offset`],
     /// capped at the new size.
     ///
+    /// New entries are initialized like [`Self::set_size`]; see [`List`](super::List) for sizing to an
+    /// upper bound and trimming.
+    ///
     /// # Safety
-    /// Every entry below `entries` must be written before DuckDB reads this vector, and no written
-    /// row may use an entry at or above it; see [`List`](super::List) for sizing to an upper bound and trimming.
+    /// No written row may use an entry at or above `entries`.
     pub unsafe fn set_child_size(&mut self, entries: usize) -> Result<()> {
-        // SAFETY: the caller upholds the initialization contract.
+        // SAFETY: the caller keeps written rows below the new size.
         unsafe { self.size_appended_child(entries) }
     }
 

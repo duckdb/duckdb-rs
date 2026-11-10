@@ -16,7 +16,7 @@ use crate::{
     signature::{FunctionParameter, SignatureBuilder},
     types::{
         Array, BigNum, BigNumValue, BitValue, BlobValue, DateValue, DecimalSignature, DecimalValue, DuckDBType,
-        IntervalValue, List, ListRef, LongDecimal, Map, ShortDecimal, TimeNsValue, TimeTzValue, TimeValue,
+        IntervalValue, List, ListIndex, ListRef, LongDecimal, Map, ShortDecimal, TimeNsValue, TimeTzValue, TimeValue,
         TimestampMsValue, TimestampNsValue, TimestampSecValue, TimestampTzNsValue, TimestampTzValue, TimestampValue,
         UuidValueRaw, Variant, WordDecimal,
     },
@@ -3032,5 +3032,98 @@ fn test_list_output_child_starts_empty_in_every_callback() -> crate::Result<()> 
     let entries = ENTRY_CHILD.lock().unwrap().clone();
     assert!(entries.len() > 1);
     assert!(entries.iter().all(|&entry| entry == (0, 0)), "{entries:?}");
+    Ok(())
+}
+
+#[derive(Debug, AsDuckDB)]
+struct GrownRow {
+    name: String,
+    items: List<i32>,
+}
+
+#[test]
+fn set_size_initializes_new_rows() -> crate::Result<()> {
+    const ROWS: usize = 4096;
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let types = [
+        List::<i32>::logical_type(&conn)?,
+        String::logical_type(&conn)?,
+        Array::<String, 2>::logical_type(&conn)?,
+        GrownRow::logical_type(&conn)?,
+        LogicalType::from_text(&conn, "BIT")?,
+        LogicalType::from_text(&conn, "ENUM('a', 'b')")?,
+    ];
+    for _ in 0..3 {
+        let mut chunk = DataChunk::create(&conn, &types, true)?;
+        let [lists, strings, arrays, rows, bits, enums] = chunk.get_vector_array_mut([0, 1, 2, 3, 4, 5])?;
+        let mut lists = lists.cast::<List<i32>>()?;
+        lists.set_size(1)?;
+        // SAFETY: row 0 writes the only element.
+        unsafe { lists.set_child_size(1)? };
+        lists.writer()?.set(0, Some(&List(vec![Some(7)])))?;
+        lists.set_size(ROWS)?;
+        assert_eq!(lists.children().unwrap().get_untyped_vector_at(0)?.len(), 1);
+        let reader = lists.reader()?;
+        assert_eq!(reader.get(0)?.unwrap().iter().collect::<Vec<_>>(), [Some(&7)]);
+        for row in 1..ROWS {
+            assert_eq!(
+                reader.get_list_entry(row)?,
+                Some(ListIndex { offset: 0, length: 0 }),
+                "{row}"
+            );
+        }
+
+        let mut strings = strings.cast::<String>()?;
+        strings.set_size(ROWS)?;
+        assert!(strings.reader()?.iter().all(|value| value == Some("")));
+
+        let mut arrays = arrays.cast::<Array<String, 2>>()?;
+        arrays.set_size(ROWS)?;
+        let reader = arrays.reader()?;
+        assert!(
+            reader
+                .iter()
+                .all(|row| row.unwrap().iter().all(|value| value == Some("")))
+        );
+
+        let mut rows = rows.cast::<GrownRow>()?;
+        rows.set_size(ROWS)?;
+        let reader = rows.reader()?;
+        for row in reader.iter() {
+            let row = row.unwrap();
+            assert_eq!(row.name, Some(""));
+            assert!(row.items.unwrap().is_empty());
+        }
+
+        let mut bits = bits.cast::<BitValue>()?;
+        bits.set_size(ROWS)?;
+        assert!(bits.reader()?.iter().all(|value| value.is_none()));
+
+        let mut enums = enums.cast::<super::Unknown>()?;
+        enums.set_size(ROWS)?;
+        assert_eq!(enums.get_value_slow(ROWS - 1)?.dbg_string()?, "a");
+    }
+    Ok(())
+}
+
+#[test]
+fn set_size_reinitializes_rows_after_shrinking() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[String::logical_type(&conn)?], true)?;
+    let mut strings = chunk.get_vector_at_mut::<String>(0)?;
+    strings.set_size(2)?;
+    {
+        let mut writer = strings.writer()?;
+        writer.set(0, Some("a string longer than the inline storage"))?;
+        writer.set(1, None)?;
+    }
+    strings.set_size(0)?;
+    strings.set_size(2)?;
+    let reader = strings.reader()?;
+    assert_eq!(reader.get(0)?, Some(""));
+    // Rows keep their validity: zeroed storage behind a NULL row is never read.
+    assert_eq!(reader.get(1)?, None);
     Ok(())
 }

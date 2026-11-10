@@ -43,12 +43,11 @@ impl ListIndex {
 /// write then takes the next unwritten elements, in any row order, and fails without taking
 /// any when too few remain. Nested `LIST`s and `MAP`s keep their own offsets, so size each level.
 ///
-/// DuckDB reads the whole child, so every element below its size must be written before the
-/// vector is read. When the total is unknown, size for an upper bound, write the rows, then trim
-/// to [`Vector::child_offset`] with another `set_child_size` call, which keeps written elements.
-/// A failed row write takes no elements at its own level, though nested levels keep the elements
-/// it wrote before failing. Skipping ahead with [`Vector::set_child_offset`] leaves a gap that
-/// must be written or trimmed away.
+/// Growing the child initializes the new elements like [`Vector::set_size`], so unwritten
+/// elements are valid but unused. When the total is unknown, size for an upper bound, write the
+/// rows, then trim to [`Vector::child_offset`] with another `set_child_size` call, which keeps
+/// written elements. A failed row write takes no elements at its own level, though nested levels
+/// keep the elements it wrote before failing.
 ///
 /// [`Vector::write_value_slow`] appends after the child, so it fails while elements are reserved
 /// but unwritten; typed writes then continue after the elements it appended.
@@ -199,11 +198,12 @@ impl<T: VectorElement> Vector<'_, List<T>> {
     /// Size the element child to exactly `elements`; writes continue at [`Self::child_offset`],
     /// capped at the new size.
     ///
+    /// New elements are initialized like [`Self::set_size`]; see [`List`] for sizing to an upper bound and trimming.
+    ///
     /// # Safety
-    /// Every element below `elements` must be written before DuckDB reads this vector, and no
-    /// written row may use an element at or above it; see [`List`] for sizing to an upper bound and trimming.
+    /// No written row may use an element at or above `elements`.
     pub unsafe fn set_child_size(&mut self, elements: usize) -> Result<()> {
-        // SAFETY: the caller upholds the initialization contract.
+        // SAFETY: the caller keeps written rows below the new size.
         unsafe { self.size_appended_child(elements) }
     }
 

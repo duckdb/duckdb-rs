@@ -109,6 +109,7 @@ pub use crate::{arena::Arena, bytes::DuckDBBytes};
 
 mod child;
 mod combined;
+mod init;
 mod reader;
 mod writer;
 
@@ -394,8 +395,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     /// Size the first child of a `LIST` or `MAP`, keeping appends at the current offset.
     ///
     /// # Safety
-    /// Writes must initialize every child row below `size` before DuckDB reads the vector, and
-    /// written rows must not use child rows at or above `size`.
+    /// Written rows must not use child rows at or above `size`.
     pub(crate) unsafe fn size_appended_child(&mut self, size: usize) -> Result<()> {
         self.children_mut()
             .expect("validated nested vector has a child")
@@ -556,7 +556,23 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     }
 
     /// Set the number of logical rows on writable output.
+    ///
+    /// New rows, including those of nested children, read as zeroed values such as `0`, `''`
+    /// and `[]`, or as `NULL` for types where zeroed storage is not a valid value.
     pub fn set_size(&mut self, len: usize) -> Result<()> {
+        let old = self.len;
+        // SAFETY: the rows the resize exposes are initialized before the result is returned.
+        let result = unsafe { self.set_size_uninit(len) };
+        self.init_rows(old, self.len)?;
+        result
+    }
+
+    /// Set the number of logical rows on writable output, leaving new rows uninitialized.
+    ///
+    /// # Safety
+    /// Every row the resize exposes, and the matching rows of nested children, must be written
+    /// or marked `NULL` before anything reads this vector.
+    pub unsafe fn set_size_uninit(&mut self, len: usize) -> Result<()> {
         if !self.is_writable() {
             return Err(not_writable());
         }
