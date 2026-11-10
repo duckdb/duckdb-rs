@@ -96,7 +96,7 @@ fn flat_reader_handles_empty_rows_nulls_and_bounds() -> Result<()> {
     let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
     vector.set_size(0)?;
     let reader = vector.reader()?;
-    assert!(matches!(reader.storage, ReaderStorage::Flat));
+    assert!(matches!(reader.cached().storage, ReaderStorage::Flat));
     assert!(reader.is_empty());
     assert_eq!(reader.len(), 0);
     assert_eq!(reader.iter().next(), None);
@@ -166,7 +166,7 @@ fn constant_reader_does_not_index_the_shared_selection() -> Result<()> {
             };
             let vector = chunk.get_vector_at_mut::<i32>(0)?.make_constant(value, count)?;
             let reader = vector.reader()?;
-            assert!(matches!(reader.storage, ReaderStorage::Constant(_)));
+            assert!(matches!(reader.cached().storage, ReaderStorage::Constant(_)));
             assert_eq!(reader.vector().storage_kind(), StorageKind::Constant);
             assert_eq!(reader.len(), count);
             assert_eq!(reader.is_empty(), count == 0);
@@ -229,7 +229,7 @@ fn reader_values_borrow_the_vector_not_the_reader() -> Result<()> {
 }
 
 #[test]
-fn child_reader_ref_borrows_the_cached_reader_without_cloning() -> Result<()> {
+fn child_readers_borrow_vector_owned_metadata() -> Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
     let chunk = conn
@@ -237,32 +237,35 @@ fn child_reader_ref_borrows_the_cached_reader_without_cloning() -> Result<()> {
         .next_chunk()?
         .unwrap();
     let vector = chunk.get_vector_at::<List<List<i32>>>(0)?;
-    let reader = vector.reader()?;
-    let cached = reader.cached_child_reader(0);
-    let descendants = cached.child_readers.as_ref().unwrap();
-    let owners = std::rc::Rc::strong_count(descendants);
+    let elements = {
+        let child = {
+            let reader = vector.reader()?;
+            assert!(std::ptr::eq(reader.cached(), vector.reader()?.cached()));
+            assert!(std::ptr::eq(reader.cached(), reader.clone().cached()));
+            // SAFETY: validating List<List<i32>> checked its child as List<i32>.
+            unsafe { reader.child_reader::<List<i32>>(0) }
+        };
+        let cached = vector.children().unwrap().cached_unchecked(0);
+        assert!(std::ptr::eq(child.cached(), cached.view.get().unwrap()));
+        assert!(std::ptr::eq(child.cached(), cached.reader()?.cached()));
+        assert_eq!(child.len(), 2);
+        assert_eq!(child.get(0)?.unwrap().iter().collect::<Vec<_>>(), [Some(&1), None]);
 
-    // SAFETY: validating List<List<i32>> checked its child as List<i32>.
-    let child = unsafe { reader.child_reader_ref::<List<i32>>(0) };
-    assert_eq!(
-        std::ptr::from_ref(child).cast::<()>(),
-        std::ptr::from_ref(cached).cast::<()>()
-    );
-    assert_eq!(std::rc::Rc::strong_count(descendants), owners);
-    assert_eq!(child.len(), 2);
-    assert_eq!(child.get(0)?.unwrap().iter().collect::<Vec<_>>(), [Some(&1), None]);
-
-    // SAFETY: validating List<i32> checked its child as i32.
-    let elements = unsafe { child.child_reader_ref::<i32>(0) };
+        // SAFETY: validating List<i32> checked its child as i32.
+        unsafe { child.child_reader::<i32>(0) }
+    };
+    let cached = vector.children().unwrap().cached_unchecked(0);
+    let cached_elements = cached.children().unwrap().cached_unchecked(0);
+    assert!(std::ptr::eq(elements.cached(), cached_elements.view.get().unwrap()));
     assert_eq!(elements.iter().collect::<Vec<_>>(), [Some(&1), None, Some(&3)]);
-    assert_eq!(std::rc::Rc::strong_count(descendants), owners);
-
-    // SAFETY: validating List<List<i32>> checked its child as List<i32>.
-    let owned = unsafe { reader.child_reader::<List<i32>>(0) };
-    assert_eq!(std::rc::Rc::strong_count(descendants), owners + 1);
-    drop(reader);
-    assert_eq!(owned.get(1)?.unwrap().iter().collect::<Vec<_>>(), [Some(&3)]);
     Ok(())
+}
+
+#[test]
+fn reader_handles_do_not_own_storage() {
+    type Reader<'a> = VectorReader<'a, List<List<i32>>>;
+    assert_eq!(std::mem::size_of::<Reader<'_>>(), std::mem::size_of::<&()>());
+    assert!(!std::mem::needs_drop::<Reader<'_>>());
 }
 
 #[test]
@@ -296,7 +299,7 @@ fn reader_handles_native_storage_layouts() -> Result<()> {
             assert_eq!(reader.vector().storage_kind(), vector.storage_kind());
             assert_physical_reads(&reader)?;
             if reader.vector().storage_kind() == StorageKind::Dictionary {
-                assert!(matches!(reader.storage, ReaderStorage::Dictionary(_)));
+                assert!(matches!(reader.cached().storage, ReaderStorage::Dictionary(_)));
                 let Selection::Dictionary(_) = reader.selection() else {
                     panic!("dictionary reader must expose its selection");
                 };

@@ -101,7 +101,7 @@ pub struct VectorCollection {
     rows: RowCount,
     /// `'static` because the collection has no lifetime; views are only handed out as `&Vector<'_, _>`.
     cache: Vec<OnceCell<Vector<'static, Unknown>>>,
-    /// Whether every view, including nested children, is cached.
+    /// Whether every view, including nested children, is prepared for reading.
     complete: Cell<bool>,
     /// Next unwritten child element of every `LIST` and `MAP` in this tree, shared with nested collections.
     offsets: Rc<ChildOffsets>,
@@ -166,16 +166,13 @@ impl VectorCollection {
         Ok(slot.get().expect("view was just cached"))
     }
 
-    /// Cache every view, recursively, so nested row types can borrow them infallibly.
+    /// Prepare every vector recursively, so nested row types can borrow their read metadata infallibly.
     pub(crate) fn cache_all(&self) -> Result<()> {
         if self.complete.get() {
             return Ok(());
         }
         for index in 0..self.handles.len() {
-            let vector = self.cached(index)?;
-            if let Some(children) = vector.children() {
-                children.cache_all()?;
-            }
+            self.cached(index)?.reader()?;
         }
         self.complete.set(true);
         Ok(())

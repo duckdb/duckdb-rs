@@ -164,8 +164,8 @@ pub struct Vector<'a, T: VectorElement> {
     logical_type: LogicalType,
     kind: StorageKind,
     len: usize,
-    /// Storage pointers for readers, dropped by every operation that may replace them.
-    pub(crate) view: OnceCell<ffi::duckdb_v2_vector_view>,
+    /// Prepared read metadata, dropped by every operation that may replace storage.
+    view: OnceCell<reader::CachedReader>,
     heap: Option<Arena>,
     /// Child vectors of nested types; `None` for vectors without children.
     children: Option<VectorCollection>,
@@ -376,16 +376,19 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         Ok(*self.decimal.get_or_init(|| signature))
     }
 
-    /// Return the storage pointers, fetched once per state; `OTHER` storage has none.
-    pub(crate) fn view(&self) -> Result<Option<ffi::duckdb_v2_vector_view>> {
+    /// Return the prepared read metadata, fetched once per state; `OTHER` storage has none.
+    fn view(&self) -> Result<Option<&reader::CachedReader>> {
         if self.kind == StorageKind::Other {
             return Ok(None);
         }
         if let Some(view) = self.view.get() {
-            return Ok(Some(*view));
+            return Ok(Some(view));
         }
         let view = check_api_call!(ffi::duckdb_v2_vector_get_view, self.handle, RET)?;
-        Ok(Some(*self.view.get_or_init(|| view)))
+        // SAFETY: DuckDB returned a current view of this vector, including its constant validity slot.
+        Ok(Some(self.view.get_or_init(|| unsafe {
+            reader::CachedReader::new(view, self.kind, self.len)
+        })))
     }
 
     /// Size the first child of a `LIST` or `MAP`, keeping appends at the current offset.

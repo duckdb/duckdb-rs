@@ -146,7 +146,7 @@ unsafe impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
         let list = unsafe { &*data_ptr.add(physical) };
 
         // SAFETY: Map<K, V>::validate checked the entries and both fields.
-        let entries = unsafe { vector.child_reader_ref::<crate::vector::Unknown>(0) };
+        let entries = unsafe { vector.child_reader::<crate::vector::Unknown>(0) };
         let (keys, values) = unsafe { (entries.child_reader::<K>(0), entries.child_reader::<V>(1)) };
         MapRow {
             keys,
@@ -192,6 +192,7 @@ impl<K: VectorElement, V: VectorElement> VectorWriter<'_, Map<K, V>> {
 impl<K: VectorElement, V: VectorElement> crate::vector::VectorReader<'_, Map<K, V>> {
     /// Return a row's range in the entries child, or `None` for SQL NULL, without reading its entries.
     /// Out-of-range indices are errors.
+    #[inline]
     pub fn get_list_entry(&self, index: usize) -> Result<Option<super::ListIndex>> {
         // SAFETY: MAP rows are stored as list entries.
         unsafe { self.list_entry(index) }
@@ -281,6 +282,20 @@ where
 /// A borrowed map row backed by matching ranges in key and value vectors.
 ///
 /// Reading a key panics if it is NULL, which DuckDB does not allow in a `MAP`.
+/// Nested rows borrow the vector, not their parent row or temporary readers.
+///
+/// ```compile_fail,E0502
+/// use duckdb_neo::{Result, types::{List, Map}, vector::Vector};
+///
+/// fn resize(vector: &mut Vector<'_, Map<i32, List<i32>>>) -> Result<()> {
+///     let row = vector.reader()?.get(0)?.unwrap();
+///     let (_, values) = row.get_index(0).unwrap();
+///     drop(row);
+///     vector.set_size(10)?;
+///     let _ = values.unwrap().get(0);
+///     Ok(())
+/// }
+/// ```
 #[derive(Debug)]
 pub struct MapRow<'a, K: VectorElement, V: VectorElement> {
     keys: crate::vector::VectorReader<'a, K>,
@@ -308,6 +323,7 @@ impl<'a, K: VectorElement + 'a, V: VectorElement + 'a> MapRow<'a, K, V> {
     }
 
     /// Return the entry at `index` in storage order, or `None` if it is out of bounds.
+    #[inline]
     pub fn get_index(&self, index: usize) -> Option<(K::Ref<'a>, Option<V::Ref<'a>>)> {
         if index >= self.length {
             return None;
@@ -479,6 +495,40 @@ mod tests {
             .collect();
         assert_eq!(keys, [vec![Some(&1), Some(&2)], vec![Some(&3)]]);
         assert_eq!(row.values(), [Some(&10), None]);
+        Ok(())
+    }
+
+    #[test]
+    fn nested_map_rows_outlive_readers_and_parent_rows() -> Result<()> {
+        let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+        let chunk = conn
+            .query(
+                "SELECT MAP {1: [MAP {'a key longer than the inline storage': 42, 'null': NULL},
+                                 NULL, MAP {}]}::MAP(INTEGER, MAP(VARCHAR, INTEGER)[])",
+                Parameters::None,
+            )?
+            .next_chunk()?
+            .unwrap();
+        let maps = chunk.get_vector_at::<Map<i32, List<Map<String, i32>>>>(0)?;
+        let (keys, values) = {
+            let inner = {
+                let entries = {
+                    let reader = maps.reader()?;
+                    let mut rows = reader.iter();
+                    rows.next().unwrap().unwrap().get_index(0).unwrap().1.unwrap()
+                };
+                assert!(entries.get(1).unwrap().is_none());
+                assert!(entries.get(2).unwrap().unwrap().is_empty());
+                entries.get(0).unwrap().unwrap()
+            };
+            assert_eq!(
+                inner.iter().collect::<Vec<_>>(),
+                [("a key longer than the inline storage", Some(&42)), ("null", None),]
+            );
+            (inner.keys(), inner.values())
+        };
+        assert_eq!(keys, ["a key longer than the inline storage", "null"]);
+        assert_eq!(values, [Some(&42), None]);
         Ok(())
     }
 
