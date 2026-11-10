@@ -149,6 +149,23 @@ fn reader_iterator_tracks_remaining_rows() -> Result<()> {
     assert_eq!(iter.size_hint(), (0, Some(0)));
     assert_eq!(iter.next(), None);
     assert_eq!(iter.next(), None);
+
+    let reader = vector.reader()?;
+    let mut rows = reader.iter();
+    rows.next();
+    let mut rows = rows.enumerate();
+    assert_traits(&rows, &rows);
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows.next(), Some((0, None)));
+    assert_eq!(rows.next(), Some((1, Some(&3))));
+    assert_eq!(rows.next(), None);
+    assert_eq!(rows.next(), None);
+    assert!(
+        reader
+            .iter()
+            .enumerate()
+            .eq(reader.iter().collect::<Vec<_>>().into_iter().enumerate())
+    );
     Ok(())
 }
 

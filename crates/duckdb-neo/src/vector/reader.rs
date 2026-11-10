@@ -342,7 +342,7 @@ pub struct VectorReaderIter<'vec, T: VectorElement> {
 impl<'vec, T: VectorElement + 'vec> Iterator for VectorReaderIter<'vec, T> {
     type Item = Option<T::Ref<'vec>>;
 
-    #[inline]
+    #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         let index = self.rows.next()?;
         // SAFETY: The range only yields logical rows of the prepared reader.
@@ -357,6 +357,41 @@ impl<'vec, T: VectorElement + 'vec> Iterator for VectorReaderIter<'vec, T> {
 impl<T: VectorElement> ExactSizeIterator for VectorReaderIter<'_, T> {}
 
 impl<T: VectorElement> std::iter::FusedIterator for VectorReaderIter<'_, T> {}
+
+impl<'vec, T: VectorElement> VectorReaderIter<'vec, T> {
+    /// Add row numbers like [`Iterator::enumerate`], numbering the remaining rows from zero.
+    /// Unlike [`std::iter::Enumerate`], it always inlines into large loops.
+    pub fn enumerate(self) -> EnumeratedVectorReaderIter<'vec, T> {
+        let origin = self.rows.start;
+        EnumeratedVectorReaderIter { inner: self, origin }
+    }
+}
+
+/// Row-numbered adapter returned by [`VectorReaderIter::enumerate`].
+#[derive(Debug)]
+pub struct EnumeratedVectorReaderIter<'vec, T: VectorElement> {
+    inner: VectorReaderIter<'vec, T>,
+    origin: usize,
+}
+
+impl<'vec, T: VectorElement + 'vec> Iterator for EnumeratedVectorReaderIter<'vec, T> {
+    type Item = (usize, Option<T::Ref<'vec>>);
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<Self::Item> {
+        let index = self.inner.rows.next()?;
+        // SAFETY: The range only yields logical rows of the prepared reader.
+        Some((index - self.origin, unsafe { self.inner.reader.get_unchecked(index) }))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+impl<T: VectorElement> ExactSizeIterator for EnumeratedVectorReaderIter<'_, T> {}
+
+impl<T: VectorElement> std::iter::FusedIterator for EnumeratedVectorReaderIter<'_, T> {}
 
 #[cfg(test)]
 mod tests;
