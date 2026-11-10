@@ -113,7 +113,7 @@ impl DictionaryReader {
 }
 
 impl ReaderStorage {
-    #[inline]
+    #[inline(always)]
     unsafe fn physical_index_unchecked(&self, view: ffi::duckdb_v2_vector_view, index: usize) -> Option<usize> {
         match self {
             Self::Flat => unsafe { FlatReader::is_valid_unchecked(view.validity, index) }.then_some(index),

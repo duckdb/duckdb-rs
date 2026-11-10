@@ -120,6 +120,29 @@ fn merge_struct_preserves_selected_and_constant_unions() -> Result<()> {
 }
 
 #[test]
+fn merge_struct_preserves_selected_and_constant_maps() -> Result<()> {
+    let fixture = Fixture::new()?;
+    merge_struct::create_input_with_nulls(&fixture.conn, ROWS, Nulls::new(0)?)?;
+    fixture
+        .conn
+        .execute("ALTER TABLE scalar_input RENAME TO scalar_source", Parameters::None)?;
+    for source in [
+        "SELECT * FROM scalar_source WHERE i % 5 <> 0",
+        "SELECT i, s, MAP {'a long constant key': 42::INTEGER, 'nullable': NULL::INTEGER} AS m, u, d
+         FROM scalar_source",
+        "SELECT i, s, MAP {}::MAP(VARCHAR, INTEGER) AS m, u, d FROM scalar_source",
+        "SELECT i, s, NULL::MAP(VARCHAR, INTEGER) AS m, u, d FROM scalar_source",
+    ] {
+        fixture.conn.execute(
+            format!("CREATE OR REPLACE VIEW scalar_input AS {source}").as_str(),
+            Parameters::None,
+        )?;
+        merge_struct::verify(&fixture.conn)?;
+    }
+    Ok(())
+}
+
+#[test]
 fn dash_split_splits_into_n_parts() -> Result<()> {
     let fixture = Fixture::new()?;
     dash_split::create_input(&fixture.conn, ROWS)?;
