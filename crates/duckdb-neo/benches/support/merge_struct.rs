@@ -11,7 +11,7 @@ use duckdb_neo::{
     scalar::{ScalarCallbacks, ScalarFunctionBuilder},
     signature::{FunctionParameter, SignatureBuilder},
     types::{Decimal, Map, Struct, UncheckedString},
-    vector::{Unknown, Vector},
+    vector::{ChildVector, Unknown, Vector, VectorElement, WritableVectorElement},
 };
 
 use super::{nulls::Nulls, readable};
@@ -58,144 +58,158 @@ impl ScalarCallbacks for MergeStruct {
             .children_mut()
             .ok_or_else(|| Error::invalid_input("merge_struct output has no fields"))?;
 
-        {
-            let mut field = fields.get_vector_at_mut::<i32>(0)?;
-            let mut writer = field.writer()?;
-            for (row, value) in ints.reader()?.iter().enumerate() {
-                writer.set(row, value)?;
-            }
-        }
-        {
-            let mut field = fields.get_vector_at_mut::<String>(1)?;
-            let mut writer = field.writer()?;
-            for (row, value) in strings.reader()?.iter().enumerate() {
-                writer.set(row, value)?;
-            }
-        }
-        {
-            let parent = maps.reader()?;
-            let input_entries = maps.children().unwrap().get_untyped_vector_at(0)?;
-            let input_fields = input_entries.children().unwrap();
-            let keys = input_fields.get_vector_at::<UncheckedString>(0)?.reader()?;
-            let values = input_fields.get_vector_at::<i32>(1)?.reader()?;
-            let mut field = fields.get_vector_at_mut::<Map<&str, i32>>(2)?;
-            let entries = (0..parent.len())
-                .map(|row| Ok(parent.get_list_entry(row)?.map_or(0, |entry| entry.length() as usize)))
-                .sum::<Result<usize>>()?;
-            super::ensure(parent.len() == rows, || {
-                "MAP row count differs from the input chunk".to_owned()
-            })?;
-            // SAFETY: every reserved entry is written through the key/value writers below.
-            unsafe { field.set_child_size(entries)? };
-            let (entry_data, parent_validity) = {
-                let mut writer = field.writer()?;
-                let data = writer.as_mut_ptr().cast::<ffi::duckdb_v2_list_entry>();
-                // SAFETY: every row descriptor is written below; NULL rows are invalidated.
-                unsafe {
-                    writer.fill_validity(true)?;
-                    (data, writer.validity_mut()?.as_mut_ptr())
-                }
-            };
-            let mut written = 0;
-            {
-                let mut children = field.children_mut().unwrap();
-                let mut output_entries = children.get_vector_at_mut::<Struct>(0)?;
-                // SAFETY: MAP entries are non-NULL structs, with both fields initialized below.
-                unsafe { output_entries.writer()?.fill_validity(true)? };
-                let mut output_fields = output_entries.children_mut().unwrap();
-                let [key_vector, value_vector] = output_fields.get_vector_array_mut([0, 1])?;
-                let mut key_vector = key_vector.cast::<String>()?;
-                let mut value_vector = value_vector.cast::<i32>()?;
-                let mut key_field = key_vector.writer()?;
-                let mut value_field = value_vector.writer()?;
-                for row in 0..parent.len() {
-                    let offset = written;
-                    let entry = parent.get_list_entry(row)?;
-                    if let Some(entry) = entry {
-                        for index in entry.offset()..entry.offset() + entry.length() {
-                            let key = keys
-                                .get(index as usize)?
-                                .ok_or_else(|| Error::invalid_input("MAP key is NULL"))?;
-                            key_field.set(written, Some(key))?;
-                            value_field.set(written, values.get(index as usize)?)?;
-                            written += 1;
-                        }
-                    } else {
-                        // SAFETY: the in-bounds parent's mask is stable; MAP NULLs do not null shared entries.
-                        unsafe { *parent_validity.add(row / 64) &= !(1u64 << (row % 64)) };
-                    }
-                    // SAFETY: this in-bounds descriptor covers only the initialized entries just written.
-                    unsafe {
-                        entry_data.add(row).write(ffi::duckdb_v2_list_entry {
-                            offset: offset as u64,
-                            length: (written - offset) as u64,
-                        });
-                    }
-                }
-            }
-            field.set_child_offset(written)?;
-        }
-        {
-            let mut field = fields.get_vector_at_mut::<UnionInputRef<'_, UncheckedString>>(3)?;
-            let parent = unions.reader()?;
-            let children = unions.children().unwrap();
-            let tags = children.get_vector_at::<u8>(0)?.reader()?;
-            let numbers = children.get_vector_at::<i32>(1)?.reader()?;
-            let strings = children.get_vector_at::<UncheckedString>(2)?.reader()?;
-            super::ensure(parent.len() == rows, || {
-                "UNION row count differs from the input chunk".to_owned()
-            })?;
-
-            let parent_validity = {
-                let mut writer = field.writer()?;
-                // SAFETY: every row and its members are written or nulled below.
-                unsafe {
-                    writer.fill_validity(true)?;
-                    writer.validity_mut()?.as_mut_ptr()
-                }
-            };
-            let mut output_children = field.children_mut().unwrap();
-            let [tag_vector, number_vector, string_vector] = output_children.get_vector_array_mut([0, 1, 2])?;
-            let mut tag_vector = tag_vector.cast::<u8>()?;
-            let mut number_vector = number_vector.cast::<i32>()?;
-            let mut string_vector = string_vector.cast::<String>()?;
-            let mut tag_field = tag_vector.writer()?;
-            let mut number_field = number_vector.writer()?;
-            let mut string_field = string_vector.writer()?;
-
-            for row in 0..parent.len() {
-                if parent.is_null(row)? {
-                    // SAFETY: the parent's mask stays allocated; the in-bounds row and all members become NULL.
-                    unsafe { *parent_validity.add(row / 64) &= !(1u64 << (row % 64)) };
-                    tag_field.set(row, None)?;
-                    number_field.set(row, None)?;
-                    string_field.set(row, None)?;
-                    continue;
-                }
-                match tags.get(row)? {
-                    Some(&0) => {
-                        tag_field.set(row, Some(&0))?;
-                        number_field.set(row, numbers.get(row)?)?;
-                        string_field.set(row, None)?;
-                    }
-                    Some(&1) => {
-                        tag_field.set(row, Some(&1))?;
-                        number_field.set(row, None)?;
-                        string_field.set(row, strings.get(row)?)?;
-                    }
-                    _ => return Err(Error::invalid_input("invalid UNION tag")),
-                }
-            }
-        }
-        {
-            let mut field = fields.get_vector_at_mut::<Amount>(4)?;
-            let mut writer = field.writer()?;
-            for (row, value) in amounts.reader()?.iter().enumerate() {
-                writer.set(row, value)?;
-            }
-        }
+        copy_column(&ints, &mut fields.get_vector_at_mut::<i32>(0)?)?;
+        copy_column(&strings, &mut fields.get_vector_at_mut::<String>(1)?)?;
+        copy_maps(&maps, &mut fields.get_vector_at_mut::<Map<&str, i32>>(2)?, rows)?;
+        copy_unions(
+            &unions,
+            &mut fields.get_vector_at_mut::<UnionInputRef<'_, UncheckedString>>(3)?,
+            rows,
+        )?;
+        copy_column(&amounts, &mut fields.get_vector_at_mut::<Amount>(4)?)?;
         Ok(())
     }
+}
+
+#[inline(never)]
+fn copy_column<'s, S, T>(source: &'s Vector<'_, S>, target: &mut ChildVector<'_, T>) -> Result<()>
+where
+    S: VectorElement<Ref<'s> = &'s T::Write> + 's,
+    T: WritableVectorElement,
+    T::Write: 's,
+{
+    let mut writer = target.writer()?;
+    for (row, value) in source.reader()?.iter().enumerate() {
+        writer.set(row, value)?;
+    }
+    Ok(())
+}
+
+#[inline(never)]
+fn copy_maps(
+    maps: &Vector<'_, Map<UncheckedString, i32>>,
+    field: &mut ChildVector<'_, Map<&str, i32>>,
+    rows: usize,
+) -> Result<()> {
+    let parent = maps.reader()?;
+    let input_entries = maps.children().unwrap().get_untyped_vector_at(0)?;
+    let input_fields = input_entries.children().unwrap();
+    let keys = input_fields.get_vector_at::<UncheckedString>(0)?.reader()?;
+    let values = input_fields.get_vector_at::<i32>(1)?.reader()?;
+    let entries = (0..parent.len())
+        .map(|row| Ok(parent.get_list_entry(row)?.map_or(0, |entry| entry.length() as usize)))
+        .sum::<Result<usize>>()?;
+    super::ensure(parent.len() == rows, || {
+        "MAP row count differs from the input chunk".to_owned()
+    })?;
+    // SAFETY: every reserved entry is written through the key/value writers below.
+    unsafe { field.set_child_size(entries)? };
+    let (entry_data, parent_validity) = {
+        let mut writer = field.writer()?;
+        let data = writer.as_mut_ptr().cast::<ffi::duckdb_v2_list_entry>();
+        // SAFETY: every row descriptor is written below; NULL rows are invalidated.
+        unsafe {
+            writer.fill_validity(true)?;
+            (data, writer.validity_mut()?.as_mut_ptr())
+        }
+    };
+    let mut written = 0;
+    {
+        let mut children = field.children_mut().unwrap();
+        let mut output_entries = children.get_vector_at_mut::<Struct>(0)?;
+        // SAFETY: MAP entries are non-NULL structs, with both fields initialized below.
+        unsafe { output_entries.writer()?.fill_validity(true)? };
+        let mut output_fields = output_entries.children_mut().unwrap();
+        let [key_vector, value_vector] = output_fields.get_vector_array_mut([0, 1])?;
+        let mut key_vector = key_vector.cast::<String>()?;
+        let mut value_vector = value_vector.cast::<i32>()?;
+        let mut key_field = key_vector.writer()?;
+        let mut value_field = value_vector.writer()?;
+        for row in 0..parent.len() {
+            let offset = written;
+            let entry = parent.get_list_entry(row)?;
+            if let Some(entry) = entry {
+                for index in entry.offset()..entry.offset() + entry.length() {
+                    let key = keys
+                        .get(index as usize)?
+                        .ok_or_else(|| Error::invalid_input("MAP key is NULL"))?;
+                    key_field.set(written, Some(key))?;
+                    value_field.set(written, values.get(index as usize)?)?;
+                    written += 1;
+                }
+            } else {
+                // SAFETY: the in-bounds parent's mask is stable; MAP NULLs do not null shared entries.
+                unsafe { *parent_validity.add(row / 64) &= !(1u64 << (row % 64)) };
+            }
+            // SAFETY: this in-bounds descriptor covers only the initialized entries just written.
+            unsafe {
+                entry_data.add(row).write(ffi::duckdb_v2_list_entry {
+                    offset: offset as u64,
+                    length: (written - offset) as u64,
+                });
+            }
+        }
+    }
+    field.set_child_offset(written)?;
+    Ok(())
+}
+
+#[inline(never)]
+fn copy_unions(
+    unions: &Vector<'_, UnionInput<UncheckedString>>,
+    field: &mut ChildVector<'_, UnionInputRef<'_, UncheckedString>>,
+    rows: usize,
+) -> Result<()> {
+    let parent = unions.reader()?;
+    let children = unions.children().unwrap();
+    let tags = children.get_vector_at::<u8>(0)?.reader()?;
+    let numbers = children.get_vector_at::<i32>(1)?.reader()?;
+    let strings = children.get_vector_at::<UncheckedString>(2)?.reader()?;
+    super::ensure(parent.len() == rows, || {
+        "UNION row count differs from the input chunk".to_owned()
+    })?;
+
+    let parent_validity = {
+        let mut writer = field.writer()?;
+        // SAFETY: every row and its members are written or nulled below.
+        unsafe {
+            writer.fill_validity(true)?;
+            writer.validity_mut()?.as_mut_ptr()
+        }
+    };
+    let mut output_children = field.children_mut().unwrap();
+    let [tag_vector, number_vector, string_vector] = output_children.get_vector_array_mut([0, 1, 2])?;
+    let mut tag_vector = tag_vector.cast::<u8>()?;
+    let mut number_vector = number_vector.cast::<i32>()?;
+    let mut string_vector = string_vector.cast::<String>()?;
+    let mut tag_field = tag_vector.writer()?;
+    let mut number_field = number_vector.writer()?;
+    let mut string_field = string_vector.writer()?;
+
+    for row in 0..parent.len() {
+        if parent.is_null(row)? {
+            // SAFETY: the parent's mask stays allocated; the in-bounds row and all members become NULL.
+            unsafe { *parent_validity.add(row / 64) &= !(1u64 << (row % 64)) };
+            tag_field.set(row, None)?;
+            number_field.set(row, None)?;
+            string_field.set(row, None)?;
+            continue;
+        }
+        match tags.get(row)? {
+            Some(&0) => {
+                tag_field.set(row, Some(&0))?;
+                number_field.set(row, numbers.get(row)?)?;
+                string_field.set(row, None)?;
+            }
+            Some(&1) => {
+                tag_field.set(row, Some(&1))?;
+                number_field.set(row, None)?;
+                string_field.set(row, strings.get(row)?)?;
+            }
+            _ => return Err(Error::invalid_input("invalid UNION tag")),
+        }
+    }
+    Ok(())
 }
 
 pub fn register(conn: &Connection) -> Result<()> {

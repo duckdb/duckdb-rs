@@ -33,6 +33,7 @@ impl Selection<'_> {
 #[repr(C)]
 pub struct VectorReader<'vec, T: VectorElement> {
     vector: &'vec Vector<'vec, T>,
+    cached: CachedReader,
 }
 
 impl<T: VectorElement> std::fmt::Debug for VectorReader<'_, T> {
@@ -48,14 +49,18 @@ impl<T: VectorElement> std::fmt::Debug for VectorReader<'_, T> {
 impl<T: VectorElement> Clone for VectorReader<'_, T> {
     #[inline]
     fn clone(&self) -> Self {
-        Self { vector: self.vector }
+        Self {
+            vector: self.vector,
+            cached: self.cached,
+        }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub(super) struct CachedReader {
     view: ffi::duckdb_v2_vector_view,
     storage: ReaderStorage,
+    len: usize,
 }
 
 impl CachedReader {
@@ -68,7 +73,7 @@ impl CachedReader {
             }),
             StorageKind::Other => unreachable!("prepared vector has a readable storage kind"),
         };
-        Self { view, storage }
+        Self { view, storage, len }
     }
 }
 
@@ -140,21 +145,20 @@ impl ReaderStorage {
 
 impl<'vec, T: VectorElement> VectorReader<'vec, T> {
     pub(super) fn new(vector: &'vec Vector<'vec, T>) -> Result<Self> {
-        vector.view()?.ok_or_else(other_not_readable)?;
+        let cached = *vector.view()?.ok_or_else(other_not_readable)?;
         vector.cache_children()?;
-        Ok(Self { vector })
+        Ok(Self { vector, cached })
     }
 
     #[inline(always)]
-    fn cached(&self) -> &'vec CachedReader {
-        // SAFETY: construction prepared this vector, and only exclusive access can clear its cache.
-        unsafe { self.vector.view.get().unwrap_unchecked() }
+    fn cached(&self) -> &CachedReader {
+        &self.cached
     }
 
-    /// The vector's cached view; construction cached it, and the shared borrow keeps it.
+    /// The vector's view, copied at construction; the shared borrow keeps it current.
     #[inline(always)]
     pub(crate) fn view(&self) -> ffi::duckdb_v2_vector_view {
-        self.cached().view
+        self.cached.view
     }
 
     #[inline]
@@ -163,8 +167,9 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
     }
 
     /// Return the number of logical rows.
+    #[inline]
     pub fn len(&self) -> usize {
-        self.vector.len()
+        self.cached.len
     }
 
     /// Return whether the reader contains no rows.
@@ -264,6 +269,8 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
         VectorReader {
             // SAFETY: the caller guarantees the type, and construction prepared every descendant.
             vector: unsafe { child.cast_ref_unchecked::<U>() },
+            // SAFETY: construction cached every descendant's view, and the shared borrow keeps it.
+            cached: unsafe { *child.view.get().unwrap_unchecked() },
         }
     }
 

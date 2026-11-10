@@ -8,7 +8,7 @@ use crate::{
     scalar::MicroScalar,
     types::{DuckDBType, List},
     value::Value,
-    vector::{Selection, StorageKind, Vector},
+    vector::{Selection, StorageKind, Unknown, Vector},
 };
 
 fn assert_physical_reads(reader: &VectorReader<'_, i32>) -> Result<()> {
@@ -228,8 +228,13 @@ fn reader_values_borrow_the_vector_not_the_reader() -> Result<()> {
     Ok(())
 }
 
+fn same_view(reader: &VectorReader<'_, impl crate::vector::VectorElement>, vector: &Vector<'_, Unknown>) -> bool {
+    let (copied, cached) = (reader.view(), vector.view.get().unwrap().view);
+    (copied.data, copied.validity, copied.sel, copied.count) == (cached.data, cached.validity, cached.sel, cached.count)
+}
+
 #[test]
-fn child_readers_borrow_vector_owned_metadata() -> Result<()> {
+fn child_readers_copy_vector_metadata() -> Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
     let chunk = conn
@@ -240,14 +245,12 @@ fn child_readers_borrow_vector_owned_metadata() -> Result<()> {
     let elements = {
         let child = {
             let reader = vector.reader()?;
-            assert!(std::ptr::eq(reader.cached(), vector.reader()?.cached()));
-            assert!(std::ptr::eq(reader.cached(), reader.clone().cached()));
+            assert_eq!(reader.view().data, reader.clone().view().data);
             // SAFETY: validating List<List<i32>> checked its child as List<i32>.
             unsafe { reader.child_reader::<List<i32>>(0) }
         };
         let cached = vector.children().unwrap().cached_unchecked(0);
-        assert!(std::ptr::eq(child.cached(), cached.view.get().unwrap()));
-        assert!(std::ptr::eq(child.cached(), cached.reader()?.cached()));
+        assert!(same_view(&child, cached));
         assert_eq!(child.len(), 2);
         assert_eq!(child.get(0)?.unwrap().iter().collect::<Vec<_>>(), [Some(&1), None]);
 
@@ -255,8 +258,7 @@ fn child_readers_borrow_vector_owned_metadata() -> Result<()> {
         unsafe { child.child_reader::<i32>(0) }
     };
     let cached = vector.children().unwrap().cached_unchecked(0);
-    let cached_elements = cached.children().unwrap().cached_unchecked(0);
-    assert!(std::ptr::eq(elements.cached(), cached_elements.view.get().unwrap()));
+    assert!(same_view(&elements, cached.children().unwrap().cached_unchecked(0)));
     assert_eq!(elements.iter().collect::<Vec<_>>(), [Some(&1), None, Some(&3)]);
     Ok(())
 }
@@ -264,7 +266,10 @@ fn child_readers_borrow_vector_owned_metadata() -> Result<()> {
 #[test]
 fn reader_handles_do_not_own_storage() {
     type Reader<'a> = VectorReader<'a, List<List<i32>>>;
-    assert_eq!(std::mem::size_of::<Reader<'_>>(), std::mem::size_of::<&()>());
+    assert_eq!(
+        std::mem::size_of::<Reader<'_>>(),
+        std::mem::size_of::<&()>() + std::mem::size_of::<super::CachedReader>()
+    );
     assert!(!std::mem::needs_drop::<Reader<'_>>());
 }
 

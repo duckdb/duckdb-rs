@@ -69,6 +69,7 @@ use super::{
 #[derive(Debug)]
 pub struct VectorWriter<'writer, T: VectorElement> {
     vector: NonNull<Vector<'writer, T>>,
+    len: usize,
     validity: *mut u64,
     data: *mut std::ffi::c_void,
     child_writers: Option<Vec<VectorWriter<'writer, Unknown>>>,
@@ -98,6 +99,7 @@ impl<'writer, T: VectorElement> VectorWriter<'writer, T> {
 
         Ok(Self {
             vector,
+            len: borrowed.len(),
             validity,
             data,
             child_writers: None,
@@ -113,7 +115,7 @@ impl<'writer, T: VectorElement> VectorWriter<'writer, T> {
 
     /// Return the number of writable rows.
     pub fn len(&self) -> usize {
-        self.vector().len()
+        self.len
     }
 
     /// Return whether the writer contains no rows.
@@ -358,16 +360,31 @@ impl<T: VectorElement> VectorWriter<'_, T> {
 
     #[inline(always)]
     pub(crate) unsafe fn set_validity_unchecked(&mut self, index: usize, is_valid: bool) {
-        // SAFETY: The owning writer guarantees flat, writable storage; the caller guarantees bounds.
-        let word = unsafe { self.validity.add(index / 64) };
-        let current = unsafe { *word };
-        if is_valid && current == u64::MAX || !is_valid && current == 0 {
-            return;
-        }
-        let mask = 1u64 << (index % 64);
+        // SAFETY: the caller guarantees bounds.
         unsafe {
-            *word = if is_valid { current | mask } else { current & !mask };
+            if is_valid {
+                self.mark_valid_unchecked(index)
+            } else {
+                self.mark_null_unchecked(index)
+            }
         }
+    }
+
+    #[inline(always)]
+    unsafe fn mark_valid_unchecked(&mut self, index: usize) {
+        // SAFETY: The owning writer guarantees flat, writable storage; the caller guarantees bounds.
+        let word = unsafe { &mut *self.validity.add(index / 64) };
+        let mask = 1u64 << (index % 64);
+        // Masks start valid, so storing only to revive a NULL row keeps this branch predictable.
+        if *word & mask == 0 {
+            *word |= mask;
+        }
+    }
+
+    #[inline(always)]
+    unsafe fn mark_null_unchecked(&mut self, index: usize) {
+        // SAFETY: The owning writer guarantees flat, writable storage; the caller guarantees bounds.
+        unsafe { *self.validity.add(index / 64) &= !(1u64 << (index % 64)) };
     }
 }
 
