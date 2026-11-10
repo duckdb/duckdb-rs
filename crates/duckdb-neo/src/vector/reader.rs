@@ -302,6 +302,25 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
         }
     }
 
+    /// Return a row's list entry, or `None` for SQL NULL, without building the row.
+    ///
+    /// # Safety
+    /// The physical storage must hold DuckDB list entries, as for `LIST` and `MAP`.
+    #[inline]
+    pub(crate) unsafe fn list_entry(&self, index: usize) -> Result<Option<crate::types::ListIndex>> {
+        if index >= self.len() {
+            return Err(out_of_bounds(index, self.len()));
+        }
+        // SAFETY: The index is within the prepared vector's logical rows.
+        let Some(physical) = (unsafe { self.storage.physical_index_unchecked(self.view, index) }) else {
+            return Ok(None);
+        };
+        // SAFETY: The caller guarantees list entry storage, and the row is valid.
+        Ok(Some(unsafe {
+            *self.view.data.cast::<crate::types::ListIndex>().add(physical)
+        }))
+    }
+
     #[inline(always)]
     pub(crate) unsafe fn get_unchecked(&self, index: usize) -> Option<T::Ref<'vec>> {
         let physical = unsafe { self.storage.physical_index_unchecked(self.view, index) }?;

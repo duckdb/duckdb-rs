@@ -146,7 +146,7 @@ unsafe impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
 
         // SAFETY: Map<K, V>::validate checked the entries and both fields.
         let entries = unsafe { vector.child_reader_ref::<crate::vector::Unknown>(0) };
-        let (keys, values) = unsafe { (entries.child_reader_ref::<K>(0), entries.child_reader_ref::<V>(1)) };
+        let (keys, values) = unsafe { (entries.child_reader::<K>(0), entries.child_reader::<V>(1)) };
         MapRow {
             keys,
             values,
@@ -185,6 +185,15 @@ impl<K: VectorElement, V: VectorElement> VectorWriter<'_, Map<K, V>> {
     /// Return the first entry the next map write uses.
     pub fn child_offset(&self) -> usize {
         self.vector().child_offset_cell().get()
+    }
+}
+
+impl<K: VectorElement, V: VectorElement> crate::vector::VectorReader<'_, Map<K, V>> {
+    /// Return a row's range in the entries child, or `None` for SQL NULL, without reading its entries.
+    /// Out-of-range indices are errors.
+    pub fn get_list_entry(&self, index: usize) -> Result<Option<super::ListIndex>> {
+        // SAFETY: MAP rows are stored as list entries.
+        unsafe { self.list_entry(index) }
     }
 }
 
@@ -273,8 +282,8 @@ where
 /// Reading a key panics if it is NULL, which DuckDB does not allow in a `MAP`.
 #[derive(Debug)]
 pub struct MapRow<'a, K: VectorElement, V: VectorElement> {
-    keys: &'a crate::vector::VectorReader<'a, K>,
-    values: &'a crate::vector::VectorReader<'a, V>,
+    keys: crate::vector::VectorReader<'a, K>,
+    values: crate::vector::VectorReader<'a, V>,
     pub(crate) offset: usize,
     pub(crate) length: usize,
 }
@@ -291,11 +300,10 @@ impl<'a, K: VectorElement + 'a, V: VectorElement + 'a> MapRow<'a, K, V> {
     }
 
     /// Iterate over the map's `(key, value)` entries in storage order.
-    pub fn iter(&self) -> impl Iterator<Item = (K::Ref<'a>, Option<V::Ref<'a>>)> + use<'a, K, V> {
-        let (keys, values) = (self.keys.clone(), self.values.clone());
+    pub fn iter(&self) -> impl Iterator<Item = (K::Ref<'a>, Option<V::Ref<'a>>)> + '_ {
         // SAFETY: The parent reader cached all descendant views before constructing this row.
         (self.offset..self.offset + self.length)
-            .map(move |logical| unsafe { (Self::key(&keys, logical), values.get_unchecked(logical)) })
+            .map(move |logical| unsafe { (Self::key(&self.keys, logical), self.values.get_unchecked(logical)) })
     }
 
     /// Return the entry at `index` in storage order, or `None` if it is out of bounds.
@@ -391,6 +399,13 @@ mod tests {
 
         assert!(maps_reader.get(1)?.expect("row 1 is not NULL").keys().is_empty());
         assert!(maps_reader.get(2)?.is_none());
+
+        let entry = maps_reader.get_list_entry(0)?.expect("row 0 is not NULL");
+        assert_eq!((entry.offset(), entry.length()), (0, 2));
+        let entry = maps_reader.get_list_entry(1)?.expect("row 1 is not NULL");
+        assert_eq!((entry.offset(), entry.length()), (2, 0));
+        assert_eq!(maps_reader.get_list_entry(2)?, None);
+        assert!(maps_reader.get_list_entry(3).is_err());
         Ok(())
     }
 

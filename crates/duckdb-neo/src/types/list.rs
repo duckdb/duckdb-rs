@@ -172,6 +172,15 @@ unsafe impl<T: VectorElement> VectorElement for List<T> {
     }
 }
 
+impl<T: VectorElement> crate::vector::VectorReader<'_, List<T>> {
+    /// Return a row's range in the child vector, or `None` for SQL NULL, without reading its elements.
+    /// Out-of-range indices are errors.
+    pub fn get_list_entry(&self, index: usize) -> Result<Option<ListIndex>> {
+        // SAFETY: LIST rows are stored as list entries.
+        unsafe { self.list_entry(index) }
+    }
+}
+
 // SAFETY: LIST rows use only elements below the child size set by `set_child_size`.
 unsafe impl<T: VectorElement> HasChildren for List<T> {
     fn child_len(writer: &VectorWriter<'_, Self>) -> Result<usize> {
@@ -444,6 +453,10 @@ mod tests {
         let reader = vector.reader()?;
         assert_eq!(reader.get(2)?.unwrap().list.offset(), 0);
         assert_eq!(reader.get(0)?.unwrap().list.offset(), 2);
+        assert_eq!(reader.get_list_entry(2)?, Some(ListIndex { offset: 0, length: 2 }));
+        assert_eq!(reader.get_list_entry(0)?, Some(ListIndex { offset: 2, length: 1 }));
+        assert_eq!(reader.get_list_entry(1)?, None);
+        assert!(reader.get_list_entry(3).is_err());
         Ok(())
     }
 
