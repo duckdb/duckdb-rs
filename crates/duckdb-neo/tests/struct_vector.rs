@@ -7,7 +7,7 @@ use duckdb_neo::{
     logical_type::LogicalType,
     scalar::{ScalarCallbacks, ScalarFunctionBuilder},
     signature::{FunctionParameter, SignatureBuilder},
-    types::{Array, List},
+    types::{Array, List, Struct},
     vector::{StorageKind, Unknown, Vector},
 };
 
@@ -1063,5 +1063,63 @@ fn failed_array_writes_leave_the_row_null() -> Result<()> {
     let elements = vector.children().unwrap().get_vector_at::<BitValue>(0)?.reader()?;
     assert!(elements.get(0)?.is_none());
     assert!(elements.get(1)?.is_none());
+    Ok(())
+}
+
+#[derive(Debug, PartialEq, AsDuckDB)]
+struct Renamed {
+    #[duckdb(rename = "Kind")]
+    kind: i32,
+    #[duckdb(rename = "display name")]
+    name: Option<String>,
+}
+
+#[test]
+fn renamed_struct_fields_use_their_sql_names() -> Result<()> {
+    let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+    let logical_type = Renamed::logical_type(&conn)?;
+    assert_eq!(
+        logical_type,
+        LogicalType::from_text(&conn, "STRUCT(\"Kind\" INTEGER, \"display name\" VARCHAR)")?
+    );
+    let input = Renamed {
+        kind: 7,
+        name: Some("duck".to_owned()),
+    };
+    assert_eq!(input.value(&conn)?.get::<Renamed>()?.as_ref(), Some(&input));
+
+    let chunk = conn
+        .query(
+            "SELECT struct_extract($1, 'display name'), {'display name': 'goose', 'Kind': 3}, {'kind': 3, 'name': 'goose'}",
+            Parameters::positional(&[&input]),
+        )?
+        .next_chunk()?
+        .unwrap();
+    assert_eq!(chunk.get_vector_at::<String>(0)?.reader()?.get(0)?, Some("duck"));
+    let expected = Renamed {
+        kind: 3,
+        name: Some("goose".to_owned()),
+    };
+    assert_eq!(
+        chunk.get_vector_at::<Struct>(1)?.get_value_slow(0)?.get::<Renamed>()?,
+        Some(expected)
+    );
+    let error = chunk
+        .get_vector_at::<Struct>(2)?
+        .get_value_slow(0)?
+        .get::<Renamed>()
+        .unwrap_err();
+    assert!(
+        error.message.contains("STRUCT field 'display name' is missing"),
+        "{error}"
+    );
+    assert!(chunk.get_vector_at::<Renamed>(2).is_err());
+
+    let mut chunk = DataChunk::create(&conn, &[logical_type], true)?;
+    let mut vector = chunk.get_vector_at_mut::<Renamed>(0)?;
+    vector.set_size(1)?;
+    vector.writer()?.set_ref(0, Some(&input))?;
+    let row = vector.reader()?.get(0)?.unwrap();
+    assert_eq!(format!("{row:?}"), "RenamedRef { kind: Some(7), name: Some(\"duck\") }");
     Ok(())
 }

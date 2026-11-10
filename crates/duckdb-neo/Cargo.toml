@@ -1,6 +1,6 @@
 [package]
 name = "duckdb-neo"
-description = "Ergonomic wrapper for DuckDB's v2 C API (experimental)"
+description = "Ergonomic wrapper for DuckDB's v2 C API (beta)"
 version = "0.20000.1"
 authors = { workspace = true }
 license = { workspace = true }

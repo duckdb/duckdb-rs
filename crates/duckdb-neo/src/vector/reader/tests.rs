@@ -3,14 +3,12 @@ use duckdb_loadable_macros::AsDuckDB;
 use super::{ReaderStorage, VectorReader};
 use crate::{
     Parameters, Result, ToValue,
-    builder_helpers::scalar_callback,
     data_chunk::DataChunk,
     environment::{Environment, StorageLocation},
-    scalar::ScalarFunctionBuilder,
-    signature::{FunctionParameter, SignatureBuilder},
+    scalar::MicroScalar,
     types::{DuckDBType, List},
     value::Value,
-    vector::{Selection, StorageKind},
+    vector::{Selection, StorageKind, Vector},
 };
 
 fn assert_physical_reads(reader: &VectorReader<'_, i32>) -> Result<()> {
@@ -283,48 +281,40 @@ fn reader_rejects_other_storage_until_explicitly_flattened() -> Result<()> {
     Ok(())
 }
 
-scalar_callback!(ReaderProbe, i32, |input, output, _ctx, _user_data| {
-    let mut vector = input.get_vector_at_mut::<i32>(0)?;
-    let mut output = output;
-    if vector.storage_kind() == StorageKind::Other {
-        assert!(vector.reader().is_err());
-        vector.flatten()?;
-    }
-    let reader = vector.reader()?;
-    assert_eq!(reader.vector().storage_kind(), vector.storage_kind());
-    assert_physical_reads(&reader)?;
-    if reader.vector().storage_kind() == StorageKind::Dictionary {
-        assert!(matches!(reader.storage, ReaderStorage::Dictionary(_)));
-        let Selection::Dictionary(_) = reader.selection() else {
-            panic!("dictionary reader must expose its selection");
-        };
-        let reader = vector.reader()?;
-
-        assert_eq!(reader.iter().collect::<Vec<_>>(), [Some(&i32::MAX), None]);
-        assert_eq!(reader.get(0)?, Some(&i32::MAX));
-        assert_eq!(reader.get(1)?, None);
-        assert!(!reader.is_null(0)?);
-        assert!(reader.is_null(1)?);
-        assert!(reader.get(2).is_err());
-        assert!(reader.is_null(2).is_err());
-    }
-    output.set_size(reader.len())?;
-    for (index, value) in reader.iter().enumerate() {
-        output.writer()?.set(index, value.copied())?;
-    }
-    Ok(())
-});
-
 #[test]
 fn reader_handles_native_storage_layouts() -> Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
-    ScalarFunctionBuilder::new(
+    MicroScalar::create(
         "reader_probe",
-        SignatureBuilder::new()
-            .param(FunctionParameter::new::<i32>("input"))
-            .return_type(i32::logical_type(&conn)?),
-        ReaderProbe,
+        |_ctx, mut vector: Vector<'_, i32>, mut output: Vector<'_, i32>| {
+            if vector.storage_kind() == StorageKind::Other {
+                assert!(vector.reader().is_err());
+                vector.flatten()?;
+            }
+            let reader = vector.reader()?;
+            assert_eq!(reader.vector().storage_kind(), vector.storage_kind());
+            assert_physical_reads(&reader)?;
+            if reader.vector().storage_kind() == StorageKind::Dictionary {
+                assert!(matches!(reader.storage, ReaderStorage::Dictionary(_)));
+                let Selection::Dictionary(_) = reader.selection() else {
+                    panic!("dictionary reader must expose its selection");
+                };
+                let reader = vector.reader()?;
+
+                assert_eq!(reader.iter().collect::<Vec<_>>(), [Some(&i32::MAX), None]);
+                assert_eq!(reader.get(0)?, Some(&i32::MAX));
+                assert_eq!(reader.get(1)?, None);
+                assert!(!reader.is_null(0)?);
+                assert!(reader.is_null(1)?);
+                assert!(reader.get(2).is_err());
+                assert!(reader.is_null(2).is_err());
+            }
+            for (index, value) in reader.iter().enumerate() {
+                output.writer()?.set(index, value.copied())?;
+            }
+            Ok(())
+        },
     )
     .register(&conn)?;
     let mut result = conn.query(

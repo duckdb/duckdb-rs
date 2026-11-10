@@ -275,33 +275,6 @@ pub(crate) use get_local_state;
 pub(crate) use get_user_data;
 
 #[cfg(test)]
-macro_rules! scalar_callback {
-    ($name:ident, $result_type:ty, |$input:ident, $result:ident, $ctx:ident, $user_data:ident| $body:block) => {
-        struct $name;
-
-        impl $crate::scalar::ScalarCallbacks for $name {
-            type BindData = ();
-            type InitData = ();
-
-            fn exec(
-                &self,
-                _bind_data: Option<&Self::BindData>,
-                _init_data: Option<&mut Self::InitData>,
-                $ctx: &$crate::connection::Context,
-                $input: &mut $crate::data_chunk::VectorCollection,
-                $result: $crate::vector::Vector<'_, crate::vector::Unknown>,
-            ) -> $crate::Result<()> {
-                let $result = $result.cast::<$result_type>()?;
-                $body
-            }
-        }
-    };
-}
-
-#[cfg(test)]
-pub(crate) use scalar_callback;
-
-#[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::panic_message;

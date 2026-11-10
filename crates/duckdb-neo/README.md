@@ -1,15 +1,12 @@
 # DuckDB-neo
 
-### ⚠ DuckDB's v2 C API is in rapid development. Consider `duckdb-neo` unstable. Feedback is welcome!
-
-
 [![Latest Version](https://img.shields.io/crates/v/duckdb-neo.svg)](https://crates.io/crates/duckdb)
 [![Documentation](https://img.shields.io/badge/docs.rs-duckdb-orange)](https://docs.rs/duckdb)
 [![MIT License](https://img.shields.io/crates/l/duckdb.svg)](LICENSE)
-[![Downloads](https://img.shields.io/crates/d/duckdb.svg)](https://crates.io/crates/duckdb)
+[![Downloads](https://img.shields.io/crates/d/duckdb-neo.svg)](https://crates.io/crates/duckdb-neo)
 [![CI](https://github.com/duckdb/duckdb-rs/workflows/CI/badge.svg)](https://github.com/duckdb/duckdb-rs/actions)
 
-duckdb-neo is an safe, ergonomic Rust wrapper for [DuckDB](https://github.com/duckdb/duckdb).
+duckdb-neo is a safe, ergonomic Rust wrapper for [DuckDB](https://github.com/duckdb/duckdb), currently in beta.
 
 You can use it to:
 
@@ -137,8 +134,8 @@ If you encounter any shortcomings in the bindings that force an `libduckdb-sys` 
 
 ## Extensions
 
-_Experimental._ `duckdb-neo` can also be used to write DuckDB extensions, loadable with `LOAD` or statically linked
-into a binary. See [extensions.md](extensions.md).
+`duckdb-neo` can also be used to write DuckDB extensions, loadable with `LOAD` or statically linked
+into a binary. See [extensions.md](extensions.md) or the [extension template](https://github.com/duckdb/extension-template-rs).
 
 ## Rust version compatibility
 

@@ -7,10 +7,12 @@ mod entrypoint;
 mod struct_fields;
 mod struct_value;
 mod struct_vector;
+mod union;
 
 pub use entrypoint::parse;
 pub(crate) use struct_value::{as_duckdb_type, as_from_value, as_to_value};
 pub(crate) use struct_vector::{as_vector_element, as_writable_vector_element};
+pub(crate) use union::as_duckdb_union;
 
 pub(crate) fn as_duckdb(input: &syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     struct_fields::StructFields::new(input, "AsDuckDB")?;
