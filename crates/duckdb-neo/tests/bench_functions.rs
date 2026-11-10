@@ -4,7 +4,7 @@
 #[path = "../benches/support/mod.rs"]
 mod support;
 
-use duckdb_neo::Result;
+use duckdb_neo::{Parameters, Result};
 use support::{Fixture, base56, dash_split, merge_struct, row_hash};
 
 const ROWS: usize = 5_000;
@@ -21,6 +21,30 @@ fn merge_struct_packs_arguments() -> Result<()> {
     assert_eq!(
         output_type,
         "STRUCT(i INTEGER, s VARCHAR, m MAP(VARCHAR, INTEGER), u UNION(num INTEGER, str VARCHAR), d DECIMAL(18,3))"
+    );
+    Ok(())
+}
+
+#[test]
+fn merge_struct_preserves_null_unions_and_members() -> Result<()> {
+    let fixture = Fixture::new()?;
+    merge_struct::create_input(&fixture.conn, ROWS)?;
+    fixture.conn.execute(
+        "UPDATE scalar_input SET u = CASE i % 5
+            WHEN 0 THEN NULL
+            WHEN 1 THEN union_value(num := NULL::INTEGER)
+            WHEN 2 THEN union_value(str := NULL::VARCHAR)
+            ELSE u END",
+        Parameters::None,
+    )?;
+    merge_struct::verify(&fixture.conn)?;
+    assert_eq!(
+        support::query_i64(
+            &fixture.conn,
+            "SELECT count(*) FROM (SELECT merge_struct(i, s, m, u, d) AS r, u FROM scalar_input)
+             WHERE union_tag(r.u) IS DISTINCT FROM union_tag(u)",
+        )?,
+        0
     );
     Ok(())
 }

@@ -4,14 +4,14 @@
 use std::collections::HashMap;
 
 use duckdb_neo::{
-    Error, Parameters, Result,
+    AsDuckDBUnion, Error, Parameters, Result,
     connection::{Connection, Context},
     data_chunk::VectorCollection,
     enums::FunctionProperty,
     logical_type::LogicalType,
     scalar::{ScalarCallbacks, ScalarFunctionBuilder},
     signature::{FunctionParameter, SignatureBuilder},
-    types::{Decimal, Map, Struct, UncheckedString, Union, UnionWriter},
+    types::{Decimal, Map, Struct, UncheckedString},
     vector::{Unknown, Vector},
 };
 
@@ -20,6 +20,14 @@ use super::readable;
 pub const MAP_TYPE: &str = "MAP(VARCHAR, INTEGER)";
 pub const UNION_TYPE: &str = "UNION(num INTEGER, str VARCHAR)";
 pub type Amount = Decimal<18, 3>;
+
+#[derive(AsDuckDBUnion)]
+enum UnionInput<S> {
+    #[duckdb(rename = "num")]
+    Num(Option<i32>),
+    #[duckdb(rename = "str")]
+    Str(Option<S>),
+}
 
 pub struct MergeStruct;
 
@@ -40,7 +48,7 @@ impl ScalarCallbacks for MergeStruct {
         let ints = readable::<i32>(ints)?;
         let strings = readable::<UncheckedString>(strings)?;
         let maps = readable::<Map<UncheckedString, i32>>(maps)?;
-        let unions = readable::<Union>(unions)?;
+        let unions = readable::<UnionInput<UncheckedString>>(unions)?;
         let amounts = readable::<Amount>(amounts)?;
 
         let mut output = output.cast::<Struct>()?;
@@ -89,16 +97,13 @@ impl ScalarCallbacks for MergeStruct {
             unsafe { field.set_child_size(written)? };
         }
         {
-            let mut field = fields.get_vector_at_mut::<Union>(3)?;
+            let mut field = fields.get_vector_at_mut::<UnionInput<&str>>(3)?;
             let mut writer = field.writer()?;
             for (row, value) in unions.reader()?.iter().enumerate() {
-                let value = match value {
-                    None => None,
-                    Some(value) if value.member() == 0 => {
-                        Some(UnionWriter::set_value::<i32>(0, value.get::<i32>(0)?.copied()))
-                    }
-                    Some(value) => Some(UnionWriter::set_value::<String>(1, value.get::<UncheckedString>(1)?)),
-                };
+                let value = value.map(|value| match value {
+                    UnionInputRef::Num(value) => UnionInput::Num(value.copied()),
+                    UnionInputRef::Str(value) => UnionInput::Str(value),
+                });
                 writer.set(row, value)?;
             }
         }
