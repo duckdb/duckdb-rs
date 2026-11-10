@@ -63,6 +63,7 @@ uuid = { workspace = true, optional = true }
 
 [dev-dependencies]
 arrow-array = { workspace = true, features = ["ffi"] }
+divan = { workspace = true }
 tempfile = { workspace = true }
 
 [package.metadata.docs.rs]
@@ -71,6 +72,10 @@ all-features = false
 no-default-features = true
 default-target = "x86_64-unknown-linux-gnu"
 targets = []
+
+[[bench]]
+name = "functions"
+harness = false
 
 [[example]]
 name = "002-extension"

@@ -35,6 +35,7 @@ chrono = { version = "0.4.42", default-features = false, features = [
     "std",
     "clock",
 ] }
+divan = "0.1.21"
 doc-comment = "0.3"
 fallible-iterator = "0.3"
 fallible-streaming-iterator = "0.1"
