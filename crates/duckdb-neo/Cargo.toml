@@ -64,6 +64,7 @@ uuid = { workspace = true, optional = true }
 [dev-dependencies]
 arrow-array = { workspace = true, features = ["ffi"] }
 divan = { workspace = true }
+memchr = "=2.8.3"
 tempfile = { workspace = true }
 
 [package.metadata.docs.rs]

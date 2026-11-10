@@ -43,6 +43,23 @@ cargo test -p duckdb-neo --test bench_functions
 | --- | --- | --- |
 | `NEO_BENCH_ROWS` | `1000,10000,100000,1000000` | Comma-separated row counts. Test runs (`cargo test --benches`, `-- --test`) default to `1000`. |
 | `NEO_BENCH_THREADS` | `1` | DuckDB's `threads` setting. |
+| `NEO_BENCH_NULL_PERCENT` | `10` | Approximate NULL percentage per field, an integer from `0` to `100`. |
+
+NULLs use deterministic, separately salted hashes of the input row index. The rate applies to all five
+`merge_struct` arguments, MAP values and active UNION members, all three `row_hash` arguments, and all
+five COPY columns. Nested rates apply within non-NULL parents; MAP keys and aggregate grouping keys
+remain non-NULL. `dash_split` is unchanged: it splits one constant string, and NULL arguments return no
+rows, so it has no per-row NULL rate. Fixed golden-value tests do not depend on this setting.
+
+```sh
+NEO_BENCH_NULL_PERCENT=25 cargo bench -p duckdb-neo --bench functions -- scalar
+python3 scripts/neo_bench.py run --null-percent 0 --filter scalar
+```
+
+Both comparison scripts accept `--null-percent` (overriding the environment) and record the requested
+percentage in their reports. Rebuild every compared implementation with matching fixture generators:
+older revisions/binaries ignore this variable and use different inputs. Historical timings are therefore
+not directly comparable, even when passed the same percentage.
 
 Divan's own options also apply, e.g. `-- --sample-count 20` or `DIVAN_MAX_TIME=2`.
 
@@ -122,6 +139,9 @@ Benchmark names (`group/function/rows`) identify results across versions; renami
 `removed` and `new`.
 
 ## Other languages
+
+[`cpp/`](cpp/README.md) implements the same six workloads using DuckDB's public v2 C++ API, with
+correctness checks, a byte-for-byte Rust/C++ COPY interoperability test, and a three-way comparison runner.
 
 [`instructions.md`](instructions.md) specifies the functions, inputs, checks, benchmarks, comparison and
 CI precisely enough to rebuild them on another DuckDB API, with golden values to validate against.

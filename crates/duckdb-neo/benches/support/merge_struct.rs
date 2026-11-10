@@ -13,7 +13,7 @@ use duckdb_neo::{
     vector::{Unknown, Vector},
 };
 
-use super::readable;
+use super::{nulls::Nulls, readable};
 
 pub const MAP_TYPE: &str = "MAP(VARCHAR, INTEGER)";
 pub const UNION_TYPE: &str = "UNION(num INTEGER, str VARCHAR)";
@@ -74,18 +74,22 @@ impl ScalarCallbacks for MergeStruct {
         {
             let maps = maps.reader()?;
             let mut field = fields.get_vector_at_mut::<Map<&str, i32>>(2)?;
-            let entries = maps.iter().flatten().map(|map| map.len()).sum();
+            let entries = (0..maps.len())
+                .map(|row| Ok(maps.get_list_entry(row)?.map_or(0, |entry| entry.length() as usize)))
+                .sum::<Result<usize>>()?;
             // SAFETY: the entries the rows below leave unwritten are trimmed afterwards.
             unsafe { field.set_child_size(entries)? };
             {
                 let mut writer = field.writer()?;
+                let mut scratch = Map(Vec::new());
                 for (row, map) in maps.iter().enumerate() {
-                    let map = map.map(|map| {
-                        map.iter()
-                            .map(|(key, value)| (key, value.copied()))
-                            .collect::<Map<_, _>>()
-                    });
-                    writer.set(row, map.as_ref())?;
+                    scratch.0.clear();
+                    if let Some(map) = map {
+                        scratch.0.extend(map.iter().map(|(key, value)| (key, value.copied())));
+                        writer.set(row, Some(&scratch))?;
+                    } else {
+                        writer.set(row, None)?;
+                    }
                 }
             }
             let written = field.child_offset();
@@ -93,13 +97,9 @@ impl ScalarCallbacks for MergeStruct {
             unsafe { field.set_child_size(written)? };
         }
         {
-            let mut field = fields.get_vector_at_mut::<UnionInput<&str>>(3)?;
+            let mut field = fields.get_vector_at_mut::<UnionInputRef<'_, UncheckedString>>(3)?;
             let mut writer = field.writer()?;
             for (row, value) in unions.reader()?.iter().enumerate() {
-                let value = value.map(|value| match value {
-                    UnionInputRef::Num(value) => UnionInput::Num(value.copied()),
-                    UnionInputRef::Str(value) => UnionInput::Str(value),
-                });
                 writer.set(row, value.as_ref())?;
             }
         }
@@ -134,18 +134,34 @@ pub fn register(conn: &Connection) -> Result<()> {
         .register(conn)
 }
 
-/// Create `scalar_input` with `rows` rows of `merge_struct` arguments, about 1% of them NULL.
+/// Create `scalar_input` using the configured NULL percentage, including nested values.
 pub fn create_input(conn: &Connection, rows: usize) -> Result<()> {
+    create_input_with_nulls(conn, rows, Nulls::from_env()?)
+}
+
+pub fn create_input_with_nulls(conn: &Connection, rows: usize, nulls: Nulls) -> Result<()> {
+    let map = format!(
+        "MAP {{'a': {}, 'b': {}, 'key_' || (i % 7): {}}}",
+        nulls.expression("i::INTEGER", 5),
+        nulls.expression("(i * 2)::INTEGER", 6),
+        nulls.expression("(i % 7)::INTEGER", 7),
+    );
+    let union = format!(
+        "CASE WHEN i % 2 = 0 THEN union_value(num := {})::{UNION_TYPE}
+              ELSE union_value(str := {})::{UNION_TYPE} END",
+        nulls.expression("i::INTEGER", 8),
+        nulls.expression("'union_string_' || i", 9),
+    );
     conn.execute(
         format!(
             "CREATE OR REPLACE TABLE scalar_input AS
-             SELECT i::INTEGER AS i,
-                    CASE WHEN i % 97 = 0 THEN NULL ELSE 'value_' || i END AS s,
-                    MAP {{'a': i::INTEGER, 'b': (i * 2)::INTEGER, 'key_' || (i % 7): (i % 7)::INTEGER}} AS m,
-                    CASE WHEN i % 2 = 0 THEN union_value(num := i::INTEGER)::{UNION_TYPE}
-                         ELSE union_value(str := 'union_string_' || i)::{UNION_TYPE} END AS u,
-                    CASE WHEN i % 89 = 0 THEN NULL ELSE (i / 1000)::DECIMAL(18, 3) END AS d
-             FROM range({rows}) t(i)"
+             SELECT {} AS i, {} AS s, {} AS m, {} AS u, {} AS d
+             FROM range({rows}) t(i)",
+            nulls.expression("i::INTEGER", 0),
+            nulls.expression("'value_' || i", 1),
+            nulls.expression(&map, 2),
+            nulls.expression(&union, 3),
+            nulls.expression("(i / 1000)::DECIMAL(18, 3)", 4),
         )
         .as_str(),
         Parameters::None,
@@ -160,7 +176,8 @@ pub fn verify(conn: &Connection) -> Result<()> {
     let mismatches = super::query_i64(
         conn,
         "SELECT count(*) FROM (SELECT merge_struct(i, s, m, u, d) AS r, * FROM scalar_input)
-         WHERE r.i IS DISTINCT FROM i OR r.s IS DISTINCT FROM s OR r.u IS DISTINCT FROM u
+         WHERE r IS NULL OR r.i IS DISTINCT FROM i OR r.s IS DISTINCT FROM s OR r.u IS DISTINCT FROM u
+            OR union_tag(r.u) IS DISTINCT FROM union_tag(u)
             OR r.d IS DISTINCT FROM d
             OR list_sort(map_entries(r.m)) IS DISTINCT FROM list_sort(map_entries(m))",
     )?;

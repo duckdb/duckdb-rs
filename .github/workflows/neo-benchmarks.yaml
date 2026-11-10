@@ -27,6 +27,9 @@ on:
       rows:
         description: Comma-separated row counts (empty runs 1000,10000,100000,1000000)
         default: ""
+      null_percent:
+        description: NULL percentage per field (0 through 100; requires matching fixture generators)
+        default: "10"
       repetitions:
         description: Alternating runs per side
         default: "3"
@@ -66,6 +69,7 @@ jobs:
           BASE: ${{ inputs.base }}
           FILTER: ${{ inputs.filter }}
           ROWS: ${{ inputs.rows }}
+          NEO_BENCH_NULL_PERCENT: ${{ inputs.null_percent || '10' }}
           REPETITIONS: ${{ inputs.repetitions || '3' }}
           THRESHOLD: ${{ inputs.threshold || '10' }}
         run: |

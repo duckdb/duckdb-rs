@@ -9,6 +9,7 @@
 pub mod base56;
 pub mod dash_split;
 pub mod merge_struct;
+pub mod nulls;
 pub mod row_hash;
 
 use duckdb_neo::{

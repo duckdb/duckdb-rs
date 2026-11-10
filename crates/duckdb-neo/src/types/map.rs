@@ -133,6 +133,7 @@ unsafe impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
         fields.get_untyped_vector_at(1)?.validate_as::<V>().map(|()| true)
     }
 
+    #[inline(always)]
     unsafe fn get<'a, U: VectorElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
@@ -211,7 +212,7 @@ unsafe impl<K: VectorElement, V: VectorElement> HasChildren for Map<K, V> {
 
 /// # Safety
 /// `index` must be in bounds, and the entries and both fields must be validated as `K` and `V`.
-#[inline]
+#[inline(always)]
 unsafe fn write_map<'w, K: VectorElement + 'w, V: VectorElement + 'w, E>(
     writer: &mut VectorWriter<'w, Map<K, V>>,
     index: usize,
@@ -256,7 +257,7 @@ where
 {
     type Write = Self;
 
-    #[inline]
+    #[inline(always)]
     unsafe fn write(vector: &mut VectorWriter<'_, Self>, index: usize, value: Option<&Self::Write>) -> Result<()> {
         // SAFETY: the caller guarantees an in-bounds row; Map<K, V>::validate checked the entries and both fields.
         unsafe {

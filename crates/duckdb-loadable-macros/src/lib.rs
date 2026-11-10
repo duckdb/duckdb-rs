@@ -262,7 +262,8 @@ pub fn as_duckdb(input: TokenStream) -> TokenStream {
 /// identifiers drop their `r#` prefix, and names that differ only in case are rejected. `Option<T>` members preserve a NULL member value inside a non-NULL union.
 /// `FromValue` matches members by name in any order, preferring exact over case-insensitive matches.
 /// Vectors are matched by position like `AsVectorElement`, and reads return a generated `NameRef<'a>`
-/// enum whose variants hold `Option<T::Ref<'a>>`. Writes take `Name` or `&Name`.
+/// enum whose variants hold `Option<T::Ref<'a>>`. Writes take `Name`, or `NameRef<'a>` through a
+/// `Vector<NameRef<'a>>` when every member's `T::Ref<'a>` borrows as `T::Write`.
 #[cfg(feature = "neo")]
 #[proc_macro_derive(AsDuckDBUnion, attributes(duckdb))]
 pub fn as_duckdb_union(input: TokenStream) -> TokenStream {

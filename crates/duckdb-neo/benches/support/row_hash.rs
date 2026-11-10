@@ -16,7 +16,7 @@ use duckdb_neo::{
     vector::{CombinedVectorIterator, Unknown, Vector},
 };
 
-use super::readable;
+use super::{nulls::Nulls, readable};
 
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
@@ -139,14 +139,18 @@ pub const GROUPS: usize = 1024;
 
 /// Create `agg_input` with `rows` rows of `row_hash` arguments in [`GROUPS`] groups.
 pub fn create_input(conn: &Connection, rows: usize) -> Result<()> {
+    create_input_with_nulls(conn, rows, Nulls::from_env()?)
+}
+
+pub fn create_input_with_nulls(conn: &Connection, rows: usize, nulls: Nulls) -> Result<()> {
     conn.execute(
         format!(
             "CREATE OR REPLACE TABLE agg_input AS
-             SELECT (i % {GROUPS})::INTEGER AS g,
-                    CASE WHEN i % 89 = 0 THEN NULL ELSE 'key_' || (i * 7919 % 100003) END AS s,
-                    CASE WHEN i % 97 = 0 THEN NULL ELSE i * 0.25 END::DOUBLE AS d,
-                    CASE WHEN i % 101 = 0 THEN NULL ELSE i % 3 = 0 END AS b
-             FROM range({rows}) t(i)"
+             SELECT (i % {GROUPS})::INTEGER AS g, {} AS s, {}::DOUBLE AS d, {} AS b
+             FROM range({rows}) t(i)",
+            nulls.expression("'key_' || (i * 7919 % 100003)", 10),
+            nulls.expression("i * 0.25", 11),
+            nulls.expression("i % 3 = 0", 12),
         )
         .as_str(),
         Parameters::None,

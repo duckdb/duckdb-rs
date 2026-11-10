@@ -62,6 +62,7 @@ class Options:
     target_dir: Path
     log_dir: Path | None
     divan_args: list[str] = field(default_factory=list)
+    null_percent: int = 10
 
 
 def git(*args: str, cwd: Path = WORKSPACE_DIR) -> str:
@@ -104,6 +105,19 @@ def export_ref(ref: str, target_dir: Path) -> Tree:
     return Tree(label=ref, path=path, ref=ref, sha=sha)
 
 
+def parse_null_percent(value: str) -> int:
+    if not value or not value.isascii() or not value.isdigit():
+        raise argparse.ArgumentTypeError(
+            "NULL percentage must be an integer from 0 to 100"
+        )
+    digits = value.lstrip("0") or "0"
+    if len(digits) > 3 or int(digits) > 100:
+        raise argparse.ArgumentTypeError(
+            "NULL percentage must be an integer from 0 to 100"
+        )
+    return int(digits)
+
+
 def bench_env(options: Options) -> dict[str, str]:
     env = dict(
         os.environ, CARGO_TARGET_DIR=str(options.target_dir), CARGO_TERM_COLOR="never"
@@ -112,6 +126,7 @@ def bench_env(options: Options) -> dict[str, str]:
         env["NEO_BENCH_ROWS"] = options.rows
     if options.threads:
         env["NEO_BENCH_THREADS"] = options.threads
+    env["NEO_BENCH_NULL_PERCENT"] = str(options.null_percent)
     return env
 
 
@@ -291,11 +306,15 @@ def markdown_report(
     threshold: float,
     runs: int,
     machine: str,
+    null_percent: int = 10,
 ) -> str:
     lines = ["## duckdb-neo benchmarks", ""]
     lines.append(f"- Head: {head.describe()}")
     lines.append(
         f"- Base: {base.describe() if base else 'none (the base has no benchmarks)'}"
+    )
+    lines.append(
+        f"- Requested NULL percentage: {null_percent}% per field; older fixtures may ignore this setting"
     )
     lines.append(f"- {runs} alternating run(s) per side on {machine} (before the runs)")
     lines.append(
@@ -406,6 +425,7 @@ def command_compare(args: argparse.Namespace, options: Options) -> int:
         threshold,
         args.repetitions,
         machine,
+        options.null_percent,
     )
     payload = {
         "base": {"ref": base.ref, "sha": base.sha, "has_benchmarks": len(trees) == 2},
@@ -415,6 +435,7 @@ def command_compare(args: argparse.Namespace, options: Options) -> int:
             "dirty": head.ref is None and dirty(),
         },
         "threshold": threshold,
+        "null_percent": options.null_percent,
         "repetitions": args.repetitions,
         "machine": machine,
         "results": [result.to_json() for result in results],
@@ -439,6 +460,7 @@ def command_run(args: argparse.Namespace, options: Options) -> int:
         f"## duckdb-neo benchmarks: {tree.describe()}",
         "",
         f"- {args.repetitions} run(s) on {machine} (before the runs)",
+        f"- Requested NULL percentage: {options.null_percent}% per field; older fixtures may ignore this setting",
     ]
     lines += ["", "| Benchmark | Median |", "| --- | ---: |"]
     for name, values in samples.items():
@@ -448,6 +470,7 @@ def command_run(args: argparse.Namespace, options: Options) -> int:
     payload = {
         "ref": tree.ref,
         "sha": tree.sha or git("rev-parse", "HEAD"),
+        "null_percent": options.null_percent,
         "machine": machine,
         "results": [
             {"name": name, "median_ns": statistics.median(values), "runs_ns": values}
@@ -472,6 +495,12 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, Options]:
     common.add_argument(
         "--threads",
         help="DuckDB threads per benchmark (sets NEO_BENCH_THREADS, default 1)",
+    )
+    common.add_argument(
+        "--null-percent",
+        type=parse_null_percent,
+        default=os.environ.get("NEO_BENCH_NULL_PERCENT", "10"),
+        help="NULL percentage per field, 0..100 (default NEO_BENCH_NULL_PERCENT or 10)",
     )
     common.add_argument(
         "--sample-count", type=int, help="divan samples per benchmark (default 100)"
@@ -554,6 +583,7 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, Options]:
         target_dir=target_dir,
         log_dir=args.log_dir,
         divan_args=args.divan_args,
+        null_percent=args.null_percent,
     )
     return args, options
 

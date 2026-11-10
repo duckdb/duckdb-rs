@@ -347,7 +347,7 @@ fn reader_handles_native_storage_layouts() -> Result<()> {
 }
 
 fn assert_view_is_current<T: crate::vector::VectorElement>(vector: &crate::vector::Vector<'_, T>) -> Result<()> {
-    let cached = vector.reader()?.view;
+    let cached = vector.reader()?.view();
     let fresh = crate::check_api_call!(crate::ffi::duckdb_v2_vector_get_view, vector.handle, RET)?;
     assert_eq!(
         (cached.data, cached.validity, cached.count),

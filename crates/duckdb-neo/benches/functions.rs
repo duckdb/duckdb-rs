@@ -11,6 +11,7 @@ use duckdb_neo::{Parameters, connection::Connection};
 use support::{Fixture, base56, bench_rows, dash_split, merge_struct, row_hash};
 
 fn main() {
+    support::nulls::Nulls::from_env().expect("valid NEO_BENCH_NULL_PERCENT");
     divan::main();
 }
 

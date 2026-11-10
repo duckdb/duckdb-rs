@@ -960,6 +960,7 @@ dependencies = [
  "divan",
  "duckdb-loadable-macros",
  "libduckdb-sys",
+ "memchr",
  "paste",
  "r2d2",
  "rust_decimal",

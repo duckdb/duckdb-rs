@@ -33,7 +33,6 @@ impl Selection<'_> {
 #[repr(C)]
 pub struct VectorReader<'vec, T: VectorElement> {
     vector: &'vec Vector<'vec, T>,
-    view: ffi::duckdb_v2_vector_view,
     storage: ReaderStorage,
     child_readers: Option<Rc<[VectorReader<'vec, super::Unknown>]>>,
 }
@@ -42,7 +41,7 @@ impl<T: VectorElement> std::fmt::Debug for VectorReader<'_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("VectorReader")
             .field("len", &self.len())
-            .field("data", &self.view.data.cast::<()>())
+            .field("data", &self.view().data.cast::<()>())
             .field("storage", &self.storage)
             .finish()
     }
@@ -53,7 +52,6 @@ impl<T: VectorElement> Clone for VectorReader<'_, T> {
     fn clone(&self) -> Self {
         Self {
             vector: self.vector,
-            view: self.view,
             storage: self.storage,
             child_readers: self.child_readers.clone(),
         }
@@ -167,9 +165,15 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
         Ok(Self {
             vector,
             storage,
-            view,
             child_readers,
         })
+    }
+
+    /// The vector's cached view; construction cached it, and the shared borrow keeps it.
+    #[inline(always)]
+    pub(crate) fn view(&self) -> ffi::duckdb_v2_vector_view {
+        // SAFETY: `Vector::view` filled the cell before construction, and only `&mut` access clears it.
+        unsafe { *self.vector.view.get().unwrap_unchecked() }
     }
 
     #[inline]
@@ -191,28 +195,31 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
     /// Map rows through [`Self::selection`] and check [`Self::validity`] before dereferencing.
     #[inline(always)]
     pub fn as_ptr(&self) -> *const T::Internal<'vec> {
-        self.view.data.cast()
+        self.view().data.cast()
     }
 
     /// # Safety
     /// Borrow physical storage only if all slots, including NULL/unselected ones, are initialized as `T::Internal<'vec>`.
     pub unsafe fn as_slice(&self) -> Option<&'vec [T::Internal<'vec>]> {
         // SAFETY: The caller guarantees all physical slots are initialized.
-        if self.view.data.is_null() {
+        if self.view().data.is_null() {
             None
         } else {
-            Some(unsafe { std::slice::from_raw_parts(self.view.data.cast(), self.storage.physical_len(self.view)) })
+            Some(unsafe { std::slice::from_raw_parts(self.view().data.cast(), self.storage.physical_len(self.view())) })
         }
     }
 
     /// Borrow the physical validity mask, or `None` if all slots are valid; map rows with [`Self::selection`].
     /// Bit `physical % 64` of word `physical / 64` marks a non-NULL slot.
     pub fn validity(&self) -> Option<&'vec [u64]> {
-        if self.view.validity.is_null() {
+        if self.view().validity.is_null() {
             None
         } else {
             Some(unsafe {
-                std::slice::from_raw_parts(self.view.validity, self.storage.physical_len(self.view).div_ceil(64))
+                std::slice::from_raw_parts(
+                    self.view().validity,
+                    self.storage.physical_len(self.view()).div_ceil(64),
+                )
             })
         }
     }
@@ -223,11 +230,11 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
             ReaderStorage::Flat => Selection::Identity,
             ReaderStorage::Constant(_) => Selection::Constant,
             ReaderStorage::Dictionary(_) => {
-                let selection = if self.view.sel.is_null() {
+                let selection = if self.view().sel.is_null() {
                     None
                 } else {
-                    let len = self.view.count as usize;
-                    Some(unsafe { std::slice::from_raw_parts(self.view.sel, len) })
+                    let len = self.view().count as usize;
+                    Some(unsafe { std::slice::from_raw_parts(self.view().sel, len) })
                 };
 
                 Selection::Dictionary(selection.expect("prepared dictionary has a selection"))
@@ -291,7 +298,7 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
             return Err(out_of_bounds(index, self.len()));
         }
         // SAFETY: The index is within the prepared vector's logical rows.
-        Ok(unsafe { self.storage.physical_index_unchecked(self.view, index) }.is_none())
+        Ok(unsafe { self.storage.physical_index_unchecked(self.view(), index) }.is_none())
     }
 
     /// Iterate over logical rows without repeating reader preparation.
@@ -312,18 +319,18 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
             return Err(out_of_bounds(index, self.len()));
         }
         // SAFETY: The index is within the prepared vector's logical rows.
-        let Some(physical) = (unsafe { self.storage.physical_index_unchecked(self.view, index) }) else {
+        let Some(physical) = (unsafe { self.storage.physical_index_unchecked(self.view(), index) }) else {
             return Ok(None);
         };
         // SAFETY: The caller guarantees list entry storage, and the row is valid.
         Ok(Some(unsafe {
-            *self.view.data.cast::<crate::types::ListIndex>().add(physical)
+            *self.view().data.cast::<crate::types::ListIndex>().add(physical)
         }))
     }
 
     #[inline(always)]
     pub(crate) unsafe fn get_unchecked(&self, index: usize) -> Option<T::Ref<'vec>> {
-        let physical = unsafe { self.storage.physical_index_unchecked(self.view, index) }?;
+        let physical = unsafe { self.storage.physical_index_unchecked(self.view(), index) }?;
         // SAFETY: The reader is typed, its descendants are prepared, and the row is valid.
         Some(unsafe { T::get(self, physical, index) })
     }
@@ -334,7 +341,7 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
             // SAFETY: The caller guarantees flat storage for this prepared reader.
             unsafe { std::hint::unreachable_unchecked() }
         };
-        if !unsafe { FlatReader::is_valid_unchecked(self.view.validity, index) } {
+        if !unsafe { FlatReader::is_valid_unchecked(self.view().validity, index) } {
             return None;
         }
         // SAFETY: Flat storage uses the logical index directly; validity was checked above.

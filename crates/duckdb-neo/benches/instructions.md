@@ -46,6 +46,23 @@ Each benchmark is parameterized by a row count. `NEO_BENCH_ROWS` overrides the l
 ignore `_` and surrounding spaces). Otherwise use `1000,10000,100000,1000000` in benchmark mode, and only
 `1000` when the harness runs benchmarks once as a smoke test (divan: `cargo test --benches` or `--test`).
 
+### NULL percentage
+
+`NEO_BENCH_NULL_PERCENT` defaults to `10`. Accept only ASCII decimal integers from `0` through `100`;
+reject empty values, signs, whitespace, fractions and out-of-range values. Each field uses a separate
+fixed salt so parent and child NULL patterns do not coincide. The percentage is approximate and
+reproducible for a given DuckDB version, not a random draw on every benchmark execution.
+
+In the input SQL below, `N(value, seed)` is shorthand for this expanded expression, not a SQL function:
+
+```sql
+CASE WHEN hash(i::UBIGINT, <seed>::UBIGINT) % 100 < <null_percent> THEN NULL ELSE <value> END
+```
+
+Nested rates apply within non-NULL parents. MAP keys and aggregate grouping keys remain non-NULL.
+`dash_split` has one constant string input and no per-row NULL rate; its NULL-argument edge tests stay
+unchanged. Fixed golden-value inputs in section 8 are independent of the environment.
+
 ## 3. Benchmarks
 
 Benchmark names are `group/function/rows`, e.g. `scalar/merge_struct/1000000`. Use exactly these:
@@ -113,12 +130,13 @@ Input:
 
 ```sql
 CREATE OR REPLACE TABLE scalar_input AS
-SELECT i::INTEGER AS i,
-       CASE WHEN i % 97 = 0 THEN NULL ELSE 'value_' || i END AS s,
-       MAP {'a': i::INTEGER, 'b': (i * 2)::INTEGER, 'key_' || (i % 7): (i % 7)::INTEGER} AS m,
-       CASE WHEN i % 2 = 0 THEN union_value(num := i::INTEGER)::UNION(num INTEGER, str VARCHAR)
-            ELSE union_value(str := 'union_string_' || i)::UNION(num INTEGER, str VARCHAR) END AS u,
-       CASE WHEN i % 89 = 0 THEN NULL ELSE (i / 1000)::DECIMAL(18, 3) END AS d
+SELECT N(i::INTEGER, 0) AS i,
+       N('value_' || i, 1) AS s,
+       N(MAP {'a': N(i::INTEGER, 5), 'b': N((i * 2)::INTEGER, 6),
+              'key_' || (i % 7): N((i % 7)::INTEGER, 7)}, 2) AS m,
+       N(CASE WHEN i % 2 = 0 THEN union_value(num := N(i::INTEGER, 8))::UNION(num INTEGER, str VARCHAR)
+              ELSE union_value(str := N('union_string_' || i, 9))::UNION(num INTEGER, str VARCHAR) END, 3) AS u,
+       N((i / 1000)::DECIMAL(18, 3), 4) AS d
 FROM range(<rows>) t(i)
 ```
 
@@ -126,8 +144,8 @@ FROM range(<rows>) t(i)
 
 ```sql
 SELECT count(*) FROM (SELECT merge_struct(i, s, m, u, d) AS r, * FROM scalar_input)
-WHERE r.i IS DISTINCT FROM i OR r.s IS DISTINCT FROM s OR r.u IS DISTINCT FROM u
-   OR r.d IS DISTINCT FROM d
+WHERE r IS NULL OR r.i IS DISTINCT FROM i OR r.s IS DISTINCT FROM s OR r.u IS DISTINCT FROM u
+   OR union_tag(r.u) IS DISTINCT FROM union_tag(u) OR r.d IS DISTINCT FROM d
    OR list_sort(map_entries(r.m)) IS DISTINCT FROM list_sort(map_entries(m))
 ```
 
@@ -207,9 +225,9 @@ Input (1,024 groups):
 ```sql
 CREATE OR REPLACE TABLE agg_input AS
 SELECT (i % 1024)::INTEGER AS g,
-       CASE WHEN i % 89 = 0 THEN NULL ELSE 'key_' || (i * 7919 % 100003) END AS s,
-       CASE WHEN i % 97 = 0 THEN NULL ELSE i * 0.25 END::DOUBLE AS d,
-       CASE WHEN i % 101 = 0 THEN NULL ELSE i % 3 = 0 END AS b
+       N('key_' || (i * 7919 % 100003), 10) AS s,
+       N(i * 0.25, 11)::DOUBLE AS d,
+       N(i % 3 = 0, 12) AS b
 FROM range(<rows>) t(i)
 ```
 
@@ -289,11 +307,11 @@ Input:
 
 ```sql
 CREATE OR REPLACE TABLE copy_input AS
-SELECT i::BIGINT AS id,
-       CASE WHEN i % 89 = 0 THEN NULL ELSE i * 1.5 END::DOUBLE AS x,
-       CASE WHEN i % 97 = 0 THEN NULL ELSE 'name_' || i END AS name,
-       CASE WHEN i % 101 = 0 THEN NULL ELSE i % 2 = 0 END AS flag,
-       (i % 1000)::INTEGER AS bucket
+SELECT N(i::BIGINT, 20) AS id,
+       N(i * 1.5, 21)::DOUBLE AS x,
+       N('name_' || i, 22) AS name,
+       N(i % 2 = 0, 23) AS flag,
+       N((i % 1000)::INTEGER, 24) AS bucket
 FROM range(<rows>) t(i)
 ```
 
@@ -318,7 +336,11 @@ Target tables are created empty with `CREATE OR REPLACE TABLE <name> AS FROM cop
 
 In the language's normal test suite, one test per function, each on a fresh fixture with 5,000 rows:
 create the input and run `verify` (for `base56`, in a temporary directory), plus the `typeof` check for
-`merge_struct`. These must run in a debug build within seconds.
+`merge_struct`. These must run in a debug build within seconds. Also test explicit 0%, 10% and 100%
+fixtures without mutating the process environment: check the observed density of every field and nested
+member, distinguish NULL parents from NULL active UNION members, and keep MAP keys non-NULL. At 0% and
+100%, assert exact counts; at 10%, use enough rows for a narrow density tolerance. Verify that NULL
+patterns differ between fields and that a NULL result struct is rejected even when every argument is NULL.
 
 Before relying on the checks, confirm that each one catches a bug: break each function once (for example,
 change one row's value, flip one state's hash during combine, skip a byte while splitting, perturb decoded
@@ -332,7 +354,7 @@ to Rust. Otherwise port it with this behavior.
 **Interface:**
 
 ```
-compare [--base REF] [--head REF] [--filter F]... [--rows LIST] [--threads N] [--sample-count N]
+compare [--base REF] [--head REF] [--filter F]... [--rows LIST] [--threads N] [--null-percent PCT] [--sample-count N]
         [--max-time SECS] [--quick] [--repetitions N] [--threshold PCT] [--no-fail] [--locked]
         [--target-dir DIR] [--log-dir DIR] [--json FILE] [--markdown FILE] [-- harness args]
 run     [--ref REF] (same run options)
@@ -341,6 +363,9 @@ run     [--ref REF] (same run options)
 Defaults: `--base origin/main`, the working tree as head (uncommitted changes included), 3 repetitions for
 `compare` and 1 for `run`, threshold 10%. `--quick` means 20 samples and 1 repetition. `--rows` and
 `--threads` set `NEO_BENCH_ROWS` and `NEO_BENCH_THREADS`. `--filter` selects benchmarks by name.
+`--null-percent` overrides `NEO_BENCH_NULL_PERCENT`, otherwise the environment or default 10 applies.
+Record the requested percentage in JSON and Markdown. Every compared version must implement the same
+fixture generator; older revisions ignore this setting, so their historical timings are not matched workloads.
 
 **Algorithm:**
 
@@ -376,7 +401,7 @@ Defaults: `--base origin/main`, the working tree as head (uncommitted changes in
   {
     "base": {"ref": "...", "sha": "...", "has_benchmarks": true},
     "head": {"ref": null, "sha": "...", "dirty": true},
-    "threshold": 0.1, "repetitions": 3, "machine": "...",
+    "threshold": 0.1, "repetitions": 3, "machine": "...", "null_percent": 10,
     "results": [{"name": "table/dash_split/1000", "status": "unchanged", "change": 0.018,
                  "base_ns": [...], "head_ns": [...], "base_median_ns": 61400.0, "head_median_ns": 62600.0}]
   }
@@ -390,7 +415,7 @@ If the harness has no machine-readable output (divan does not), parse its table,
 
 - Triggers: pull requests touching the bindings, their native library, build files, lockfile, toolchain
   pin, the script, or the workflow; and manual dispatch with inputs `base` (default `main`), `filter`
-  (space separated), `rows`, `repetitions` (default 3) and `threshold` (default 10).
+  (space separated), `rows`, `null_percent` (default 10), `repetitions` (default 3) and `threshold` (default 10).
 - One job on one runner, with full git history.
 - For pull requests, compare the checked-out merge commit against its first parent (`HEAD^1`), the exact
   base it merges into.
@@ -400,7 +425,12 @@ If the harness has no machine-readable output (divan does not), parse its table,
 
 ## 8. Golden values
 
-From the Rust implementation; an implementation that matches the rules above reproduces them.
+From fixed Rust reference inputs; these do not depend on `NEO_BENCH_NULL_PERCENT`. Codec and single-row
+hash values below are unchanged. The aggregate/file goldens use their original fixed fixtures: aggregate
+`s`, `d`, `b` are NULL at `i % 89/97/101 = 0`, respectively; COPY `x`, `name`, `flag` use the same three
+periods, while `id` and `bucket` are non-NULL. Their non-NULL values follow sections 4.3–4.4. These are
+codec/hash regression fixtures, not the current timed inputs. The two merge rows below are explicit fixed
+values, including NULL `s` and `d` on row 0, not rows from the configurable workload.
 
 base56 encodings:
 

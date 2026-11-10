@@ -550,6 +550,114 @@ fn derived_union_nests_in_structs_and_lists() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn derived_union_refs_write_vectors() -> Result<()> {
+    let conn = connect()?;
+    let source = conn
+        .query(
+            "SELECT CASE i
+                        WHEN 0 THEN union_value(Num := 7::SMALLINT)::UNION(Num SMALLINT, str VARCHAR)
+                        WHEN 1 THEN union_value(str := 'a string longer than the inline storage')
+                            ::UNION(Num SMALLINT, str VARCHAR)
+                        WHEN 2 THEN NULL
+                        ELSE union_value(str := 'duck')::UNION(Num SMALLINT, str VARCHAR)
+                    END,
+                    CASE i % 3
+                        WHEN 0 THEN union_value(Key := NULL::INTEGER)::UNION(Key INTEGER, Label VARCHAR)
+                        WHEN 1 THEN union_value(Label := 'label')::UNION(Key INTEGER, Label VARCHAR)
+                        ELSE union_value(Label := NULL::VARCHAR)::UNION(Key INTEGER, Label VARCHAR)
+                    END,
+                    CASE WHEN i % 2 = 0 THEN union_value(\"Left\" := i)::UNION(\"Left\" BIGINT, \"Right\" VARCHAR)
+                         ELSE union_value(\"Right\" := 'right ' || i)::UNION(\"Left\" BIGINT, \"Right\" VARCHAR) END
+             FROM range(4) t(i)",
+            Parameters::None,
+        )?
+        .next_chunk()?
+        .unwrap();
+    let inputs = source.get_vector_at::<Input>(0)?;
+    let nullables = source.get_vector_at::<Nullable>(1)?;
+    let eithers = source.get_vector_at::<Either<i64, String>>(2)?;
+    let (inputs, nullables, eithers) = (inputs.reader()?, nullables.reader()?, eithers.reader()?);
+
+    let types = [
+        Input::logical_type(&conn)?,
+        Nullable::logical_type(&conn)?,
+        Either::<i64, String>::logical_type(&conn)?,
+    ];
+    let mut chunk = DataChunk::create(&conn, &types, true)?;
+    {
+        let [input, nullable, either] = chunk.get_vector_array_mut([0, 1, 2])?;
+        let mut input = input.cast::<InputRef<'_>>()?;
+        input.set_size(4)?;
+        let mut writer = input.writer()?;
+        // Rewriting shifted rows switches their active member, which must NULL the previous one.
+        for row in 0..4 {
+            writer.set(row, inputs.get((row + 1) % 4)?.as_ref())?;
+        }
+        for row in 0..4 {
+            writer.set(row, inputs.get(row)?.as_ref())?;
+        }
+        let mut nullable = nullable.cast::<NullableRef<'_>>()?;
+        nullable.set_size(4)?;
+        let mut writer = nullable.writer()?;
+        for (row, value) in nullables.iter().enumerate() {
+            writer.set(row, value.as_ref())?;
+        }
+        let mut either = either.cast::<EitherRef<'_, i64, String>>()?;
+        either.set_size(4)?;
+        let mut writer = either.writer()?;
+        for (row, value) in eithers.iter().enumerate() {
+            writer.set(row, value.as_ref())?;
+        }
+    }
+    let copied = chunk.get_vector_at::<Input>(0)?;
+    assert_eq!(
+        copied.reader()?.iter().collect::<Vec<_>>(),
+        inputs.iter().collect::<Vec<_>>()
+    );
+    assert_eq!(
+        copied.get_value_slow(1)?.get::<Input>()?,
+        Some(Input::str("a string longer than the inline storage".to_owned()))
+    );
+    let numbers: Vec<_> = copied
+        .children()
+        .unwrap()
+        .get_vector_at::<i16>(1)?
+        .reader()?
+        .iter()
+        .collect();
+    assert_eq!(numbers, [Some(&7), None, None, None]);
+    let copied = chunk.get_vector_at::<Nullable>(1)?;
+    assert_eq!(
+        copied.reader()?.iter().collect::<Vec<_>>(),
+        [
+            Some(NullableRef::Key(None)),
+            Some(NullableRef::Label(Some("label"))),
+            Some(NullableRef::Label(None)),
+            Some(NullableRef::Key(None)),
+        ]
+    );
+    let copied = chunk.get_vector_at::<Either<i64, String>>(2)?;
+    assert_eq!(
+        copied.reader()?.iter().collect::<Vec<_>>(),
+        eithers.iter().collect::<Vec<_>>()
+    );
+    assert_eq!(
+        copied.get_value_slow(3)?.get::<Either<i64, String>>()?,
+        Some(Either::Right("right 3".to_owned()))
+    );
+    Ok(())
+}
+
+#[test]
+fn derived_union_refs_reject_mismatched_schemas() -> Result<()> {
+    let conn = connect()?;
+    let mut chunk = DataChunk::create(&conn, &[Nullable::logical_type(&conn)?], true)?;
+    assert!(chunk.get_vector_at_mut::<InputRef<'_>>(0).is_err());
+    assert!(chunk.get_vector_at_mut::<NullableRef<'_>>(0).is_ok());
+    Ok(())
+}
+
 #[derive(Debug, AsDuckDBUnion)]
 #[allow(dead_code)]
 enum Fallible {
@@ -579,6 +687,33 @@ fn failed_union_writes_leave_the_row_null() -> Result<()> {
         assert!(tags.get(row)?.is_none(), "row {row}");
         assert!(numbers.get(row)?.is_none(), "row {row}");
     }
+    Ok(())
+}
+
+#[test]
+fn failed_union_ref_writes_leave_the_row_null() -> Result<()> {
+    let conn = connect()?;
+    let mut chunk = DataChunk::create(&conn, &[Fallible::logical_type(&conn)?], true)?;
+    {
+        let mut vector = chunk.get_vector_at_mut::<FallibleRef<'_>>(0)?;
+        vector.set_size(2)?;
+        let mut writer = vector.writer()?;
+        writer.set(0, Some(&FallibleRef::X(Some(&1))))?;
+        writer.set(1, Some(&FallibleRef::Bits(Some(&[0, 1]))))?;
+        assert!(writer.set(0, Some(&FallibleRef::Bits(Some(&[])))).is_err());
+    }
+    let vector = chunk.get_vector_at::<Fallible>(0)?;
+    assert!(vector.reader()?.get(0)?.is_none());
+    assert!(
+        vector
+            .children()
+            .unwrap()
+            .get_vector_at::<i32>(1)?
+            .reader()?
+            .get(0)?
+            .is_none()
+    );
+    assert_eq!(vector.reader()?.get(1)?, Some(FallibleRef::Bits(Some(&[0, 1]))));
     Ok(())
 }
 

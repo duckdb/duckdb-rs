@@ -211,17 +211,11 @@ fn vector_element(input: &syn::DeriveInput, variants: &UnionVariants<'_>) -> Tok
     let child_indexes = (1..=count).collect::<Vec<_>>();
     let reader_type = fresh_type_ident(input, "__DuckDBVector");
     let hasher_type = fresh_type_ident(input, "__DuckDBHasher");
+    let read_lifetime = fresh_lifetime(input, "__duckdb_read");
     let generics = bounded_generics(input, &types, &bound);
     let (impl_generics, type_generics, where_clause) = generics.split_for_impl();
-    let mut ref_generics = generics.clone();
-    ref_generics.params.insert(0, syn::parse_quote!(#lifetime));
-    for ty in &types {
-        ref_generics
-            .make_where_clause()
-            .predicates
-            .push(syn::parse_quote!(#ty: #lifetime));
-    }
-    let (_, ref_type_generics, ref_where_clause) = ref_generics.split_for_impl();
+    let ref_generics = ref_generics(&generics, &types, &lifetime);
+    let (ref_impl_generics, ref_type_generics, ref_where_clause) = ref_generics.split_for_impl();
     let ref_impl = |bound: TokenStream| ref_bounded_generics(&ref_generics, &types, &lifetime, bound);
     let debug_generics = ref_impl(quote!(::core::fmt::Debug));
     let (debug_impl_generics, _, debug_where_clause) = debug_generics.split_for_impl();
@@ -323,41 +317,131 @@ fn vector_element(input: &syn::DeriveInput, variants: &UnionVariants<'_>) -> Tok
                 }
             }
         }
+
+        // SAFETY: borrowed rows share the owned union's layout, validation and reads.
+        unsafe impl #ref_impl_generics #bound for #ref_ident #ref_type_generics #ref_where_clause {
+            const TYPE_ID: ::duckdb_neo::logical_type::LogicalTypeID =
+                ::duckdb_neo::logical_type::LogicalTypeID::Union;
+            type Internal<#read_lifetime> = ();
+            type Ref<#read_lifetime> = <#ident #type_generics as #bound>::Ref<#read_lifetime> where Self: #read_lifetime;
+
+            fn validate(
+                other: &::duckdb_neo::logical_type::LogicalType,
+                children: ::core::option::Option<&::duckdb_neo::data_chunk::VectorCollection>,
+            ) -> ::duckdb_neo::Result<::core::primitive::bool> {
+                <#ident #type_generics as #bound>::validate(other, children)
+            }
+
+            unsafe fn get<#read_lifetime, #reader_type: #bound>(
+                reader: &::duckdb_neo::vector::VectorReader<#read_lifetime, #reader_type>,
+                physical: ::core::primitive::usize,
+                logical: ::core::primitive::usize,
+            ) -> <Self as #bound>::Ref<#read_lifetime>
+            where Self: #read_lifetime {
+                // SAFETY: the caller upholds the owned union's contract, which has the same layout.
+                unsafe { <#ident #type_generics as #bound>::get(reader, physical, logical) }
+            }
+        }
     }
+}
+
+fn ref_generics(generics: &syn::Generics, types: &[&syn::Type], lifetime: &syn::Lifetime) -> syn::Generics {
+    let mut generics = generics.clone();
+    generics.params.insert(0, syn::parse_quote!(#lifetime));
+    for ty in types {
+        generics
+            .make_where_clause()
+            .predicates
+            .push(syn::parse_quote!(#ty: #lifetime));
+    }
+    generics
+}
+
+fn fresh_lifetime(input: &syn::DeriveInput, name: &str) -> syn::Lifetime {
+    let mut name = name.to_owned();
+    while input.generics.lifetimes().any(|param| param.lifetime.ident == name) {
+        name.push('_');
+    }
+    syn::Lifetime::new(&format!("'{name}"), input.ident.span())
 }
 
 fn writable_vector_element(input: &syn::DeriveInput, variants: &UnionVariants<'_>) -> TokenStream {
     let types = variants.inner_types();
-    let idents = &variants.idents;
-    let tags = (0..types.len()).map(|tag| tag as u8);
-    let child_indexes = (1..=types.len()).collect::<Vec<_>>();
-    let members = variants.idents.iter().zip(&variants.types).map(|(ident, ty)| {
+    let ident = &input.ident;
+    let ref_ident = format_ident!("{ident}Ref");
+    let lifetime = row_lifetime(input);
+    let element: syn::Path = syn::parse_quote!(::duckdb_neo::vector::VectorElement);
+    let writable: syn::Path = syn::parse_quote!(::duckdb_neo::vector::WritableVectorElement);
+
+    let owned_members = variants.idents.iter().zip(&variants.types).map(|(ident, ty)| {
         if option_inner_type(ty).is_some() {
             quote!(Self::#ident(member) => ::core::option::Option::as_ref(member).map(::core::borrow::Borrow::borrow))
         } else {
             quote!(Self::#ident(member) => ::core::option::Option::Some(::core::borrow::Borrow::borrow(member)))
         }
     });
-    let ident = &input.ident;
-    let mut generics = bounded_generics(
-        input,
-        &types,
-        &syn::parse_quote!(::duckdb_neo::vector::WritableVectorElement),
-    );
+    let mut owned_generics = bounded_generics(input, &types, &writable);
     for ty in &types {
-        generics.make_where_clause().predicates.push(syn::parse_quote!(
-            #ty: ::core::borrow::Borrow<<#ty as ::duckdb_neo::vector::WritableVectorElement>::Write>
+        owned_generics.make_where_clause().predicates.push(syn::parse_quote!(
+            #ty: ::core::borrow::Borrow<<#ty as #writable>::Write>
         ));
     }
-    generics
+    owned_generics
         .make_where_clause()
         .predicates
-        .push(syn::parse_quote!(Self: ::duckdb_neo::vector::VectorElement));
-    let (impl_generics, type_generics, where_clause) = generics.split_for_impl();
+        .push(syn::parse_quote!(Self: #element));
+    let (_, type_generics, _) = input.generics.split_for_impl();
+    let owned = writable_impl(
+        &owned_generics,
+        quote!(#ident #type_generics),
+        variants,
+        &types,
+        owned_members,
+    );
+
+    let ref_members = variants.idents.iter().map(|ident| {
+        quote!(Self::#ident(member) => ::core::option::Option::as_ref(member).map(::core::borrow::Borrow::borrow))
+    });
+    let mut borrowed_generics = ref_generics(&bounded_generics(input, &types, &element), &types, &lifetime);
+    for ty in &types {
+        borrowed_generics
+            .make_where_clause()
+            .predicates
+            .push(syn::parse_quote!(#ty: #writable));
+        borrowed_generics.make_where_clause().predicates.push(syn::parse_quote!(
+            <#ty as #element>::Ref<#lifetime>: ::core::borrow::Borrow<<#ty as #writable>::Write>
+        ));
+    }
+    let (_, ref_type_generics, _) = borrowed_generics.split_for_impl();
+    let borrowed = writable_impl(
+        &borrowed_generics,
+        quote!(#ref_ident #ref_type_generics),
+        variants,
+        &types,
+        ref_members,
+    );
+
+    quote! {
+        #owned
+        #borrowed
+    }
+}
+
+fn writable_impl(
+    generics: &syn::Generics,
+    target: TokenStream,
+    variants: &UnionVariants<'_>,
+    types: &[&syn::Type],
+    members: impl Iterator<Item = TokenStream>,
+) -> TokenStream {
+    let idents = &variants.idents;
+    let tags = (0..types.len()).map(|tag| tag as u8);
+    let child_indexes = (1..=types.len()).collect::<Vec<_>>();
+    let (impl_generics, _, where_clause) = generics.split_for_impl();
 
     quote! {
         // SAFETY: VectorElement::validate establishes the tag and member layout; child writers maintain NULL validity.
-        unsafe impl #impl_generics ::duckdb_neo::vector::WritableVectorElement for #ident #type_generics #where_clause {
+        unsafe impl #impl_generics ::duckdb_neo::vector::WritableVectorElement for #target #where_clause {
             type Write = Self;
 
             #[inline]
@@ -378,20 +462,23 @@ fn writable_vector_element(input: &syn::DeriveInput, variants: &UnionVariants<'_
                 let tag: ::core::primitive::u8 = match value {
                     #(Self::#idents(_) => #tags,)*
                 };
-                // SAFETY: validation checked the tag child, and the caller guarantees row bounds.
-                let mut written = unsafe {
-                    writer.write_child_unchecked::<::core::primitive::u8>(0, index, ::core::option::Option::Some(&tag))
-                };
-                #(if written.is_ok() {
-                    // Every member other than the active one is NULL.
-                    let member = match value {
-                        #members,
-                        _ => ::core::option::Option::None,
+                let mut write_children = || -> ::duckdb_neo::Result<()> {
+                    // SAFETY: validation checked the tag child, and the caller guarantees row bounds.
+                    unsafe {
+                        writer.write_child_unchecked::<::core::primitive::u8>(0, index, ::core::option::Option::Some(&tag))?
                     };
-                    // SAFETY: validation checked every member, and the caller guarantees row bounds.
-                    written = unsafe { writer.write_child_unchecked::<#types>(#child_indexes, index, member) };
-                })*
-                if let ::core::result::Result::Err(error) = written {
+                    #(
+                        // Every member other than the active one is NULL.
+                        let member = match value {
+                            #members,
+                            _ => ::core::option::Option::None,
+                        };
+                        // SAFETY: validation checked every member, and the caller guarantees row bounds.
+                        unsafe { writer.write_child_unchecked::<#types>(#child_indexes, index, member)? };
+                    )*
+                    ::core::result::Result::Ok(())
+                };
+                if let ::core::result::Result::Err(error) = write_children() {
                     // The tag and earlier members were written, so NULL the row to keep its children consistent.
                     // SAFETY: the caller guarantees row bounds.
                     unsafe { writer.set_unchecked(index, ::core::option::Option::None)? };
@@ -402,7 +489,7 @@ fn writable_vector_element(input: &syn::DeriveInput, variants: &UnionVariants<'_
         }
 
         // SAFETY: the tag and every UNION member have one row per parent row.
-        unsafe impl #impl_generics ::duckdb_neo::vector::HasChildren for #ident #type_generics #where_clause {
+        unsafe impl #impl_generics ::duckdb_neo::vector::HasChildren for #target #where_clause {
             fn child_len(
                 writer: &::duckdb_neo::vector::VectorWriter<'_, Self>,
             ) -> ::duckdb_neo::Result<::core::primitive::usize> {
@@ -455,6 +542,9 @@ mod tests {
                 "Eq",
                 "Hash",
                 "VectorElement",
+                "VectorElement",
+                "WritableVectorElement",
+                "HasChildren",
                 "WritableVectorElement",
                 "HasChildren"
             ]
