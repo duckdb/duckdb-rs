@@ -373,7 +373,8 @@ fixture generator; older revisions ignore this setting, so their historical timi
    have remote-tracking branches). Export the commit with `git archive` into
    `<target-dir>/neo-bench/trees/<sha>`, reusing a complete earlier export. Do not create git worktrees.
 2. If the base has no benchmarks, run only the head and report every benchmark as `new`.
-3. Build both versions before running anything, sharing one build directory for dependencies.
+3. Build both versions before running anything, using a separate Cargo target directory for each revision
+   under `<target-dir>/neo-bench/builds/<sha>` (`working-tree` for uncommitted sources).
 4. Run the versions alternately: base, head, then head, base, and so on, `repetitions` times each. Each run
    yields every benchmark's median time.
 5. Per benchmark and side, take the median of the per-run medians. `change = head / base - 1`.

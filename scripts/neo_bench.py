@@ -118,10 +118,12 @@ def parse_null_percent(value: str) -> int:
     return int(digits)
 
 
-def bench_env(options: Options) -> dict[str, str]:
-    env = dict(
-        os.environ, CARGO_TARGET_DIR=str(options.target_dir), CARGO_TERM_COLOR="never"
+def bench_env(tree: Tree, options: Options) -> dict[str, str]:
+    # Cargo can reuse incompatible workspace artifacts across source trees in a shared target.
+    target_dir = (
+        options.target_dir / "neo-bench" / "builds" / (tree.sha or "working-tree")
     )
+    env = dict(os.environ, CARGO_TARGET_DIR=str(target_dir), CARGO_TERM_COLOR="never")
     if options.rows:
         env["NEO_BENCH_ROWS"] = options.rows
     if options.threads:
@@ -140,7 +142,7 @@ def build(tree: Tree, options: Options) -> None:
         [*cargo_args(options), "--no-run"],
         check=False,
         cwd=tree.path,
-        env=bench_env(options),
+        env=bench_env(tree, options),
     )
     if result.returncode != 0:
         raise BenchError(f"building the benchmarks of {tree.label} failed")
@@ -163,7 +165,7 @@ def run_once(tree: Tree, options: Options, run: int) -> dict[str, float]:
         command,
         check=False,
         cwd=tree.path,
-        env=bench_env(options),
+        env=bench_env(tree, options),
         capture_output=True,
         encoding="utf-8",
         errors="replace",
@@ -518,7 +520,7 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, Options]:
         "--target-dir",
         type=Path,
         default=WORKSPACE_DIR / "target",
-        help="cargo target directory shared by all builds",
+        help="root directory for exports and per-revision cargo builds",
     )
     common.add_argument(
         "--log-dir", type=Path, help="write each run's raw divan output here"

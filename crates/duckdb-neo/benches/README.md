@@ -80,9 +80,10 @@ python3 scripts/neo_bench.py run --quick --filter scalar
 ```
 
 The script exports the base with `git archive` into `target/neo-bench/trees/<sha>` (no git worktree; tracked
-files stay untouched), builds both versions into the same target directory, and runs them alternately
-(base, head, head, base, ...) on the same machine to cancel drift. Each benchmark's median per run is
-collected, and the median of those per side is compared:
+files stay untouched) and builds each revision in its own `target/neo-bench/builds/<sha>` directory
+(`working-tree` for uncommitted sources), so Cargo cannot reuse incompatible workspace artifacts.
+It runs them alternately (base, head, head, base, ...) on the same machine to cancel drift. Each benchmark's
+median per run is collected, and the median of those per side is compared:
 
 | Status | Meaning |
 | --- | --- |
