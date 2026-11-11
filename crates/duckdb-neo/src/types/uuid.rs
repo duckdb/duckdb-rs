@@ -25,7 +25,9 @@ use crate::{
 ///
 /// DuckDB stores a UUID as a signed integer with its most significant bit flipped, so
 /// sorting matches the UUID byte order. Enable the `uuid` feature to convert to and from `uuid::Uuid`.
-#[repr(transparent)]
+///
+/// Like DuckDB's `hugeint_t`, it is only 8-byte aligned, so its field can be copied but not borrowed.
+#[repr(C, packed(8))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UuidValueRaw(pub i128);
 

@@ -1,4 +1,4 @@
-use super::{DecimalSignature, DecimalValue};
+use super::{DecimalSignature, DecimalValue, HugeDecimal};
 use crate::{
     Result,
     connection::FFILink,
@@ -90,7 +90,7 @@ unsafe impl ReadableNativeElement for rust_decimal::Decimal {
                 1..=4 => i128::from(*(data as *const i16).add(physical)),
                 5..=9 => i128::from(*(data as *const i32).add(physical)),
                 10..=18 => i128::from(*(data as *const i64).add(physical)),
-                _ => *(data as *const i128).add(physical),
+                _ => (*(data as *const HugeDecimal).add(physical)).0,
             }
         };
         rust_decimal::Decimal::from_i128_with_scale(value, u32::from(scale))
@@ -134,7 +134,7 @@ unsafe impl WritableNativeElement for rust_decimal::Decimal {
                 1..=4 => vector.write_internal(index, decimal.to_primitive::<i16>()),
                 5..=9 => vector.write_internal(index, decimal.to_primitive::<i32>()),
                 10..=18 => vector.write_internal(index, decimal.to_primitive::<i64>()),
-                _ => vector.write_internal(index, Some(decimal.value)),
+                _ => vector.write_internal(index, Some(HugeDecimal(decimal.value))),
             }
         }
     }

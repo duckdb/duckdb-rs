@@ -44,13 +44,15 @@ macro_rules! decimal_storage {
             }
 
             $(#[$doc])*
-            #[repr(transparent)]
+            ///
+            /// Vector slots are at most 8-byte aligned, so the field can be copied but not borrowed.
+            #[repr(C, packed(8))]
             #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
             pub struct $name(pub $type);
 
             impl DecimalContainer for $name {
                 fn to_i128(&self) -> i128 {
-                    self.0.to_i128()
+                    { self.0 }.to_i128()
                 }
             }
 
@@ -158,7 +160,9 @@ decimal_widths! {
 /// ```compile_fail
 /// let _ = duckdb_neo::types::Decimal::<2, 3>::new(1);
 /// ```
-#[repr(transparent)]
+///
+/// Vector slots are at most 8-byte aligned, so the field can be copied but not borrowed.
+#[repr(C, packed(8))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Decimal<const WIDTH: u8, const SCALE: u8>(pub <Width<WIDTH> as DecimalWidth>::Storage)
 where
