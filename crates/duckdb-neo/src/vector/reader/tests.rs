@@ -245,7 +245,7 @@ fn reader_values_borrow_the_vector_not_the_reader() -> Result<()> {
     Ok(())
 }
 
-fn same_view(reader: &VectorReader<'_, impl crate::vector::VectorElement>, vector: &Vector<'_, Unknown>) -> bool {
+fn same_view(reader: &VectorReader<'_, impl crate::vector::NativeElement>, vector: &Vector<'_, Unknown>) -> bool {
     let (copied, cached) = (reader.view(), vector.view.get().unwrap().view);
     (copied.data, copied.validity, copied.sel, copied.count) == (cached.data, cached.validity, cached.sel, cached.count)
 }
@@ -385,7 +385,7 @@ fn reader_handles_native_storage_layouts() -> Result<()> {
     Ok(())
 }
 
-fn assert_view_is_current<T: crate::vector::VectorElement>(vector: &crate::vector::Vector<'_, T>) -> Result<()> {
+fn assert_view_is_current<T: crate::vector::NativeElement>(vector: &crate::vector::Vector<'_, T>) -> Result<()> {
     let cached = vector.reader()?.view();
     let fresh = crate::check_api_call!(crate::ffi::duckdb_v2_vector_get_view, vector.handle, RET)?;
     assert_eq!(

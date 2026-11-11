@@ -512,18 +512,18 @@ fn vector_iterator_reports_remaining_rows() -> crate::Result<()> {
 
 #[test]
 fn vector_write_checks_rows_before_dispatch() -> crate::Result<()> {
-    use super::{VectorElement, WritableVectorElement};
+    use super::{NativeElement, WritableNativeElement};
 
     #[derive(Debug)]
     struct Probe;
 
     // SAFETY: Probe uses INTEGER's physical representation.
-    unsafe impl VectorElement for Probe {
+    unsafe impl NativeElement for Probe {
         const TYPE_ID: LogicalTypeID = LogicalTypeID::Integer;
-        type Internal<'a> = i32;
+        type Native<'a> = i32;
         type Ref<'a> = &'a i32;
 
-        unsafe fn get<'a, U: VectorElement>(
+        unsafe fn get<'a, U: NativeElement>(
             vector: &crate::vector::VectorReader<'a, U>,
             physical: usize,
             logical: usize,
@@ -537,7 +537,7 @@ fn vector_write_checks_rows_before_dispatch() -> crate::Result<()> {
     }
 
     // SAFETY: Probe rejects writes without changing the vector.
-    unsafe impl WritableVectorElement for Probe {
+    unsafe impl WritableNativeElement for Probe {
         type Write = ();
 
         unsafe fn write(

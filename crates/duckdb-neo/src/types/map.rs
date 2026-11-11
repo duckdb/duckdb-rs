@@ -12,7 +12,7 @@ use crate::{
     logical_type::{LogicalType, LogicalTypeID},
     types::Struct,
     value::{Value, ValueInput},
-    vector::{HasChildren, Vector, VectorElement, VectorWriter, WritableVectorElement},
+    vector::{HasChildren, NativeElement, Vector, VectorWriter, WritableNativeElement},
 };
 
 /// A `MAP` row of `(key, value)` entries in storage order; a `None` value is SQL NULL.
@@ -104,7 +104,7 @@ impl<K: FromValue, V: FromValue> FromValue for Map<K, V> {
 }
 
 // SAFETY: a MAP is stored as a LIST of STRUCT(key, value), and `validate` checks both fields.
-unsafe impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
+unsafe impl<K: NativeElement, V: NativeElement> NativeElement for Map<K, V> {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Map;
 
     type Ref<'a>
@@ -113,7 +113,7 @@ unsafe impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
         K: 'a,
         V: 'a;
 
-    type Internal<'a> = super::ListIndex;
+    type Native<'a> = super::ListIndex;
 
     fn validate(other: &LogicalType, children: Option<&VectorCollection>) -> Result<bool> {
         if other.id()? != Self::TYPE_ID {
@@ -134,7 +134,7 @@ unsafe impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
     }
 
     #[inline(always)]
-    unsafe fn get<'a, U: VectorElement>(
+    unsafe fn get<'a, U: NativeElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
         _logical: usize,
@@ -157,7 +157,7 @@ unsafe impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
     }
 }
 
-impl<K: VectorElement, V: VectorElement> Vector<'_, Map<K, V>> {
+impl<K: NativeElement, V: NativeElement> Vector<'_, Map<K, V>> {
     /// Size the entries child to exactly `entries`; writes continue at [`Self::child_offset`],
     /// capped at the new size.
     ///
@@ -184,14 +184,14 @@ impl<K: VectorElement, V: VectorElement> Vector<'_, Map<K, V>> {
     }
 }
 
-impl<K: VectorElement, V: VectorElement> VectorWriter<'_, Map<K, V>> {
+impl<K: NativeElement, V: NativeElement> VectorWriter<'_, Map<K, V>> {
     /// Return the first entry the next map write uses.
     pub fn child_offset(&self) -> usize {
         self.vector().child_offset_cell().get()
     }
 }
 
-impl<K: VectorElement, V: VectorElement> crate::vector::VectorReader<'_, Map<K, V>> {
+impl<K: NativeElement, V: NativeElement> crate::vector::VectorReader<'_, Map<K, V>> {
     /// Return a row's range in the entries child, or `None` for SQL NULL, without reading its entries.
     /// Out-of-range indices are errors.
     #[inline]
@@ -202,7 +202,7 @@ impl<K: VectorElement, V: VectorElement> crate::vector::VectorReader<'_, Map<K, 
 }
 
 // SAFETY: MAP rows use only entries below the child size set by `set_child_size`.
-unsafe impl<K: VectorElement, V: VectorElement> HasChildren for Map<K, V> {
+unsafe impl<K: NativeElement, V: NativeElement> HasChildren for Map<K, V> {
     fn child_len(writer: &VectorWriter<'_, Self>) -> Result<usize> {
         Ok(writer
             .vector()
@@ -216,7 +216,7 @@ unsafe impl<K: VectorElement, V: VectorElement> HasChildren for Map<K, V> {
 /// # Safety
 /// `index` must be in bounds, and the entries and both fields must be validated as `K` and `V`.
 #[inline(always)]
-unsafe fn write_map<'w, K: VectorElement + 'w, V: VectorElement + 'w, E>(
+unsafe fn write_map<'w, K: NativeElement + 'w, V: NativeElement + 'w, E>(
     writer: &mut VectorWriter<'w, Map<K, V>>,
     index: usize,
     entries: Option<impl ExactSizeIterator<Item = E>>,
@@ -253,10 +253,10 @@ unsafe fn write_map<'w, K: VectorElement + 'w, V: VectorElement + 'w, E>(
 }
 
 // SAFETY: entries only cover keys and values written through the fields' own writers.
-unsafe impl<K, V> WritableVectorElement for Map<K, V>
+unsafe impl<K, V> WritableNativeElement for Map<K, V>
 where
-    K: WritableVectorElement + std::borrow::Borrow<K::Write>,
-    V: WritableVectorElement + std::borrow::Borrow<V::Write>,
+    K: WritableNativeElement + std::borrow::Borrow<K::Write>,
+    V: WritableNativeElement + std::borrow::Borrow<V::Write>,
 {
     type Write = Self;
 
@@ -299,14 +299,14 @@ where
 /// }
 /// ```
 #[derive(Debug)]
-pub struct MapRow<'a, K: VectorElement, V: VectorElement> {
+pub struct MapRow<'a, K: NativeElement, V: NativeElement> {
     keys: crate::vector::VectorReader<'a, K>,
     values: crate::vector::VectorReader<'a, V>,
     pub(crate) offset: usize,
     pub(crate) length: usize,
 }
 
-impl<'a, K: VectorElement + 'a, V: VectorElement + 'a> MapRow<'a, K, V> {
+impl<'a, K: NativeElement + 'a, V: NativeElement + 'a> MapRow<'a, K, V> {
     /// Return the number of entries in the map.
     pub fn len(&self) -> usize {
         self.length

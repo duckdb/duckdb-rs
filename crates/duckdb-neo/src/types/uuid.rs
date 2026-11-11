@@ -11,14 +11,14 @@
 use super::{DuckDBType, FromValue, ToValue};
 use crate::ffi;
 use crate::types::HugeInt;
-use crate::vector::VectorElement;
+use crate::vector::NativeElement;
 use crate::{
     Parameters, Result, check_api_call,
     connection::FFILink,
     logical_type::{LogicalType, LogicalTypeID},
     raw::RawExt,
     value::{Value, ValueInput},
-    vector::WritableVectorElement,
+    vector::WritableNativeElement,
 };
 
 /// DuckDB's internal signed 128-bit UUID representation.
@@ -61,10 +61,10 @@ impl FromValue for UuidValueRaw {
 }
 
 // SAFETY: `UuidValueRaw` has the size and bit layout of DuckDB's UUID storage.
-unsafe impl VectorElement for UuidValueRaw {
+unsafe impl NativeElement for UuidValueRaw {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Uuid;
 
-    type Internal<'a> = HugeInt;
+    type Native<'a> = HugeInt;
 
     type Ref<'a>
         = &'a UuidValueRaw
@@ -72,7 +72,7 @@ unsafe impl VectorElement for UuidValueRaw {
         Self: 'a;
 
     #[inline]
-    unsafe fn get<'a, U: VectorElement>(
+    unsafe fn get<'a, U: NativeElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
         _logical: usize,
@@ -86,7 +86,7 @@ unsafe impl VectorElement for UuidValueRaw {
 }
 
 // SAFETY: every `i128` is a valid UUID.
-unsafe impl WritableVectorElement for UuidValueRaw {
+unsafe impl WritableNativeElement for UuidValueRaw {
     type Write = Self;
 
     #[inline]
@@ -138,7 +138,7 @@ mod external {
         logical_type::{LogicalType, LogicalTypeID},
         types::{DuckDBType, FromValue, ToValue},
         value::Value,
-        vector::{VectorElement, WritableVectorElement},
+        vector::{NativeElement, WritableNativeElement},
     };
     use ::uuid::Uuid;
 
@@ -173,15 +173,15 @@ mod external {
     }
 
     // SAFETY: same storage as `UuidValueRaw`.
-    unsafe impl VectorElement for Uuid {
+    unsafe impl NativeElement for Uuid {
         const TYPE_ID: LogicalTypeID = LogicalTypeID::Uuid;
 
-        type Internal<'a> = UuidValueRaw;
+        type Native<'a> = UuidValueRaw;
 
         type Ref<'a> = Uuid;
 
         #[inline]
-        unsafe fn get<'a, U: VectorElement>(
+        unsafe fn get<'a, U: NativeElement>(
             vector: &crate::vector::VectorReader<'a, U>,
             physical: usize,
             logical: usize,
@@ -195,7 +195,7 @@ mod external {
     }
 
     // SAFETY: every `Uuid` converts to a valid `UuidValueRaw`.
-    unsafe impl WritableVectorElement for Uuid {
+    unsafe impl WritableNativeElement for Uuid {
         type Write = Uuid;
 
         #[inline]

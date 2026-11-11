@@ -217,31 +217,31 @@ pub fn as_from_value(input: TokenStream) -> TokenStream {
     expand_neo_derive(input, neo::as_from_value)
 }
 
-/// Derive `VectorElement` and a borrowed `NameRef<'a>` for a named struct `Name`.
+/// Derive `NativeElement` and a borrowed `NameRef<'a>` for a named struct `Name`.
 ///
-/// Fields may be `T` or `Option<T>`, with `T: VectorElement`. The generated reference
+/// Fields may be `T` or `Option<T>`, with `T: NativeElement`. The generated reference
 /// has the same field visibility and nullable `Option<T::Ref<'a>>` fields. Unlike `AsFromValue`,
 /// STRUCT fields are matched by position: names (case-insensitive), order, and child types must
 /// match. Whole-row NULLs remain separate. `NameRef` implements `Debug`, `Clone`, `Copy`,
 /// `PartialEq`, `Eq`, and `Hash` whenever every field's borrowed form does.
 #[cfg(feature = "neo")]
-#[proc_macro_derive(AsVectorElement, attributes(duckdb))]
-pub fn as_vector_element(input: TokenStream) -> TokenStream {
-    expand_neo_derive(input, neo::as_vector_element)
+#[proc_macro_derive(AsNativeElement, attributes(duckdb))]
+pub fn as_native_element(input: TokenStream) -> TokenStream {
+    expand_neo_derive(input, neo::as_native_element)
 }
 
-/// Derive `WritableVectorElement` for a named struct.
+/// Derive `WritableNativeElement` for a named struct.
 ///
 /// `set` borrows the struct and writes each field through its borrowed write input.
-/// Requires `VectorElement` and fields implementing `WritableVectorElement + Borrow<T::Write>`.
+/// Requires `NativeElement` and fields implementing `WritableNativeElement + Borrow<T::Write>`.
 /// Plain fields write non-NULL values; optional fields preserve NULL. Passing `None` as the
 /// entire input nulls every child without requiring `Default` or a separate write struct.
-/// A custom unsafe `VectorElement` implementation must validate the complete named field layout;
-/// derive `AsVectorElement` to generate that validation. Writes do not revalidate the schema.
+/// A custom unsafe `NativeElement` implementation must validate the complete named field layout;
+/// derive `AsNativeElement` to generate that validation. Writes do not revalidate the schema.
 #[cfg(feature = "neo")]
-#[proc_macro_derive(AsWritableVectorElement, attributes(duckdb))]
-pub fn as_writable_vector_element(input: TokenStream) -> TokenStream {
-    expand_neo_derive(input, neo::as_writable_vector_element)
+#[proc_macro_derive(AsWritableNativeElement, attributes(duckdb))]
+pub fn as_writable_native_element(input: TokenStream) -> TokenStream {
+    expand_neo_derive(input, neo::as_writable_native_element)
 }
 
 /// Derive `DuckDBType`, `ToValue`, `FromValue`, and the vector element traits together.
@@ -261,7 +261,7 @@ pub fn as_duckdb(input: TokenStream) -> TokenStream {
 /// members and their tags; `#[duckdb(rename = "name")]` on a variant sets its member name. Raw
 /// identifiers drop their `r#` prefix, and names that differ only in case are rejected. `Option<T>` members preserve a NULL member value inside a non-NULL union.
 /// `FromValue` matches members by name in any order, preferring exact over case-insensitive matches.
-/// Vectors are matched by position like `AsVectorElement`, and reads return a generated `NameRef<'a>`
+/// Vectors are matched by position like `AsNativeElement`, and reads return a generated `NameRef<'a>`
 /// enum whose variants hold `Option<T::Ref<'a>>`. Writes take `Name`, or `NameRef<'a>` through a
 /// `Vector<NameRef<'a>>` when every member's `T::Ref<'a>` borrows as `T::Write`.
 #[cfg(feature = "neo")]

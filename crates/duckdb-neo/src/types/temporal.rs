@@ -16,7 +16,7 @@ use crate::{
     logical_type::{LogicalType, LogicalTypeID},
     raw::RawExt,
     value::{Value, ValueInput},
-    vector::WritableVectorElement,
+    vector::WritableNativeElement,
 };
 
 macro_rules! declare_storage_value {
@@ -47,7 +47,7 @@ macro_rules! declare_storage_value {
         declare_vector_element!($name, $type_id);
 
         // SAFETY: every `$storage` value is valid for its logical type.
-        unsafe impl WritableVectorElement for $name {
+        unsafe impl WritableNativeElement for $name {
             type Write = Self;
 
             #[inline]
@@ -232,7 +232,7 @@ impl FromValue for IntervalValue {
 declare_vector_element!(IntervalValue, Interval);
 
 // SAFETY: every field combination is a valid `INTERVAL`.
-unsafe impl WritableVectorElement for IntervalValue {
+unsafe impl WritableNativeElement for IntervalValue {
     type Write = Self;
 
     #[inline]

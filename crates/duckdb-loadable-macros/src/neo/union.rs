@@ -196,7 +196,7 @@ fn from_value(input: &syn::DeriveInput, variants: &UnionVariants<'_>) -> TokenSt
 
 fn vector_element(input: &syn::DeriveInput, variants: &UnionVariants<'_>) -> TokenStream {
     let types = variants.inner_types();
-    let bound: syn::Path = syn::parse_quote!(::duckdb_neo::vector::VectorElement);
+    let bound: syn::Path = syn::parse_quote!(::duckdb_neo::vector::NativeElement);
     let ident = &input.ident;
     let ref_ident = format_ident!("{ident}Ref");
     let ref_doc = format!("Borrowed, nullable members of [`{ident}`].");
@@ -282,7 +282,7 @@ fn vector_element(input: &syn::DeriveInput, variants: &UnionVariants<'_>) -> Tok
         unsafe impl #impl_generics #bound for #ident #type_generics #where_clause {
             const TYPE_ID: ::duckdb_neo::logical_type::LogicalTypeID =
                 ::duckdb_neo::logical_type::LogicalTypeID::Union;
-            type Internal<#lifetime> = ();
+            type Native<#lifetime> = ();
             type Ref<#lifetime> = #ref_ident #ref_type_generics where Self: #lifetime;
 
             fn validate(
@@ -323,7 +323,7 @@ fn vector_element(input: &syn::DeriveInput, variants: &UnionVariants<'_>) -> Tok
         unsafe impl #ref_impl_generics #bound for #ref_ident #ref_type_generics #ref_where_clause {
             const TYPE_ID: ::duckdb_neo::logical_type::LogicalTypeID =
                 ::duckdb_neo::logical_type::LogicalTypeID::Union;
-            type Internal<#read_lifetime> = ();
+            type Native<#read_lifetime> = ();
             type Ref<#read_lifetime> = <#ident #type_generics as #bound>::Ref<#read_lifetime> where Self: #read_lifetime;
 
             fn validate(
@@ -382,8 +382,8 @@ fn writable_vector_element(input: &syn::DeriveInput, variants: &UnionVariants<'_
     let ident = &input.ident;
     let ref_ident = format_ident!("{ident}Ref");
     let lifetime = row_lifetime(input);
-    let element: syn::Path = syn::parse_quote!(::duckdb_neo::vector::VectorElement);
-    let writable: syn::Path = syn::parse_quote!(::duckdb_neo::vector::WritableVectorElement);
+    let element: syn::Path = syn::parse_quote!(::duckdb_neo::vector::NativeElement);
+    let writable: syn::Path = syn::parse_quote!(::duckdb_neo::vector::WritableNativeElement);
 
     let owned_members = variants.idents.iter().zip(&variants.types).map(|(ident, ty)| {
         if option_inner_type(ty).is_some() {
@@ -452,8 +452,8 @@ fn writable_impl(
     let (impl_generics, _, where_clause) = generics.split_for_impl();
 
     quote! {
-        // SAFETY: VectorElement::validate establishes the tag and member layout; child writers maintain NULL validity.
-        unsafe impl #impl_generics ::duckdb_neo::vector::WritableVectorElement for #target #where_clause {
+        // SAFETY: NativeElement::validate establishes the tag and member layout; child writers maintain NULL validity.
+        unsafe impl #impl_generics ::duckdb_neo::vector::WritableNativeElement for #target #where_clause {
             type Write = Self;
 
             #[inline]
@@ -567,13 +567,13 @@ mod tests {
                 "PartialEq",
                 "Eq",
                 "Hash",
-                "VectorElement",
-                "VectorElement",
+                "NativeElement",
+                "NativeElement",
                 "WithReader",
-                "WritableVectorElement",
+                "WritableNativeElement",
                 "WithWriter",
                 "HasChildren",
-                "WritableVectorElement",
+                "WritableNativeElement",
                 "WithWriter",
                 "HasChildren"
             ]

@@ -12,7 +12,7 @@ use crate::{
     error::Error,
     logical_type::{LogicalType, LogicalTypeID},
     value::{Value, ValueInput},
-    vector::{HasChildren, Vector, VectorElement, VectorWriter, WritableVectorElement},
+    vector::{HasChildren, NativeElement, Vector, VectorWriter, WritableNativeElement},
 };
 
 /// DuckDB's physical list entry: a range of elements in the child vector.
@@ -137,13 +137,13 @@ impl<T: FromValue> FromValue for List<T> {
 }
 
 // SAFETY: `ListIndex` matches DuckDB's list entry, and `validate` checks the child as `T`.
-unsafe impl<T: VectorElement> VectorElement for List<T> {
+unsafe impl<T: NativeElement> NativeElement for List<T> {
     type Ref<'a>
         = ListRef<'a, T>
     where
         T: 'a;
 
-    type Internal<'a> = ListIndex;
+    type Native<'a> = ListIndex;
 
     const TYPE_ID: LogicalTypeID = LogicalTypeID::List;
 
@@ -159,7 +159,7 @@ unsafe impl<T: VectorElement> VectorElement for List<T> {
     }
 
     #[inline]
-    unsafe fn get<'a, U: VectorElement>(
+    unsafe fn get<'a, U: NativeElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
         _logical: usize,
@@ -177,7 +177,7 @@ unsafe impl<T: VectorElement> VectorElement for List<T> {
     }
 }
 
-impl<T: VectorElement> crate::vector::VectorReader<'_, List<T>> {
+impl<T: NativeElement> crate::vector::VectorReader<'_, List<T>> {
     /// Return a row's range in the child vector, or `None` for SQL NULL, without reading its elements.
     /// Out-of-range indices are errors.
     #[inline]
@@ -188,7 +188,7 @@ impl<T: VectorElement> crate::vector::VectorReader<'_, List<T>> {
 }
 
 // SAFETY: LIST rows use only elements below the child size set by `set_child_size`.
-unsafe impl<T: VectorElement> HasChildren for List<T> {
+unsafe impl<T: NativeElement> HasChildren for List<T> {
     fn child_len(writer: &VectorWriter<'_, Self>) -> Result<usize> {
         Ok(writer
             .vector()
@@ -199,7 +199,7 @@ unsafe impl<T: VectorElement> HasChildren for List<T> {
     }
 }
 
-impl<T: VectorElement> Vector<'_, List<T>> {
+impl<T: NativeElement> Vector<'_, List<T>> {
     /// Size the element child to exactly `elements`; writes continue at [`Self::child_offset`],
     /// capped at the new size.
     ///
@@ -225,7 +225,7 @@ impl<T: VectorElement> Vector<'_, List<T>> {
     }
 }
 
-impl<T: VectorElement> VectorWriter<'_, List<T>> {
+impl<T: NativeElement> VectorWriter<'_, List<T>> {
     /// Return the first element the next list write uses.
     pub fn child_offset(&self) -> usize {
         self.vector().child_offset_cell().get()
@@ -235,7 +235,7 @@ impl<T: VectorElement> VectorWriter<'_, List<T>> {
 /// # Safety
 /// `index` must be in bounds, and the child must be validated as `T`.
 #[inline]
-unsafe fn write_list<T: VectorElement, V>(
+unsafe fn write_list<T: NativeElement, V>(
     writer: &mut VectorWriter<'_, List<T>>,
     index: usize,
     values: Option<impl ExactSizeIterator<Item = V>>,
@@ -270,9 +270,9 @@ unsafe fn write_list<T: VectorElement, V>(
 }
 
 // SAFETY: entries only cover elements written through the child's own writer.
-unsafe impl<T> WritableVectorElement for List<T>
+unsafe impl<T> WritableNativeElement for List<T>
 where
-    T: WritableVectorElement + std::borrow::Borrow<T::Write>,
+    T: WritableNativeElement + std::borrow::Borrow<T::Write>,
 {
     type Write = Self;
 
@@ -292,12 +292,12 @@ where
 
 /// A borrowed list row backed by a range in its child vector.
 #[derive(Debug)]
-pub struct ListRef<'a, T: VectorElement> {
+pub struct ListRef<'a, T: NativeElement> {
     list: &'a ListIndex,
     child: crate::vector::VectorReader<'a, T>,
 }
 
-impl<'a, T: VectorElement> ListRef<'a, T> {
+impl<'a, T: NativeElement> ListRef<'a, T> {
     /// Return an element; outer `None` means the index is out of bounds.
     #[inline]
     pub fn get(&self, index: usize) -> Option<Option<T::Ref<'a>>> {
@@ -325,7 +325,7 @@ impl<'a, T: VectorElement> ListRef<'a, T> {
     }
 }
 
-impl<'a, T: VectorElement + 'a> IntoIterator for ListRef<'a, T> {
+impl<'a, T: NativeElement + 'a> IntoIterator for ListRef<'a, T> {
     type Item = Option<T::Ref<'a>>;
     type IntoIter = ListIterator<'a, T>;
 
@@ -334,7 +334,7 @@ impl<'a, T: VectorElement + 'a> IntoIterator for ListRef<'a, T> {
     }
 }
 
-impl<'a, T: VectorElement + 'a> IntoIterator for &ListRef<'a, T> {
+impl<'a, T: NativeElement + 'a> IntoIterator for &ListRef<'a, T> {
     type Item = Option<T::Ref<'a>>;
     type IntoIter = ListIterator<'a, T>;
 
@@ -345,14 +345,14 @@ impl<'a, T: VectorElement + 'a> IntoIterator for &ListRef<'a, T> {
 
 /// Traverses the child-vector range belonging to a [`ListRef`].
 #[derive(Debug)]
-pub struct ListIterator<'a, T: VectorElement> {
+pub struct ListIterator<'a, T: NativeElement> {
     child: crate::vector::VectorReader<'a, T>,
     offset: usize,
     length: usize,
     index: usize,
 }
 
-impl<'a, T: VectorElement + 'a> Iterator for ListIterator<'a, T> {
+impl<'a, T: NativeElement + 'a> Iterator for ListIterator<'a, T> {
     type Item = Option<T::Ref<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -373,8 +373,8 @@ impl<'a, T: VectorElement + 'a> Iterator for ListIterator<'a, T> {
     }
 }
 
-impl<'a, T: VectorElement + 'a> ExactSizeIterator for ListIterator<'a, T> {}
-impl<'a, T: VectorElement + 'a> std::iter::FusedIterator for ListIterator<'a, T> {}
+impl<'a, T: NativeElement + 'a> ExactSizeIterator for ListIterator<'a, T> {}
+impl<'a, T: NativeElement + 'a> std::iter::FusedIterator for ListIterator<'a, T> {}
 
 #[cfg(test)]
 mod tests {

@@ -10,7 +10,7 @@ use duckdb_neo::{
     scalar::{ScalarCallbacks, ScalarFunctionBuilder},
     signature::{FunctionParameter, SignatureBuilder},
     types::{Decimal, Map, Struct, UncheckedString},
-    vector::{ChildVector, Unknown, Vector, VectorElement, WritableVectorElement},
+    vector::{ChildVector, NativeElement, Unknown, Vector, WritableNativeElement},
 };
 
 use super::{nulls::Nulls, readable};
@@ -75,8 +75,8 @@ impl ScalarCallbacks for MergeStruct {
 #[inline(never)]
 fn copy_column<'s, S, T>(source: &'s Vector<'_, S>, target: &mut ChildVector<'_, T>) -> Result<()>
 where
-    S: VectorElement<Ref<'s> = &'s T::Write> + 's,
-    T: WritableVectorElement,
+    S: NativeElement<Ref<'s> = &'s T::Write> + 's,
+    T: WritableNativeElement,
     T::Write: 's,
 {
     let mut writer = target.writer()?;

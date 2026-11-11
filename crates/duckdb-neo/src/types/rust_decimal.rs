@@ -7,7 +7,7 @@ use crate::{
     logical_type::{LogicalType, LogicalTypeID},
     types::{FromValue, ToValue},
     value::Value,
-    vector::{VectorElement, WritableVectorElement},
+    vector::{NativeElement, WritableNativeElement},
 };
 
 /// Widest `DECIMAL` whose values all fit `rust_decimal`'s 96-bit mantissa.
@@ -53,11 +53,11 @@ impl FromValue for rust_decimal::Decimal {
 /// # Panics
 /// Panics if a stored value exceeds `rust_decimal`'s 96-bit mantissa.
 // SAFETY: `get` reads the storage integer DuckDB uses for the vector's width.
-unsafe impl VectorElement for rust_decimal::Decimal {
+unsafe impl NativeElement for rust_decimal::Decimal {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Decimal;
 
     // The storage integer depends on the column's width.
-    type Internal<'a> = ();
+    type Native<'a> = ();
 
     type Ref<'a> = rust_decimal::Decimal;
 
@@ -69,7 +69,7 @@ unsafe impl VectorElement for rust_decimal::Decimal {
     }
 
     #[inline]
-    unsafe fn get<'a, U: VectorElement>(
+    unsafe fn get<'a, U: NativeElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
         _logical: usize,
@@ -96,7 +96,7 @@ unsafe impl VectorElement for rust_decimal::Decimal {
 
 /// Rescales to the column's scale; fails instead of rounding or overflowing.
 // SAFETY: `write` checks the digit range and writes the storage integer for the vector's width.
-unsafe impl WritableVectorElement for rust_decimal::Decimal {
+unsafe impl WritableNativeElement for rust_decimal::Decimal {
     type Write = rust_decimal::Decimal;
 
     #[inline]

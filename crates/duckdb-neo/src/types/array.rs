@@ -12,7 +12,7 @@ use crate::{
     error::Error,
     logical_type::{LogicalType, LogicalTypeID},
     value::{Value, ValueInput},
-    vector::{HasChildren, VectorElement, VectorWriter, WritableVectorElement},
+    vector::{HasChildren, NativeElement, VectorWriter, WritableNativeElement},
 };
 
 /// An owned `ARRAY` row of exactly `N` elements; each `None` element is SQL NULL.
@@ -89,7 +89,7 @@ pub(crate) fn array_size(logical_type: &LogicalType) -> Result<usize> {
 }
 
 // SAFETY: rows are read from the child, which `validate` checks as `T` with `N` elements per row.
-unsafe impl<T: VectorElement, const N: usize> VectorElement for Array<T, N> {
+unsafe impl<T: NativeElement, const N: usize> NativeElement for Array<T, N> {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Array;
 
     type Ref<'a>
@@ -97,7 +97,7 @@ unsafe impl<T: VectorElement, const N: usize> VectorElement for Array<T, N> {
     where
         T: 'a;
 
-    type Internal<'a> = ();
+    type Native<'a> = ();
 
     fn validate(other: &LogicalType, children: Option<&VectorCollection>) -> Result<bool> {
         if other.id()? != Self::TYPE_ID {
@@ -112,7 +112,7 @@ unsafe impl<T: VectorElement, const N: usize> VectorElement for Array<T, N> {
     }
 
     #[inline]
-    unsafe fn get<'a, U: VectorElement>(
+    unsafe fn get<'a, U: NativeElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
         _logical: usize,
@@ -130,7 +130,7 @@ unsafe impl<T: VectorElement, const N: usize> VectorElement for Array<T, N> {
 }
 
 // SAFETY: every ARRAY row owns exactly `N` child elements.
-unsafe impl<T: VectorElement, const N: usize> HasChildren for Array<T, N> {
+unsafe impl<T: NativeElement, const N: usize> HasChildren for Array<T, N> {
     fn child_len(writer: &VectorWriter<'_, Self>) -> Result<usize> {
         writer
             .len()
@@ -142,7 +142,7 @@ unsafe impl<T: VectorElement, const N: usize> HasChildren for Array<T, N> {
 /// # Safety
 /// `index` must be in bounds, and the child must be validated as `T`.
 #[inline]
-unsafe fn write_array<T: VectorElement, V, const N: usize>(
+unsafe fn write_array<T: NativeElement, V, const N: usize>(
     vector: &mut VectorWriter<'_, Array<T, N>>,
     index: usize,
     values: Option<impl Iterator<Item = V>>,
@@ -174,9 +174,9 @@ unsafe fn write_array<T: VectorElement, V, const N: usize>(
 }
 
 // SAFETY: each row writes its `N` in-bounds elements through the child's own writer.
-unsafe impl<T, const N: usize> WritableVectorElement for Array<T, N>
+unsafe impl<T, const N: usize> WritableNativeElement for Array<T, N>
 where
-    T: WritableVectorElement + std::borrow::Borrow<T::Write>,
+    T: WritableNativeElement + std::borrow::Borrow<T::Write>,
 {
     type Write = Self;
 
@@ -198,13 +198,13 @@ where
 
 /// A borrowed array row backed by a contiguous range in its child vector.
 #[derive(Debug)]
-pub struct ArrayRef<'a, T: VectorElement> {
+pub struct ArrayRef<'a, T: NativeElement> {
     offset: usize,
     size: usize,
     child: crate::vector::VectorReader<'a, T>,
 }
 
-impl<'a, T: VectorElement> ArrayRef<'a, T> {
+impl<'a, T: NativeElement> ArrayRef<'a, T> {
     /// Iterate over the array's values.
     pub fn iter(&self) -> ArrayIterator<'a, T> {
         ArrayIterator {
@@ -226,7 +226,7 @@ impl<'a, T: VectorElement> ArrayRef<'a, T> {
     }
 }
 
-impl<'a, T: VectorElement + 'a> IntoIterator for &ArrayRef<'a, T> {
+impl<'a, T: NativeElement + 'a> IntoIterator for &ArrayRef<'a, T> {
     type Item = Option<T::Ref<'a>>;
     type IntoIter = ArrayIterator<'a, T>;
 
@@ -237,14 +237,14 @@ impl<'a, T: VectorElement + 'a> IntoIterator for &ArrayRef<'a, T> {
 
 /// Traverses the child-vector range belonging to an [`ArrayRef`].
 #[derive(Debug)]
-pub struct ArrayIterator<'a, T: VectorElement> {
+pub struct ArrayIterator<'a, T: NativeElement> {
     child: crate::vector::VectorReader<'a, T>,
     offset: usize,
     length: usize,
     index: usize,
 }
 
-impl<'a, T: VectorElement + 'a> Iterator for ArrayIterator<'a, T> {
+impl<'a, T: NativeElement + 'a> Iterator for ArrayIterator<'a, T> {
     type Item = Option<T::Ref<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -265,8 +265,8 @@ impl<'a, T: VectorElement + 'a> Iterator for ArrayIterator<'a, T> {
     }
 }
 
-impl<'a, T: VectorElement + 'a> ExactSizeIterator for ArrayIterator<'a, T> {}
-impl<'a, T: VectorElement + 'a> std::iter::FusedIterator for ArrayIterator<'a, T> {}
+impl<'a, T: NativeElement + 'a> ExactSizeIterator for ArrayIterator<'a, T> {}
+impl<'a, T: NativeElement + 'a> std::iter::FusedIterator for ArrayIterator<'a, T> {}
 
 #[cfg(test)]
 mod tests {

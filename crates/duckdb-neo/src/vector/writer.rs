@@ -4,8 +4,8 @@ use crate::raw::RawExt;
 use crate::{Result, check_api_call, ffi, logical_type::LogicalTypeID};
 
 use super::{
-    Arena, DuckDBBytes, HasChildren, HasDuckDBBytes, StorageKind, Unknown, Vector, VectorElement,
-    WritableVectorElement, not_flat, not_writable, out_of_bounds,
+    Arena, DuckDBBytes, HasChildren, HasDuckDBBytes, NativeElement, StorageKind, Unknown, Vector,
+    WritableNativeElement, not_flat, not_writable, out_of_bounds,
 };
 
 /// Exclusive access to a writable flat vector.
@@ -67,7 +67,7 @@ use super::{
 /// ```
 #[repr(C)]
 #[derive(Debug)]
-pub struct VectorWriter<'writer, T: VectorElement> {
+pub struct VectorWriter<'writer, T: NativeElement> {
     vector: NonNull<Vector<'writer, T>>,
     len: usize,
     validity: *mut u64,
@@ -76,7 +76,7 @@ pub struct VectorWriter<'writer, T: VectorElement> {
     _borrow: PhantomData<&'writer mut T>,
 }
 
-impl<'writer, T: VectorElement> VectorWriter<'writer, T> {
+impl<'writer, T: NativeElement> VectorWriter<'writer, T> {
     pub(super) fn new(vector: &'writer mut Vector<'_, T>) -> Result<Self> {
         // SAFETY: the exclusive borrow covers this writer and every cached descendant.
         unsafe { Self::from_raw(NonNull::from(vector).cast()) }
@@ -110,7 +110,7 @@ impl<'writer, T: VectorElement> VectorWriter<'writer, T> {
     }
 
     #[inline]
-    pub(crate) unsafe fn cast_unchecked<U: VectorElement + 'writer>(&mut self) -> &mut VectorWriter<'writer, U> {
+    pub(crate) unsafe fn cast_unchecked<U: NativeElement + 'writer>(&mut self) -> &mut VectorWriter<'writer, U> {
         // SAFETY: repr(C) fixes the layout; U changes only the vector pointer's type and borrow marker.
         unsafe { &mut *(self as *mut Self).cast::<VectorWriter<'writer, U>>() }
     }
@@ -131,7 +131,7 @@ impl<'writer, T: VectorElement> VectorWriter<'writer, T> {
     /// within [`Self::len`], using the physical representation of the logical
     /// type. Typed writes may replace storage; reacquire the pointer afterwards.
     /// The caller chooses `'data` and must uphold it when dereferencing the pointer.
-    pub fn as_mut_ptr<'data>(&mut self) -> *mut T::Internal<'data> {
+    pub fn as_mut_ptr<'data>(&mut self) -> *mut T::Native<'data> {
         self.data.cast()
     }
 
@@ -156,7 +156,7 @@ impl<'writer, T: VectorElement> VectorWriter<'writer, T> {
     ///     Ok(())
     /// }
     /// ```
-    pub unsafe fn as_slice_mut(&mut self) -> Option<&mut [T::Internal<'_>]> {
+    pub unsafe fn as_slice_mut(&mut self) -> Option<&mut [T::Native<'_>]> {
         let len = self.len();
         let data = self.as_mut_ptr();
         if data.is_null() {
@@ -305,7 +305,7 @@ impl<'writer, T: HasChildren> VectorWriter<'writer, T> {
     /// The child must be validated as `U`, with `index` in bounds and a fixed type.
     #[doc(hidden)]
     #[inline]
-    pub unsafe fn write_child_unchecked<U: WritableVectorElement + 'writer>(
+    pub unsafe fn write_child_unchecked<U: WritableNativeElement + 'writer>(
         &mut self,
         child_index: usize,
         index: usize,
@@ -319,7 +319,7 @@ impl<'writer, T: HasChildren> VectorWriter<'writer, T> {
     }
 
     #[inline]
-    pub(crate) unsafe fn child_writer_unchecked<U: VectorElement + 'writer>(
+    pub(crate) unsafe fn child_writer_unchecked<U: NativeElement + 'writer>(
         &mut self,
         child_index: usize,
     ) -> Result<&mut VectorWriter<'writer, U>> {
@@ -332,7 +332,7 @@ impl<'writer, T: HasChildren> VectorWriter<'writer, T> {
     }
 }
 
-impl<T: WritableVectorElement> VectorWriter<'_, T> {
+impl<T: WritableNativeElement> VectorWriter<'_, T> {
     /// Copy a borrowed input into the vector and update validity; `None` writes SQL NULL.
     /// Nested NULLs propagate to descendants, and logical value checks remain enforced.
     #[inline(always)]
@@ -363,7 +363,7 @@ impl<T: WritableVectorElement> VectorWriter<'_, T> {
     }
 }
 
-impl<T: VectorElement> VectorWriter<'_, T> {
+impl<T: NativeElement> VectorWriter<'_, T> {
     #[inline]
     fn refresh_buffers(&mut self) -> Result<()> {
         self.validity = check_api_call!(

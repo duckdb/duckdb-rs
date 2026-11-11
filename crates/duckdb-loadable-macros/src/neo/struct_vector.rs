@@ -20,20 +20,20 @@ pub(super) fn ref_bounded_generics(
     let mut generics = generics.clone();
     for ty in types {
         generics.make_where_clause().predicates.push(syn::parse_quote!(
-            <#ty as ::duckdb_neo::vector::VectorElement>::Ref<#lifetime>: #bound
+            <#ty as ::duckdb_neo::vector::NativeElement>::Ref<#lifetime>: #bound
         ));
     }
     generics
 }
 
-pub(crate) fn as_vector_element(input: &syn::DeriveInput) -> syn::Result<TokenStream> {
-    let fields = StructFields::new(input, "AsVectorElement")?;
+pub(crate) fn as_native_element(input: &syn::DeriveInput) -> syn::Result<TokenStream> {
+    let fields = StructFields::new(input, "AsNativeElement")?;
     let types = fields
         .types
         .iter()
         .map(|ty| option_inner_type(ty).unwrap_or(ty))
         .collect::<Vec<_>>();
-    let bound: syn::Path = syn::parse_quote!(::duckdb_neo::vector::VectorElement);
+    let bound: syn::Path = syn::parse_quote!(::duckdb_neo::vector::NativeElement);
     let ident = &input.ident;
     let ref_ident = format_ident!("{ident}Ref");
     let ref_doc = format!("Borrowed, nullable fields of [`{ident}`].");
@@ -131,7 +131,7 @@ pub(crate) fn as_vector_element(input: &syn::DeriveInput) -> syn::Result<TokenSt
         unsafe impl #impl_generics #bound for #ident #type_generics #where_clause {
             const TYPE_ID: ::duckdb_neo::logical_type::LogicalTypeID =
                 ::duckdb_neo::logical_type::LogicalTypeID::Struct;
-            type Internal<#lifetime> = ();
+            type Native<#lifetime> = ();
             type Ref<#lifetime> = #ref_ident #ref_type_generics where Self: #lifetime;
 
             fn validate(
@@ -176,8 +176,8 @@ pub(crate) fn as_vector_element(input: &syn::DeriveInput) -> syn::Result<TokenSt
     })
 }
 
-pub(crate) fn as_writable_vector_element(input: &syn::DeriveInput) -> syn::Result<TokenStream> {
-    let fields = StructFields::new(input, "AsWritableVectorElement")?;
+pub(crate) fn as_writable_native_element(input: &syn::DeriveInput) -> syn::Result<TokenStream> {
+    let fields = StructFields::new(input, "AsWritableNativeElement")?;
     let types = fields
         .types
         .iter()
@@ -196,22 +196,22 @@ pub(crate) fn as_writable_vector_element(input: &syn::DeriveInput) -> syn::Resul
     let mut generics = bounded_generics(
         input,
         &types,
-        &syn::parse_quote!(::duckdb_neo::vector::WritableVectorElement),
+        &syn::parse_quote!(::duckdb_neo::vector::WritableNativeElement),
     );
     for ty in &types {
         generics.make_where_clause().predicates.push(syn::parse_quote!(
-            #ty: ::core::borrow::Borrow<<#ty as ::duckdb_neo::vector::WritableVectorElement>::Write>
+            #ty: ::core::borrow::Borrow<<#ty as ::duckdb_neo::vector::WritableNativeElement>::Write>
         ));
     }
     generics
         .make_where_clause()
         .predicates
-        .push(syn::parse_quote!(Self: ::duckdb_neo::vector::VectorElement));
+        .push(syn::parse_quote!(Self: ::duckdb_neo::vector::NativeElement));
     let (impl_generics, type_generics, where_clause) = generics.split_for_impl();
 
     Ok(quote! {
-        // SAFETY: VectorElement::validate establishes the field layout; child writers maintain NULL validity.
-        unsafe impl #impl_generics ::duckdb_neo::vector::WritableVectorElement for #ident #type_generics #where_clause {
+        // SAFETY: NativeElement::validate establishes the field layout; child writers maintain NULL validity.
+        unsafe impl #impl_generics ::duckdb_neo::vector::WritableNativeElement for #ident #type_generics #where_clause {
             type Write = Self;
 
             #[inline]
@@ -272,7 +272,7 @@ pub(crate) fn as_writable_vector_element(input: &syn::DeriveInput) -> syn::Resul
 
 #[cfg(test)]
 mod tests {
-    use super::{as_vector_element, as_writable_vector_element};
+    use super::{as_native_element, as_writable_native_element};
 
     #[test]
     fn generated_gets_are_inline() {
@@ -288,7 +288,7 @@ mod tests {
             }
         );
         for (tokens, expected) in [
-            (as_vector_element(&structure).unwrap(), 1),
+            (as_native_element(&structure).unwrap(), 1),
             (super::super::union::as_duckdb_union(&union).unwrap(), 2),
         ] {
             let output = syn::parse2::<syn::File>(tokens).unwrap();
@@ -316,8 +316,8 @@ mod tests {
     fn vector_derives_require_named_fields() {
         type Derive = fn(&syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream>;
         let derives: [(&str, Derive); 2] = [
-            ("AsVectorElement", as_vector_element),
-            ("AsWritableVectorElement", as_writable_vector_element),
+            ("AsNativeElement", as_native_element),
+            ("AsWritableNativeElement", as_writable_native_element),
         ];
         for input in [
             syn::parse_quote!(
@@ -349,7 +349,7 @@ mod tests {
                 optional: Option<i32>,
             }
         );
-        let output = syn::parse2::<syn::File>(as_writable_vector_element(&input).unwrap()).unwrap();
+        let output = syn::parse2::<syn::File>(as_writable_native_element(&input).unwrap()).unwrap();
         assert_eq!(output.items.len(), 3);
         let syn::Item::Impl(implementation) = &output.items[0] else {
             panic!("expected writer implementation")
@@ -358,6 +358,6 @@ mod tests {
             panic!("expected write input type")
         };
         assert_eq!(write.ty, syn::parse_quote!(Self));
-        syn::parse2::<syn::File>(as_vector_element(&input).unwrap()).unwrap();
+        syn::parse2::<syn::File>(as_native_element(&input).unwrap()).unwrap();
     }
 }

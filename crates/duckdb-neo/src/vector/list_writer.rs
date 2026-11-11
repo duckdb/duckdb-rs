@@ -328,7 +328,7 @@ mod tests {
         Environment::new()?.open(StorageLocation::InMemory)?.connect()
     }
 
-    fn rows<T: crate::FromValue + crate::vector::VectorElement>(
+    fn rows<T: crate::FromValue + crate::vector::NativeElement>(
         vector: &Vector<'_, List<T>>,
     ) -> Result<Vec<Option<List<T>>>> {
         (0..vector.len())
@@ -336,7 +336,7 @@ mod tests {
             .collect()
     }
 
-    fn child_len<T: crate::vector::VectorElement>(vector: &Vector<'_, List<T>>) -> Result<usize> {
+    fn child_len<T: crate::vector::NativeElement>(vector: &Vector<'_, List<T>>) -> Result<usize> {
         Ok(vector.children().unwrap().get_untyped_vector_at(0)?.len())
     }
 

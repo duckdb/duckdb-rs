@@ -6,7 +6,7 @@
 use crate::{
     Result,
     enums::LogicalTypeID,
-    vector::{HasChildren, VectorElement, VectorWriter},
+    vector::{HasChildren, NativeElement, VectorWriter},
 };
 
 /// Accepts any `UNION` vector without checking its members.
@@ -42,16 +42,16 @@ use crate::{
 pub struct Union;
 
 // SAFETY: there is no physical row data, and `get` reads nothing.
-unsafe impl VectorElement for Union {
+unsafe impl NativeElement for Union {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Union;
     type Ref<'a>
         = ()
     where
         Self: 'a;
-    type Internal<'a> = ();
+    type Native<'a> = ();
 
     #[inline]
-    unsafe fn get<'a, U: VectorElement>(
+    unsafe fn get<'a, U: NativeElement>(
         _reader: &crate::vector::VectorReader<'a, U>,
         _physical: usize,
         _logical: usize,
@@ -78,7 +78,7 @@ pub mod derive_support {
         logical_type::LogicalType,
         logical_type::LogicalTypeID,
         value::{Value, ValueInput},
-        vector::VectorElement,
+        vector::NativeElement,
     };
 
     /// Build a `union_type` value whose member `tag` holds `member`.
@@ -162,7 +162,7 @@ pub mod derive_support {
     }
 
     /// Check the name (case-insensitively) and child vector of the member at `index`.
-    pub fn validate_union_member<T: VectorElement>(
+    pub fn validate_union_member<T: NativeElement>(
         other: &LogicalType,
         children: Option<&VectorCollection>,
         index: usize,

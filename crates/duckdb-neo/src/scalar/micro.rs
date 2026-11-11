@@ -6,7 +6,7 @@ use crate::{
     connection::Context,
     data_chunk::VectorCollection,
     signature::{FunctionParameter, SignatureBuilder, TypeDeclaration},
-    vector::{Unknown, Vector, VectorElement, WritableVectorElement},
+    vector::{NativeElement, Unknown, Vector, WritableNativeElement},
 };
 
 /// Creates scalar functions from vector closures.
@@ -57,8 +57,8 @@ impl MicroScalar {
     /// Infer a unary signature and wrap the closure in a scalar function builder.
     pub fn create<I, O, F>(name: impl Into<String>, function: F) -> ScalarFunctionBuilder<impl ScalarCallbacks>
     where
-        I: DuckDBType + VectorElement + 'static,
-        O: DuckDBType + WritableVectorElement + 'static,
+        I: DuckDBType + NativeElement + 'static,
+        O: DuckDBType + WritableNativeElement + 'static,
         F: Fn(&Context, Vector<'_, I>, Vector<'_, O>) -> Result<()> + Send + Sync + 'static,
     {
         let mut signature = SignatureBuilder::new().param(FunctionParameter::new::<I>("input"));
@@ -76,7 +76,7 @@ impl MicroScalar {
         function: F,
     ) -> ScalarFunctionBuilder<impl ScalarCallbacks>
     where
-        O: WritableVectorElement + 'static,
+        O: WritableNativeElement + 'static,
         F: Fn(&Context, &mut VectorCollection, Vector<'_, O>) -> Result<()> + Send + Sync + 'static,
     {
         ScalarFunctionBuilder::new(
@@ -97,7 +97,7 @@ struct TypedCallback<O, F> {
 
 impl<O, F> ScalarCallbacks for TypedCallback<O, F>
 where
-    O: WritableVectorElement + 'static,
+    O: WritableNativeElement + 'static,
     F: Fn(&Context, &mut VectorCollection, Vector<'_, O>) -> Result<()> + Send + Sync + 'static,
 {
     type BindData = ();

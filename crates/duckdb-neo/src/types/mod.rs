@@ -8,10 +8,10 @@
 //! This module also defines marker and wrapper types for values whose DuckDB
 //! representation has no direct Rust primitive equivalent, including decimals,
 //! nested types, intervals, UUIDs, `BIGNUM`, and `VARIANT`. Typed vector access
-//! uses these representations through [`crate::vector::VectorElement`].
+//! uses these representations through [`crate::vector::NativeElement`].
 //!
 //! Concrete representations and their [`ToValue`]/[`FromValue`]/
-//! [`crate::vector::VectorElement`]/[`crate::vector::WritableVectorElement`]
+//! [`crate::vector::NativeElement`]/[`crate::vector::WritableNativeElement`]
 //! implementations live together in family modules grouped by logical type:
 //! `primitive`, `string` (`VARCHAR`/`BLOB`/`BIT`), `temporal`
 //! (`DATE`/`TIME`/`TIMESTAMP`/`INTERVAL`), `uuid`, `decimal`, `bignum`, `rust_decimal` (feature-gated),

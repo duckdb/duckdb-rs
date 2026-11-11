@@ -11,7 +11,7 @@ mod union;
 
 pub use entrypoint::parse;
 pub(crate) use struct_value::{as_duckdb_type, as_from_value, as_to_value};
-pub(crate) use struct_vector::{as_vector_element, as_writable_vector_element};
+pub(crate) use struct_vector::{as_native_element, as_writable_native_element};
 pub(crate) use union::as_duckdb_union;
 
 pub(crate) fn as_duckdb(input: &syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
@@ -19,8 +19,8 @@ pub(crate) fn as_duckdb(input: &syn::DeriveInput) -> syn::Result<proc_macro2::To
     let logical_type = as_duckdb_type(input)?;
     let to_value = as_to_value(input)?;
     let from_value = as_from_value(input)?;
-    let vector_element = as_vector_element(input)?;
-    let writable_vector_element = as_writable_vector_element(input)?;
+    let vector_element = as_native_element(input)?;
+    let writable_vector_element = as_writable_native_element(input)?;
     Ok(quote::quote! {
         #logical_type
         #to_value
@@ -187,9 +187,9 @@ mod tests {
                 "PartialEq",
                 "Eq",
                 "Hash",
-                "VectorElement",
+                "NativeElement",
                 "WithReader",
-                "WritableVectorElement",
+                "WritableNativeElement",
                 "WithWriter",
                 "HasChildren"
             ]

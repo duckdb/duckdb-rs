@@ -11,7 +11,7 @@ use crate::error::check_api_call_no_err;
 use crate::ffi;
 use crate::links::{InstanceKeepAlive, KeepAlive};
 use crate::logical_type::LogicalType;
-use crate::vector::{Access, ChildOffsets, ChildVector, VectorElement};
+use crate::vector::{Access, ChildOffsets, ChildVector, NativeElement};
 use crate::{
     Result, check_api_call,
     raw::RawExt,
@@ -148,7 +148,7 @@ impl VectorCollection {
         }
     }
 
-    fn wrap<T: VectorElement>(&self, index: usize, access: Access) -> Result<Vector<'static, T>> {
+    fn wrap<T: NativeElement>(&self, index: usize, access: Access) -> Result<Vector<'static, T>> {
         Vector::from_handle(&self.handles[index], access, &self.offsets)
     }
 
@@ -262,7 +262,7 @@ impl VectorCollection {
     /// # Panics
     ///
     /// Panics if `index` is out of range.
-    pub fn get_vector_at<T: VectorElement>(&self, index: usize) -> Result<&Vector<'_, T>> {
+    pub fn get_vector_at<T: NativeElement>(&self, index: usize) -> Result<&Vector<'_, T>> {
         self.get_untyped_vector_at(index)?.cast_ref::<T>()
     }
 
@@ -274,7 +274,7 @@ impl VectorCollection {
     /// # Panics
     ///
     /// Panics if `index` is out of range.
-    pub fn get_vector_at_mut<T: VectorElement>(&mut self, index: usize) -> Result<Vector<'_, T>> {
+    pub fn get_vector_at_mut<T: NativeElement>(&mut self, index: usize) -> Result<Vector<'_, T>> {
         self.check_index(index);
         self.evict(index);
         self.wrap(index, self.access)
@@ -376,7 +376,7 @@ impl ChildrenMut<'_> {
     }
 
     /// See [`VectorCollection::get_vector_at_mut`].
-    pub fn get_vector_at_mut<T: VectorElement>(&mut self, index: usize) -> Result<ChildVector<'_, T>> {
+    pub fn get_vector_at_mut<T: NativeElement>(&mut self, index: usize) -> Result<ChildVector<'_, T>> {
         self.0.get_vector_at_mut(index).map(ChildVector)
     }
 
@@ -533,7 +533,7 @@ impl<'a> DataChunkRef<'a> {
     /// # Panics
     ///
     /// Panics if `index` is out of range.
-    pub fn get_vector_at<T: VectorElement>(&self, index: usize) -> Result<&Vector<'_, T>> {
+    pub fn get_vector_at<T: NativeElement>(&self, index: usize) -> Result<&Vector<'_, T>> {
         self.vectors.get_vector_at(index)
     }
 
@@ -562,7 +562,7 @@ impl<'a> DataChunkRef<'a> {
     /// # Panics
     ///
     /// Panics if `index` is out of range.
-    pub fn get_vector_at_mut<T: VectorElement>(&mut self, index: usize) -> Result<Vector<'_, T>> {
+    pub fn get_vector_at_mut<T: NativeElement>(&mut self, index: usize) -> Result<Vector<'_, T>> {
         self.vectors.get_vector_at_mut(index)
     }
 
@@ -631,7 +631,7 @@ impl<'a> DataChunk<'a> {
     }
 
     /// See [`DataChunkRef::get_vector_at_mut`].
-    pub fn get_vector_at_mut<T: VectorElement>(&mut self, index: usize) -> Result<Vector<'_, T>> {
+    pub fn get_vector_at_mut<T: NativeElement>(&mut self, index: usize) -> Result<Vector<'_, T>> {
         self.chunk.get_vector_at_mut(index)
     }
 

@@ -3,7 +3,7 @@
 
 use std::ptr::NonNull;
 
-use super::{Vector, VectorElement, VectorReader, VectorWriter, WritableVectorElement, out_of_bounds};
+use super::{NativeElement, Vector, VectorReader, VectorWriter, WritableNativeElement, out_of_bounds};
 use crate::Result;
 
 /// Reads the rows of one vector, with the readers of any children prepared up front.
@@ -78,7 +78,7 @@ pub trait RowWriter {
 }
 
 /// Element types with a [`RowReader`], e.g. a [`ListReader`](super::ListReader) for `LIST`.
-pub trait WithReader: VectorElement {
+pub trait WithReader: NativeElement {
     /// The reader for vectors of this type.
     type Reader<'a>: RowReader
     where
@@ -92,7 +92,7 @@ pub trait WithReader: VectorElement {
 ///
 /// # Safety
 /// The writer must keep every row it writes valid for the logical type that `validate` accepted.
-pub unsafe trait WithWriter: VectorElement {
+pub unsafe trait WithWriter: NativeElement {
     /// The writer for vectors of this type.
     type Writer<'w>: RowWriter
     where
@@ -122,7 +122,7 @@ impl<T: WithWriter> Vector<'_, T> {
     }
 }
 
-impl<'a, T: VectorElement + 'a> RowReader for VectorReader<'a, T> {
+impl<'a, T: NativeElement + 'a> RowReader for VectorReader<'a, T> {
     type Item<'r>
         = T::Ref<'a>
     where
@@ -145,7 +145,7 @@ impl<'a, T: VectorElement + 'a> RowReader for VectorReader<'a, T> {
     }
 }
 
-impl<T: WritableVectorElement> RowWriter for VectorWriter<'_, T> {
+impl<T: WritableNativeElement> RowWriter for VectorWriter<'_, T> {
     type Value = T::Write;
 
     #[inline]

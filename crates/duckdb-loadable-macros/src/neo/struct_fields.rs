@@ -142,7 +142,7 @@ pub(super) fn option_inner_type(ty: &syn::Type) -> Option<&syn::Type> {
 mod tests {
     use super::StructFields;
     use crate::neo::{
-        as_duckdb, as_duckdb_type, as_from_value, as_to_value, as_vector_element, as_writable_vector_element,
+        as_duckdb, as_duckdb_type, as_from_value, as_native_element, as_to_value, as_writable_native_element,
     };
 
     #[test]
@@ -165,8 +165,8 @@ mod tests {
         ("AsDuckDBType", as_duckdb_type),
         ("AsFromValue", as_from_value),
         ("AsToValue", as_to_value),
-        ("AsVectorElement", as_vector_element),
-        ("AsWritableVectorElement", as_writable_vector_element),
+        ("AsNativeElement", as_native_element),
+        ("AsWritableNativeElement", as_writable_native_element),
     ];
 
     #[test]

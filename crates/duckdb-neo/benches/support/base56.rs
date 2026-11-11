@@ -28,7 +28,7 @@ use duckdb_neo::{
     file::{File, FileBuilder, FileSystem},
     logical_type::{LogicalType, LogicalTypeID},
     types::UncheckedString,
-    vector::{VectorElement, VectorReader, WritableVectorElement},
+    vector::{NativeElement, VectorReader, WritableNativeElement},
 };
 
 /// Digits and letters without the look-alikes `0`, `1`, `I`, `O`, `l` and `o`.
@@ -471,7 +471,7 @@ fn decode_column<'f, T>(
     bytes: &mut Vec<u8>,
 ) -> Result<()>
 where
-    T: FixedWidth + VectorElement + WritableVectorElement<Write = T>,
+    T: FixedWidth + NativeElement + WritableNativeElement<Write = T>,
 {
     let mut vector = output.get_vector_at_mut::<T>(index)?;
     // SAFETY: `split_fields` gives every row one field per column, and the loop writes each.

@@ -8,7 +8,7 @@ use crate::{
     scalar::MicroScalar,
     types::{Array, BitValue, BlobValue, DuckDBType, List, UncheckedString, Variant},
     value::Value,
-    vector::{StorageKind, Unknown, Vector, VectorWriter, WritableVectorElement},
+    vector::{StorageKind, Unknown, Vector, VectorWriter, WritableNativeElement},
 };
 
 #[test]
@@ -40,7 +40,7 @@ fn writer_sets_values_with_preallocated_validity() -> Result<()> {
     Ok(())
 }
 
-fn write_twice<T: WritableVectorElement>(vector: &mut Vector<'_, T>, value: &T::Write) -> Result<()> {
+fn write_twice<T: WritableNativeElement>(vector: &mut Vector<'_, T>, value: &T::Write) -> Result<()> {
     vector.set_size(3)?;
     let mut writer = vector.writer()?;
     writer.set(0, Some(value))?;

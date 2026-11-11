@@ -38,7 +38,7 @@
 //! # }
 //! ```
 //!
-//! Element types plug in through the [`VectorElement`] trait. Each type defines its
+//! Element types plug in through the [`NativeElement`] trait. Each type defines its
 //! own borrowed row representation: scalars yield references, while nested
 //! values yield zero-copy handles into their child vectors.
 
@@ -173,7 +173,7 @@ pub(crate) enum Access {
 /// ```
 #[repr(C)]
 #[derive(Debug, AsRaw)]
-pub struct Vector<'a, T: VectorElement> {
+pub struct Vector<'a, T: NativeElement> {
     pub(crate) handle: ffi::duckdb_v2_vector_handle,
     pub(crate) access: Access,
 
@@ -194,7 +194,7 @@ pub struct Vector<'a, T: VectorElement> {
     _type: PhantomData<T>,
 }
 
-impl<'a, T: VectorElement> Vector<'a, T> {
+impl<'a, T: NativeElement> Vector<'a, T> {
     /// The handle must remain valid for the lifetime of the owning chunk.
     pub(crate) fn from_handle(
         handle: &ffi::duckdb_v2_vector_handle,
@@ -248,13 +248,13 @@ impl<'a, T: VectorElement> Vector<'a, T> {
 
 impl<'a> Vector<'a, Unknown> {
     /// Validate and attach a logical element type.
-    pub fn cast<T: VectorElement>(self) -> Result<Vector<'a, T>> {
+    pub fn cast<T: NativeElement>(self) -> Result<Vector<'a, T>> {
         self.validate_as::<T>()?;
         Ok(self.cast_unchecked())
     }
 
     /// Validate and attach a logical element type to a borrowed vector.
-    pub fn cast_ref<T: VectorElement>(&self) -> Result<&Vector<'a, T>> {
+    pub fn cast_ref<T: NativeElement>(&self) -> Result<&Vector<'a, T>> {
         self.validate_as::<T>()?;
         // SAFETY: T was validated above.
         Ok(unsafe { self.cast_ref_unchecked() })
@@ -262,13 +262,13 @@ impl<'a> Vector<'a, Unknown> {
 
     /// # Safety
     /// This vector must have been validated as `T`.
-    pub(crate) unsafe fn cast_ref_unchecked<T: VectorElement>(&self) -> &Vector<'a, T> {
+    pub(crate) unsafe fn cast_ref_unchecked<T: NativeElement>(&self) -> &Vector<'a, T> {
         // SAFETY: Both repr(C) wrappers differ only in markers.
         unsafe { &*(self as *const Vector<'a, Unknown> as *const Vector<'a, T>) }
     }
 }
 
-impl<'a, T: VectorElement> Vector<'a, T> {
+impl<'a, T: NativeElement> Vector<'a, T> {
     /// Return the number of logical rows.
     pub fn len(&self) -> usize {
         self.len
@@ -313,7 +313,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         self.refresh_buffers()
     }
 
-    pub(crate) fn cast_unchecked<U: VectorElement>(self) -> Vector<'a, U> {
+    pub(crate) fn cast_unchecked<U: NativeElement>(self) -> Vector<'a, U> {
         Vector {
             handle: self.handle,
             logical_type: self.logical_type,
@@ -338,7 +338,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     /// # Safety
     /// The cast can leave this vector sharing storage with `source`, e.g. for same-type or
     /// reinterpreting casts. Neither may be written or resized, through any wrapper, while the other is read.
-    pub unsafe fn cast_rows<T2: VectorElement, C: HasFactory>(self, source: &Vector<'_, T2>, link: &C) -> Result<()> {
+    pub unsafe fn cast_rows<T2: NativeElement, C: HasFactory>(self, source: &Vector<'_, T2>, link: &C) -> Result<()> {
         if !self.is_writable() {
             return Err(not_writable());
         }
@@ -362,7 +362,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     ///
     /// # Safety
     /// As for [`Self::cast_rows`].
-    pub unsafe fn try_cast_rows<T2: VectorElement, C: HasFactory>(
+    pub unsafe fn try_cast_rows<T2: NativeElement, C: HasFactory>(
         self,
         source: &Vector<'_, T2>,
         link: &C,
@@ -482,7 +482,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             .expect("LIST and MAP vectors track their child offset")
     }
 
-    pub(crate) fn validate_as<U: VectorElement>(&self) -> Result<()> {
+    pub(crate) fn validate_as<U: NativeElement>(&self) -> Result<()> {
         match U::validate(self.logical_type(), self.children.as_ref()) {
             Ok(true) => Ok(()),
             Ok(false) => Err(Error::invalid_input(format!(
@@ -502,7 +502,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     /// # Safety
     /// Reference without copying; source storage must outlive destination reads and remain unchanged.
     /// Neither vector may be written or resized, through any wrapper, while the other is read.
-    pub unsafe fn reference<T2: VectorElement>(self, source: &Vector<'_, T2>) -> Result<Vector<'a, T2>> {
+    pub unsafe fn reference<T2: NativeElement>(self, source: &Vector<'_, T2>) -> Result<Vector<'a, T2>> {
         if self.access == Access::Shared {
             return Err(not_exclusive());
         }
@@ -662,7 +662,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     }
 }
 
-impl<T: VectorElement> Vector<'_, T> {
+impl<T: NativeElement> Vector<'_, T> {
     /// Prepare exclusive write access and allocate a writable validity mask.
     ///
     /// Fails unless this is writable output with flat storage. Resize the vector
@@ -705,7 +705,7 @@ impl<T: VectorElement> Vector<'_, T> {
     }
 }
 
-impl<T: VectorElement> Vector<'_, T> {
+impl<T: NativeElement> Vector<'_, T> {
     /// Prepare a storage-specific reader, along with readers for every descendant.
     ///
     /// Returns an error for [`StorageKind::Other`]; flatten the vector explicitly first.

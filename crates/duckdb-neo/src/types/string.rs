@@ -16,7 +16,7 @@ use crate::{
     logical_type::{LogicalType, LogicalTypeID},
     raw::RawExt,
     value::{Value, ValueInput},
-    vector::{HasDuckDBBytes, VectorElement, WritableVectorElement},
+    vector::{HasDuckDBBytes, NativeElement, WritableNativeElement},
 };
 /// Copy bytes DuckDB just returned; `raw` must be null or valid for the duration of the call.
 pub(crate) fn owned_bytes(raw: ffi::duckdb_v2_str) -> Result<Vec<u8>> {
@@ -175,15 +175,15 @@ impl HasDuckDBBytes for BlobValue {}
 impl HasDuckDBBytes for BitValue {}
 
 // SAFETY: `DuckDBBytes` matches DuckDB's string storage.
-unsafe impl VectorElement for BlobValue {
+unsafe impl NativeElement for BlobValue {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Blob;
 
-    type Internal<'a> = DuckDBBytes<'a>;
+    type Native<'a> = DuckDBBytes<'a>;
 
     type Ref<'a> = &'a [u8];
 
     #[inline]
-    unsafe fn get<'a, U: VectorElement>(
+    unsafe fn get<'a, U: NativeElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
         _logical: usize,
@@ -197,15 +197,15 @@ unsafe impl VectorElement for BlobValue {
 }
 
 // SAFETY: `DuckDBBytes` matches DuckDB's string storage.
-unsafe impl VectorElement for BitValue {
+unsafe impl NativeElement for BitValue {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Bit;
 
-    type Internal<'a> = DuckDBBytes<'a>;
+    type Native<'a> = DuckDBBytes<'a>;
 
     type Ref<'a> = &'a [u8];
 
     #[inline]
-    unsafe fn get<'a, U: VectorElement>(
+    unsafe fn get<'a, U: NativeElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
         _logical: usize,
@@ -221,15 +221,15 @@ unsafe impl VectorElement for BitValue {
 /// # Panics
 /// Panics when a VARCHAR row contains invalid UTF-8.
 // SAFETY: `DuckDBBytes` matches DuckDB's string storage.
-unsafe impl VectorElement for String {
+unsafe impl NativeElement for String {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Varchar;
 
-    type Internal<'a> = DuckDBBytes<'a>;
+    type Native<'a> = DuckDBBytes<'a>;
 
     type Ref<'a> = &'a str;
 
     #[inline]
-    unsafe fn get<'a, U: VectorElement>(
+    unsafe fn get<'a, U: NativeElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
         _logical: usize,
@@ -246,15 +246,15 @@ unsafe impl VectorElement for String {
 }
 
 // SAFETY: Same storage as `String`; users of this marker must guarantee valid UTF-8.
-unsafe impl VectorElement for UncheckedString {
+unsafe impl NativeElement for UncheckedString {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Varchar;
 
-    type Internal<'a> = DuckDBBytes<'a>;
+    type Native<'a> = DuckDBBytes<'a>;
 
     type Ref<'a> = &'a str;
 
     #[inline]
-    unsafe fn get<'a, U: VectorElement>(
+    unsafe fn get<'a, U: NativeElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
         _logical: usize,
@@ -269,7 +269,7 @@ unsafe impl VectorElement for UncheckedString {
 }
 
 // SAFETY: `&str` is valid UTF-8, and `write_bytes` stores it in the vector's arena.
-unsafe impl WritableVectorElement for UncheckedString {
+unsafe impl WritableNativeElement for UncheckedString {
     type Write = str;
 
     #[inline(always)]
@@ -284,7 +284,7 @@ unsafe impl WritableVectorElement for UncheckedString {
 }
 
 // SAFETY: `&str` is valid UTF-8, and `write_bytes` stores it in the vector's arena.
-unsafe impl WritableVectorElement for String {
+unsafe impl WritableNativeElement for String {
     type Write = str;
 
     #[inline(always)]
@@ -299,7 +299,7 @@ unsafe impl WritableVectorElement for String {
 }
 
 // SAFETY: `write_bytes` stores the bytes in the vector's arena.
-unsafe impl WritableVectorElement for BlobValue {
+unsafe impl WritableNativeElement for BlobValue {
     type Write = [u8];
 
     #[inline]
@@ -314,7 +314,7 @@ unsafe impl WritableVectorElement for BlobValue {
 }
 
 // SAFETY: `check_bit` rejects invalid BIT bytes before `write_bytes` stores them.
-unsafe impl WritableVectorElement for BitValue {
+unsafe impl WritableNativeElement for BitValue {
     type Write = [u8];
 
     #[inline]
@@ -338,16 +338,16 @@ impl std::borrow::Borrow<str> for UncheckedString {
 }
 
 // SAFETY: borrowed strings use the same VARCHAR layout and decoding as String.
-unsafe impl VectorElement for &str {
+unsafe impl NativeElement for &str {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Varchar;
-    type Internal<'a> = DuckDBBytes<'a>;
+    type Native<'a> = DuckDBBytes<'a>;
     type Ref<'a>
         = &'a str
     where
         Self: 'a;
 
     #[inline]
-    unsafe fn get<'a, U: VectorElement>(
+    unsafe fn get<'a, U: NativeElement>(
         reader: &crate::vector::VectorReader<'a, U>,
         physical: usize,
         logical: usize,
@@ -362,7 +362,7 @@ unsafe impl VectorElement for &str {
 impl HasDuckDBBytes for &str {}
 
 // SAFETY: input strings are UTF-8 and are copied into the vector's arena.
-unsafe impl WritableVectorElement for &str {
+unsafe impl WritableNativeElement for &str {
     type Write = str;
 
     #[inline(always)]

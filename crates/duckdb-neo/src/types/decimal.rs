@@ -22,7 +22,7 @@ use crate::{
     logical_type::{LogicalType, LogicalTypeID},
     raw::RawExt,
     value::{Value, ValueInput},
-    vector::{VectorElement, WritableVectorElement},
+    vector::{NativeElement, WritableNativeElement},
 };
 
 /// The widest `DECIMAL` DuckDB supports.
@@ -61,10 +61,10 @@ macro_rules! decimal_storage {
             }
 
             // SAFETY: `validate` accepts only the widths DuckDB stores as `$type`.
-            unsafe impl VectorElement for $name {
+            unsafe impl NativeElement for $name {
                 const TYPE_ID: LogicalTypeID = LogicalTypeID::Decimal;
 
-                type Internal<'a> = $type;
+                type Native<'a> = $type;
 
                 type Ref<'a> = &'a $name;
 
@@ -76,7 +76,7 @@ macro_rules! decimal_storage {
                 }
 
                 #[inline]
-                unsafe fn get<'a, U: VectorElement>(vector: &crate::vector::VectorReader<'a, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+                unsafe fn get<'a, U: NativeElement>(vector: &crate::vector::VectorReader<'a, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
                 where
                     Self: 'a,
                 {
@@ -86,7 +86,7 @@ macro_rules! decimal_storage {
             }
 
             // SAFETY: the vector stores `$type`, the value's own storage type.
-            unsafe impl WritableVectorElement for $name {
+            unsafe impl WritableNativeElement for $name {
                 type Write = $name;
 
                 #[inline]
@@ -235,14 +235,14 @@ where
     }
 }
 
-// SAFETY: `validate` accepts only `DECIMAL(WIDTH, SCALE)`, which DuckDB stores as `Internal`.
-unsafe impl<const WIDTH: u8, const SCALE: u8> VectorElement for Decimal<WIDTH, SCALE>
+// SAFETY: `validate` accepts only `DECIMAL(WIDTH, SCALE)`, which DuckDB stores as `Native`.
+unsafe impl<const WIDTH: u8, const SCALE: u8> NativeElement for Decimal<WIDTH, SCALE>
 where
     Width<WIDTH>: DecimalWidth,
 {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Decimal;
 
-    type Internal<'a> = <Width<WIDTH> as DecimalWidth>::Storage;
+    type Native<'a> = <Width<WIDTH> as DecimalWidth>::Storage;
 
     type Ref<'a> = &'a Self;
 
@@ -258,7 +258,7 @@ where
     }
 
     #[inline]
-    unsafe fn get<'a, U: VectorElement>(
+    unsafe fn get<'a, U: NativeElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
         _logical: usize,
@@ -271,8 +271,8 @@ where
     }
 }
 
-// SAFETY: the vector stores `Internal`, the value's own storage type.
-unsafe impl<const WIDTH: u8, const SCALE: u8> WritableVectorElement for Decimal<WIDTH, SCALE>
+// SAFETY: the vector stores `Native`, the value's own storage type.
+unsafe impl<const WIDTH: u8, const SCALE: u8> WritableNativeElement for Decimal<WIDTH, SCALE>
 where
     Width<WIDTH>: DecimalWidth,
 {

@@ -6,7 +6,7 @@ use crate::{
     connection::FFILink,
     logical_type::{LogicalType, LogicalTypeID},
     value::Value,
-    vector::{VectorElement, WritableVectorElement},
+    vector::{NativeElement, WritableNativeElement},
 };
 
 /// [`VectorReader::get`](crate::vector::VectorReader::get) reads each row through an owned [`Value`].
@@ -15,16 +15,16 @@ use crate::{
 pub struct Variant;
 
 // SAFETY: rows are read only through DuckDB's value API.
-unsafe impl VectorElement for Variant {
+unsafe impl NativeElement for Variant {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Variant;
 
     /// VARIANT has no fixed physical layout; rows use the per-cell value API.
-    type Internal<'a> = ();
+    type Native<'a> = ();
 
     type Ref<'a> = Value;
 
     #[inline]
-    unsafe fn get<'a, U: VectorElement>(
+    unsafe fn get<'a, U: NativeElement>(
         reader: &crate::vector::VectorReader<'a, U>,
         _physical: usize,
         logical: usize,
@@ -37,7 +37,7 @@ unsafe impl VectorElement for Variant {
 }
 
 // SAFETY: rows are written only through DuckDB's value API.
-unsafe impl WritableVectorElement for Variant {
+unsafe impl WritableNativeElement for Variant {
     type Write = Value;
 
     #[inline]

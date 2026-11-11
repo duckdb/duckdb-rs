@@ -13,7 +13,7 @@ use crate::{
     logical_type::{LogicalType, LogicalTypeID},
     raw::RawExt,
     value::{Value, ValueInput},
-    vector::{HasDuckDBBytes, VectorElement, WritableVectorElement},
+    vector::{HasDuckDBBytes, NativeElement, WritableNativeElement},
 };
 use std::fmt::Display;
 
@@ -76,15 +76,15 @@ impl HasDuckDBBytes for BigNum {}
 impl HasDuckDBBytes for BigNumValue {}
 
 // SAFETY: `BigNum` matches DuckDB's string storage for `BIGNUM`.
-unsafe impl VectorElement for BigNum {
+unsafe impl NativeElement for BigNum {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::BigNum;
 
-    type Internal<'a> = BigNum;
+    type Native<'a> = BigNum;
 
     type Ref<'a> = &'a BigNum;
 
     #[inline]
-    unsafe fn get<'a, U: VectorElement>(
+    unsafe fn get<'a, U: NativeElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
         _logical: usize,
@@ -98,7 +98,7 @@ unsafe impl VectorElement for BigNum {
 }
 
 // SAFETY: a `BigNum` only borrows DuckDB-encoded bytes, which `write_bytes` copies into the vector's arena.
-unsafe impl WritableVectorElement for BigNum {
+unsafe impl WritableNativeElement for BigNum {
     type Write = BigNum;
 
     #[inline]
@@ -151,15 +151,15 @@ impl FromValue for BigNumValue {
 
 // TODO: Review if needed..
 // SAFETY: same storage as `BigNum`.
-unsafe impl VectorElement for BigNumValue {
+unsafe impl NativeElement for BigNumValue {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::BigNum;
 
-    type Internal<'a> = BigNum;
+    type Native<'a> = BigNum;
 
     type Ref<'a> = &'a BigNum;
 
     #[inline]
-    unsafe fn get<'a, U: VectorElement>(
+    unsafe fn get<'a, U: NativeElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
         logical: usize,
@@ -173,7 +173,7 @@ unsafe impl VectorElement for BigNumValue {
 }
 
 // SAFETY: `encode_bignum` produces valid bytes, which `write_bytes` copies into the vector's arena.
-unsafe impl WritableVectorElement for BigNumValue {
+unsafe impl WritableNativeElement for BigNumValue {
     type Write = BigNumValue;
 
     #[inline]

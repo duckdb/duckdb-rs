@@ -1,6 +1,6 @@
 //! Initialization of rows a resize exposes, so safe reads never see uninitialized storage.
 
-use super::{Vector, VectorElement};
+use super::{NativeElement, Vector};
 use crate::{
     Result, check_api_call, ffi,
     logical_type::{LogicalType, LogicalTypeID},
@@ -43,7 +43,7 @@ fn fill(logical_type: &LogicalType) -> Result<Fill> {
     })
 }
 
-impl<T: VectorElement> Vector<'_, T> {
+impl<T: NativeElement> Vector<'_, T> {
     /// Initialize rows `start..end` and their descendants after they were reserved.
     ///
     /// Rows keep their validity, so a valid row reads as a zeroed value. `LIST` and `MAP` rows

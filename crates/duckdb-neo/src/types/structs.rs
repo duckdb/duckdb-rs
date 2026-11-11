@@ -8,7 +8,7 @@ use crate::{
     data_chunk::VectorCollection,
     enums::LogicalTypeID,
     logical_type::LogicalType,
-    vector::{HasChildren, VectorElement, VectorWriter},
+    vector::{HasChildren, NativeElement, VectorWriter},
 };
 
 /// Accepts any `STRUCT` or `TUPLE` vector without checking its fields.
@@ -20,20 +20,20 @@ use crate::{
 pub struct Struct;
 
 // SAFETY: there is no physical row data, and `get` reads nothing.
-unsafe impl VectorElement for Struct {
+unsafe impl NativeElement for Struct {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Struct;
     type Ref<'a>
         = ()
     where
         Self: 'a;
-    type Internal<'a> = ();
+    type Native<'a> = ();
 
     fn validate(other: &LogicalType, _children: Option<&VectorCollection>) -> Result<bool> {
         Ok(matches!(other.id()?, LogicalTypeID::Struct | LogicalTypeID::Tuple))
     }
 
     #[inline]
-    unsafe fn get<'a, U: VectorElement>(
+    unsafe fn get<'a, U: NativeElement>(
         _reader: &crate::vector::VectorReader<'a, U>,
         _physical: usize,
         _logical: usize,
@@ -55,7 +55,7 @@ unsafe impl HasChildren for Struct {
 pub mod derive_support {
     use crate::{
         Error, Result, data_chunk::VectorCollection, logical_type::LogicalType, logical_type::LogicalTypeID,
-        value::Value, vector::VectorElement,
+        value::Value, vector::NativeElement,
     };
 
     /// Check that `value` is a `STRUCT` with `expected` fields and return their names.
@@ -100,7 +100,7 @@ pub mod derive_support {
     }
 
     /// Check the name (case-insensitively) and child vector of the field at `index`.
-    pub fn validate_field<T: VectorElement>(
+    pub fn validate_field<T: NativeElement>(
         other: &LogicalType,
         children: Option<&VectorCollection>,
         index: usize,

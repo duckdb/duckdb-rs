@@ -110,7 +110,7 @@ pub mod __derive {
     ///
     /// # Safety
     /// As for [`WithWriter::row_writer`](crate::vector::WithWriter::row_writer).
-    pub unsafe fn vector_writer<'w, T: crate::vector::VectorElement>(
+    pub unsafe fn vector_writer<'w, T: crate::vector::NativeElement>(
         vector: std::ptr::NonNull<crate::vector::Vector<'w, T>>,
     ) -> crate::Result<crate::vector::VectorWriter<'w, T>> {
         // SAFETY: the caller upholds the borrow contract.

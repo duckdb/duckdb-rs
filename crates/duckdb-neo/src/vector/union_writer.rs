@@ -1,7 +1,7 @@
 use std::ptr::NonNull;
 
 use super::{
-    RowWriter, Unknown, Vector, VectorElement, VectorReader, VectorWriter, WithReader, WithWriter, out_of_bounds,
+    NativeElement, RowWriter, Unknown, Vector, VectorReader, VectorWriter, WithReader, WithWriter, out_of_bounds,
 };
 use crate::{Result, data_chunk::VectorCollection, error::Error, logical_type::LogicalTypeID};
 
@@ -22,7 +22,7 @@ pub unsafe trait UnionMembers {
 /// The type of member `I` of a [`UnionMembers`] tuple.
 pub trait UnionMember<const I: usize>: UnionMembers {
     /// The member's vector element type.
-    type Member: VectorElement;
+    type Member: NativeElement;
 }
 
 /// Member tuples whose members all have a [`RowReader`].
@@ -86,7 +86,7 @@ pub trait UnionMemberWriter<const I: usize>: UnionWriters + UnionMember<I, Membe
         Self: 'w;
 }
 
-fn validate_member<T: VectorElement>(children: &VectorCollection, index: usize) -> Result<bool> {
+fn validate_member<T: NativeElement>(children: &VectorCollection, index: usize) -> Result<bool> {
     let child = children.get_untyped_vector_at(index)?;
     T::validate(child.logical_type(), child.children())
 }
@@ -94,7 +94,7 @@ fn validate_member<T: VectorElement>(children: &VectorCollection, index: usize) 
 macro_rules! union_members {
     ($count:expr; $($name:ident $index:tt),+) => {
         // SAFETY: each member is validated as its tuple element.
-        unsafe impl<$($name: VectorElement),+> UnionMembers for ($($name,)+) {
+        unsafe impl<$($name: NativeElement),+> UnionMembers for ($($name,)+) {
             const COUNT: usize = $count;
 
             fn validate(children: &VectorCollection) -> Result<bool> {
@@ -152,7 +152,7 @@ macro_rules! union_members {
         union_members!(@member [$($name),+] $($name $index),+);
     };
     (@member [$($all:ident),+] $name:ident $index:tt $(, $rest:ident $rest_index:tt)*) => {
-        impl<$($all: VectorElement),+> UnionMember<$index> for ($($all,)+) {
+        impl<$($all: NativeElement),+> UnionMember<$index> for ($($all,)+) {
             type Member = $name;
         }
 
@@ -229,7 +229,7 @@ pub struct UnionReader<'a, M: UnionReaders + 'a> {
 
 impl<'a, M: UnionReaders + 'a> UnionReader<'a, M> {
     /// Prepare a reader for a `UNION` vector whose members are `M`.
-    pub fn new<U: VectorElement>(vector: &'a Vector<'a, U>) -> Result<Self> {
+    pub fn new<U: NativeElement>(vector: &'a Vector<'a, U>) -> Result<Self> {
         // SAFETY: both wrappers differ only in markers.
         let vector = unsafe { &*(vector as *const Vector<'a, U>).cast::<Vector<'a, Unknown>>() };
         check_union::<M>(vector)?;
@@ -484,7 +484,7 @@ impl<'w, M: UnionWriters + 'w> std::fmt::Debug for UnionWriter<'w, M> {
     }
 }
 
-impl<U: VectorElement> Vector<'_, U> {
+impl<U: NativeElement> Vector<'_, U> {
     /// Prepare a [`UnionReader`] for a `UNION` vector whose members are `M`.
     pub fn union_reader<'a, M: UnionReaders + 'a>(&'a self) -> Result<UnionReader<'a, M>> {
         UnionReader::new(self)
@@ -520,7 +520,7 @@ mod tests {
         Environment::new()?.open(StorageLocation::InMemory)?.connect()
     }
 
-    fn nulls<T: crate::vector::VectorElement>(vector: &Vector<'_, Union>, child: usize) -> Result<Vec<bool>> {
+    fn nulls<T: crate::vector::NativeElement>(vector: &Vector<'_, Union>, child: usize) -> Result<Vec<bool>> {
         let reader = vector.children().unwrap().get_vector_at::<T>(child)?.reader()?;
         (0..reader.len()).map(|row| reader.is_null(row)).collect()
     }

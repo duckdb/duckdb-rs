@@ -1,4 +1,4 @@
-use duckdb_loadable_macros::{AsVectorElement, AsWritableVectorElement};
+use duckdb_loadable_macros::{AsNativeElement, AsWritableNativeElement};
 use duckdb_neo::{
     AsDuckDB, DuckDBType, Parameters, Result, ToValue,
     connection::Context,
@@ -17,7 +17,7 @@ struct Row {
     value: Option<i32>,
 }
 
-#[derive(Debug, AsVectorElement, AsWritableVectorElement)]
+#[derive(Debug, AsNativeElement, AsWritableNativeElement)]
 #[allow(dead_code)]
 struct Nested {
     row: Option<Row>,
@@ -40,7 +40,7 @@ struct AllNested {
 #[derive(Debug, AsDuckDB)]
 struct Empty {}
 
-#[derive(Debug, AsVectorElement, AsWritableVectorElement)]
+#[derive(Debug, AsNativeElement, AsWritableNativeElement)]
 #[allow(dead_code)]
 struct Fixed {
     values: Option<Array<i32, 2>>,
@@ -63,7 +63,7 @@ fn owned_struct_fields_roundtrip_without_a_write_projection() -> Result<()> {
         matrix: List<List<i32>>,
         optional: Option<i64>,
     }
-    fn accepts_self<T: duckdb_neo::vector::WritableVectorElement<Write = T>>() {}
+    fn accepts_self<T: duckdb_neo::vector::WritableNativeElement<Write = T>>() {}
     accepts_self::<Record>();
     let record = || Record {
         primary: Point {
@@ -513,27 +513,27 @@ fn derived_writer_supports_generic_and_empty_structs() -> Result<()> {
 
 #[test]
 fn derived_writer_uses_custom_vector_validation() -> Result<()> {
-    #[derive(Debug, AsVectorElement)]
+    #[derive(Debug, AsNativeElement)]
     #[allow(dead_code)]
     struct Layout {
         value: Option<i64>,
     }
-    #[derive(Debug, AsWritableVectorElement)]
+    #[derive(Debug, AsWritableNativeElement)]
     #[allow(dead_code)]
     struct CustomReader {
         value: Option<i64>,
     }
     // SAFETY: Layout validates the writer's fields; this reader exposes no physical storage.
-    unsafe impl duckdb_neo::vector::VectorElement for CustomReader {
+    unsafe impl duckdb_neo::vector::NativeElement for CustomReader {
         const TYPE_ID: duckdb_neo::logical_type::LogicalTypeID = duckdb_neo::logical_type::LogicalTypeID::Struct;
-        type Internal<'a> = ();
+        type Native<'a> = ();
         type Ref<'a> = ();
 
         fn validate(ty: &LogicalType, children: Option<&VectorCollection>) -> Result<bool> {
-            <Layout as duckdb_neo::vector::VectorElement>::validate(ty, children)
+            <Layout as duckdb_neo::vector::NativeElement>::validate(ty, children)
         }
 
-        unsafe fn get<'a, U: duckdb_neo::vector::VectorElement>(
+        unsafe fn get<'a, U: duckdb_neo::vector::NativeElement>(
             _reader: &duckdb_neo::vector::VectorReader<'a, U>,
             _physical: usize,
             _logical: usize,

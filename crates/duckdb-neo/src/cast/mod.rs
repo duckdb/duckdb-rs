@@ -12,7 +12,7 @@ use crate::{
     handles::{CastFunctionHandle, CastFunctionLink},
     logical_type::{LogicalType, LogicalTypeID},
     raw::{FromRaw, RawExt},
-    vector::{Access, Vector, VectorElement},
+    vector::{Access, NativeElement, Vector},
 };
 
 ffi_enum_redeclaration! {
@@ -59,7 +59,7 @@ unsafe extern "C" fn exec_callback<T: CastFunctionCallbacks>(
     );
 }
 
-fn validate_cast_type<T: VectorElement>(logical_type: &LogicalType) -> Result<()> {
+fn validate_cast_type<T: NativeElement>(logical_type: &LogicalType) -> Result<()> {
     // Nested layouts need child vectors, which are only available during execution.
     if !matches!(
         T::TYPE_ID,
@@ -157,9 +157,9 @@ impl<T: CastFunctionCallbacks> CastFunctionBuilder<T> {
 /// Execution callback for a user-defined cast.
 pub trait CastFunctionCallbacks: Send + Sync + 'static {
     /// The typed input-vector element.
-    type InputType: VectorElement;
+    type InputType: NativeElement;
     /// The typed output-vector element.
-    type OutputType: VectorElement;
+    type OutputType: NativeElement;
 
     /// **Execute:** convert an input batch into the output vector.
     ///

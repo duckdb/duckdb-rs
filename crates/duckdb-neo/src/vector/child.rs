@@ -1,7 +1,7 @@
 use std::ops::Deref;
 
 use super::{
-    ListWriter, MapWriter, UnionWriter, UnionWriters, Unknown, Vector, VectorElement, VectorWriter, WithWriter,
+    ListWriter, MapWriter, NativeElement, UnionWriter, UnionWriters, Unknown, Vector, VectorWriter, WithWriter,
 };
 use crate::{
     Result,
@@ -47,9 +47,9 @@ use crate::{
 /// # }
 /// ```
 #[derive(Debug)]
-pub struct ChildVector<'a, T: VectorElement>(pub(crate) Vector<'a, T>);
+pub struct ChildVector<'a, T: NativeElement>(pub(crate) Vector<'a, T>);
 
-impl<'a, T: VectorElement> Deref for ChildVector<'a, T> {
+impl<'a, T: NativeElement> Deref for ChildVector<'a, T> {
     type Target = Vector<'a, T>;
 
     fn deref(&self) -> &Vector<'a, T> {
@@ -57,7 +57,7 @@ impl<'a, T: VectorElement> Deref for ChildVector<'a, T> {
     }
 }
 
-impl<T: VectorElement> ChildVector<'_, T> {
+impl<T: NativeElement> ChildVector<'_, T> {
     /// See [`Vector::writer`].
     pub fn writer(&mut self) -> Result<VectorWriter<'_, T>> {
         self.0.writer()
@@ -91,12 +91,12 @@ impl<T: VectorElement> ChildVector<'_, T> {
 
 impl<'a> ChildVector<'a, Unknown> {
     /// See [`Vector::cast`].
-    pub fn cast<T: VectorElement>(self) -> Result<ChildVector<'a, T>> {
+    pub fn cast<T: NativeElement>(self) -> Result<ChildVector<'a, T>> {
         self.0.cast().map(ChildVector)
     }
 }
 
-impl<T: VectorElement> ChildVector<'_, List<T>> {
+impl<T: NativeElement> ChildVector<'_, List<T>> {
     /// Size the element child, as for a top-level [`List`] vector.
     ///
     /// # Safety
@@ -119,7 +119,7 @@ impl<T: WithWriter> ChildVector<'_, List<T>> {
     }
 }
 
-impl<K: VectorElement, V: VectorElement> ChildVector<'_, Map<K, V>> {
+impl<K: NativeElement, V: NativeElement> ChildVector<'_, Map<K, V>> {
     /// Size the entries child, as for a top-level [`Map`] vector.
     ///
     /// # Safety

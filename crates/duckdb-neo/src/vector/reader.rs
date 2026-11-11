@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use super::{StorageKind, Vector, VectorElement, other_not_readable, out_of_bounds};
+use super::{NativeElement, StorageKind, Vector, other_not_readable, out_of_bounds};
 use crate::Result;
 use crate::ffi;
 
@@ -31,12 +31,12 @@ impl Selection<'_> {
 /// Prepared, read-only access to logical rows, created by [`Vector::reader`].
 /// Values preserve SQL NULLs and borrow from the vector, not the reader.
 #[repr(C)]
-pub struct VectorReader<'vec, T: VectorElement> {
+pub struct VectorReader<'vec, T: NativeElement> {
     vector: &'vec Vector<'vec, T>,
     cached: CachedReader,
 }
 
-impl<T: VectorElement> std::fmt::Debug for VectorReader<'_, T> {
+impl<T: NativeElement> std::fmt::Debug for VectorReader<'_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("VectorReader")
             .field("len", &self.len())
@@ -46,7 +46,7 @@ impl<T: VectorElement> std::fmt::Debug for VectorReader<'_, T> {
     }
 }
 
-impl<T: VectorElement> Clone for VectorReader<'_, T> {
+impl<T: NativeElement> Clone for VectorReader<'_, T> {
     #[inline]
     fn clone(&self) -> Self {
         Self {
@@ -143,7 +143,7 @@ impl ReaderStorage {
     }
 }
 
-impl<'vec, T: VectorElement> VectorReader<'vec, T> {
+impl<'vec, T: NativeElement> VectorReader<'vec, T> {
     pub(super) fn new(vector: &'vec Vector<'vec, T>) -> Result<Self> {
         let cached = *vector.view()?.ok_or_else(other_not_readable)?;
         vector.cache_children()?;
@@ -180,13 +180,13 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
     /// Return the physical data pointer, or null; invalidated when the vector is resized, reshaped, or destroyed.
     /// Map rows through [`Self::selection`] and check [`Self::validity`] before dereferencing.
     #[inline(always)]
-    pub fn as_ptr(&self) -> *const T::Internal<'vec> {
+    pub fn as_ptr(&self) -> *const T::Native<'vec> {
         self.view().data.cast()
     }
 
     /// # Safety
-    /// Borrow physical storage only if all slots, including NULL/unselected ones, are initialized as `T::Internal<'vec>`.
-    pub unsafe fn as_slice(&self) -> Option<&'vec [T::Internal<'vec>]> {
+    /// Borrow physical storage only if all slots, including NULL/unselected ones, are initialized as `T::Native<'vec>`.
+    pub unsafe fn as_slice(&self) -> Option<&'vec [T::Native<'vec>]> {
         // SAFETY: The caller guarantees all physical slots are initialized.
         if self.view().data.is_null() {
             None
@@ -248,7 +248,7 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
     /// prepared, and `logical` must be within the child's logical rows.
     #[doc(hidden)]
     #[inline(always)]
-    pub unsafe fn get_child_value_unchecked<U: VectorElement>(
+    pub unsafe fn get_child_value_unchecked<U: NativeElement>(
         &self,
         child_index: usize,
         logical: usize,
@@ -260,7 +260,7 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
     /// # Safety
     /// `index` must name a child validated as `U`.
     #[inline(always)]
-    pub(crate) unsafe fn child_reader<U: VectorElement>(&self, index: usize) -> VectorReader<'vec, U> {
+    pub(crate) unsafe fn child_reader<U: NativeElement>(&self, index: usize) -> VectorReader<'vec, U> {
         let child = self
             .vector
             .children()
@@ -392,12 +392,12 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
 
 /// Iterates over the logical rows of a prepared [`VectorReader`].
 #[derive(Debug)]
-pub struct VectorReaderIter<'vec, T: VectorElement> {
+pub struct VectorReaderIter<'vec, T: NativeElement> {
     reader: VectorReader<'vec, T>,
     rows: Range<usize>,
 }
 
-impl<'vec, T: VectorElement + 'vec> Iterator for VectorReaderIter<'vec, T> {
+impl<'vec, T: NativeElement + 'vec> Iterator for VectorReaderIter<'vec, T> {
     type Item = Option<T::Ref<'vec>>;
 
     #[inline(always)]
@@ -418,11 +418,11 @@ impl<'vec, T: VectorElement + 'vec> Iterator for VectorReaderIter<'vec, T> {
     }
 }
 
-impl<T: VectorElement> ExactSizeIterator for VectorReaderIter<'_, T> {}
+impl<T: NativeElement> ExactSizeIterator for VectorReaderIter<'_, T> {}
 
-impl<T: VectorElement> std::iter::FusedIterator for VectorReaderIter<'_, T> {}
+impl<T: NativeElement> std::iter::FusedIterator for VectorReaderIter<'_, T> {}
 
-impl<'vec, T: VectorElement> VectorReaderIter<'vec, T> {
+impl<'vec, T: NativeElement> VectorReaderIter<'vec, T> {
     /// Add row numbers like [`Iterator::enumerate`], numbering the remaining rows from zero.
     /// Unlike [`std::iter::Enumerate`], it always inlines into large loops.
     pub fn enumerate(self) -> EnumeratedVectorReaderIter<'vec, T> {
@@ -433,12 +433,12 @@ impl<'vec, T: VectorElement> VectorReaderIter<'vec, T> {
 
 /// Row-numbered adapter returned by [`VectorReaderIter::enumerate`].
 #[derive(Debug)]
-pub struct EnumeratedVectorReaderIter<'vec, T: VectorElement> {
+pub struct EnumeratedVectorReaderIter<'vec, T: NativeElement> {
     inner: VectorReaderIter<'vec, T>,
     origin: usize,
 }
 
-impl<'vec, T: VectorElement + 'vec> Iterator for EnumeratedVectorReaderIter<'vec, T> {
+impl<'vec, T: NativeElement + 'vec> Iterator for EnumeratedVectorReaderIter<'vec, T> {
     type Item = (usize, Option<T::Ref<'vec>>);
 
     #[inline(always)]
@@ -464,9 +464,9 @@ impl<'vec, T: VectorElement + 'vec> Iterator for EnumeratedVectorReaderIter<'vec
     }
 }
 
-impl<T: VectorElement> ExactSizeIterator for EnumeratedVectorReaderIter<'_, T> {}
+impl<T: NativeElement> ExactSizeIterator for EnumeratedVectorReaderIter<'_, T> {}
 
-impl<T: VectorElement> std::iter::FusedIterator for EnumeratedVectorReaderIter<'_, T> {}
+impl<T: NativeElement> std::iter::FusedIterator for EnumeratedVectorReaderIter<'_, T> {}
 
 #[cfg(test)]
 mod tests;
