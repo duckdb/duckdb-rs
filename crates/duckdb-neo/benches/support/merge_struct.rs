@@ -136,43 +136,15 @@ fn copy_unions(
         "UNION row count differs from the input chunk".to_owned()
     })?;
 
-    let parent_validity = {
-        let mut writer = field.writer()?;
-        // SAFETY: every row and its members are written or nulled below.
-        unsafe {
-            writer.fill_validity(true)?;
-            writer.validity_mut()?.as_mut_ptr()
-        }
-    };
-    let mut output_children = field.children_mut().unwrap();
-    let [tag_vector, number_vector, string_vector] = output_children.get_vector_array_mut([0, 1, 2])?;
-    let mut tag_vector = tag_vector.cast::<u8>()?;
-    let mut number_vector = number_vector.cast::<i32>()?;
-    let mut string_vector = string_vector.cast::<String>()?;
-    let mut tag_field = tag_vector.writer()?;
-    let mut number_field = number_vector.writer()?;
-    let mut string_field = string_vector.writer()?;
-
+    let mut writer = field.union_writer::<(i32, String)>()?;
     for row in 0..parent.len() {
         if parent.is_null(row)? {
-            // SAFETY: the parent's mask stays allocated; the in-bounds row and all members become NULL.
-            unsafe { *parent_validity.add(row / 64) &= !(1u64 << (row % 64)) };
-            tag_field.set(row, None)?;
-            number_field.set(row, None)?;
-            string_field.set(row, None)?;
+            writer.set_null(row)?;
             continue;
         }
         match tags.get(row)? {
-            Some(&0) => {
-                tag_field.set(row, Some(&0))?;
-                number_field.set(row, numbers.get(row)?)?;
-                string_field.set(row, None)?;
-            }
-            Some(&1) => {
-                tag_field.set(row, Some(&1))?;
-                number_field.set(row, None)?;
-                string_field.set(row, strings.get(row)?)?;
-            }
+            Some(&0) => writer.set::<0>(row, numbers.get(row)?)?,
+            Some(&1) => writer.set::<1>(row, strings.get(row)?)?,
             _ => return Err(Error::invalid_input("invalid UNION tag")),
         }
     }

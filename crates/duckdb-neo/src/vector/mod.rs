@@ -113,11 +113,13 @@ mod init;
 mod list_writer;
 mod map_writer;
 mod reader;
+mod union_writer;
 mod writer;
 
 pub use child::ChildVector;
 pub use list_writer::{Elements, ListWriter};
 pub use map_writer::MapWriter;
+pub use union_writer::{UnionMember, UnionMembers, UnionWriter};
 
 #[doc(hidden)]
 pub use combined::VectorReaderTuple;

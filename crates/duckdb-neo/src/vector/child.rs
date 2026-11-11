@@ -1,6 +1,6 @@
 use std::ops::Deref;
 
-use super::{ListWriter, MapWriter, Unknown, Vector, VectorElement, VectorWriter};
+use super::{ListWriter, MapWriter, UnionMembers, UnionWriter, Unknown, Vector, VectorElement, VectorWriter};
 use crate::{
     Result,
     data_chunk::ChildrenMut,
@@ -79,6 +79,11 @@ impl<T: VectorElement> ChildVector<'_, T> {
     /// See [`Vector::children_mut`].
     pub fn children_mut(&mut self) -> Option<ChildrenMut<'_>> {
         self.0.children_mut()
+    }
+
+    /// See [`Vector::union_writer`].
+    pub fn union_writer<M: UnionMembers>(&mut self) -> Result<UnionWriter<'_, M>> {
+        self.0.union_writer()
     }
 }
 

@@ -71,12 +71,13 @@ impl<T: VectorElement> Vector<'_, T> {
     }
 
     /// Mark rows NULL, including the descendants a NULL `STRUCT` or `ARRAY` row requires.
-    fn null_rows(&mut self, start: usize, end: usize) -> Result<()> {
-        let validity = check_api_call!(ffi::duckdb_v2_vector_flat_get_validity_mutable, self.handle, RET)?;
-        for row in start..end {
-            // SAFETY: the mask covers every reserved row.
-            unsafe { *validity.add(row / 64) &= !(1u64 << (row % 64)) };
+    pub(super) fn null_rows(&mut self, start: usize, end: usize) -> Result<()> {
+        if start >= end {
+            return Ok(());
         }
+        let validity = check_api_call!(ffi::duckdb_v2_vector_flat_get_validity_mutable, self.handle, RET)?;
+        // SAFETY: the mask covers every reserved row.
+        unsafe { clear_bits(validity, start, end) };
         // Allocating the mask can replace the cached view's validity pointer.
         self.view.take();
         let size = match self.logical_type.id()? {
@@ -90,5 +91,25 @@ impl<T: VectorElement> Vector<'_, T> {
             }
         }
         Ok(())
+    }
+}
+
+/// Clear bits `start..end`, a whole word at a time where possible.
+///
+/// # Safety
+/// The mask must cover bit `end - 1`, and `start < end`.
+unsafe fn clear_bits(validity: *mut u64, start: usize, end: usize) {
+    let (first, last) = (start / 64, (end - 1) / 64);
+    let low = u64::MAX << (start % 64);
+    let high = u64::MAX >> (63 - (end - 1) % 64);
+    // SAFETY: the caller guarantees the bits are within the mask.
+    unsafe {
+        if first == last {
+            *validity.add(first) &= !(low & high);
+            return;
+        }
+        *validity.add(first) &= !low;
+        std::slice::from_raw_parts_mut(validity.add(first + 1), last - first - 1).fill(0);
+        *validity.add(last) &= !high;
     }
 }
