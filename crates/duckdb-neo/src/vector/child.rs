@@ -1,12 +1,13 @@
 use std::ops::Deref;
 
 use super::{
-    ListWriter, MapWriter, NativeElement, UnionWriter, UnionWriters, Unknown, Vector, VectorWriter, WithWriter,
+    ArrayWriter, ListWriter, MapWriter, NativeElement, UnionWriter, UnionWriters, Unknown, Vector, VectorWriter,
+    WithWriter,
 };
 use crate::{
     Result,
     data_chunk::ChildrenMut,
-    types::{List, Map},
+    types::{Array, List, Map},
     value::Value,
 };
 
@@ -156,6 +157,13 @@ impl<K: WithWriter, V: WithWriter> ChildVector<'_, Map<K, V>> {
     /// See [`Vector::map_writer`].
     pub fn map_writer(&mut self) -> Result<MapWriter<'_, K, V>> {
         self.0.map_writer()
+    }
+}
+
+impl<T: WithWriter, const N: usize> ChildVector<'_, Array<T, N>> {
+    /// See [`Vector::array_writer`].
+    pub fn array_writer(&mut self) -> Result<ArrayWriter<'_, T, N>> {
+        self.0.array_writer()
     }
 }
 

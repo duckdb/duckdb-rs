@@ -254,4 +254,21 @@ mod tests {
         }
         Ok(())
     }
+
+    #[test]
+    fn child_arrays_have_array_writers() -> Result<()> {
+        use crate::logical_type::LogicalType;
+        let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+        let logical_type = LogicalType::from_text(&conn, "STRUCT(pair INTEGER[2])")?;
+        let mut chunk = DataChunk::create(&conn, &[logical_type], true)?;
+        let mut vector = chunk.get_vector_at_mut::<crate::types::Struct>(0)?;
+        vector.set_size(1)?;
+        {
+            let mut children = vector.children_mut().unwrap();
+            let mut pairs = children.get_vector_at_mut::<Array<i32, 2>>(0)?;
+            pairs.array_writer()?.set(0, &Array([Some(1), None]))?;
+        }
+        assert_eq!(vector.get_value_slow(0)?.dbg_string()?, "{'pair': [1, NULL]}");
+        Ok(())
+    }
 }
