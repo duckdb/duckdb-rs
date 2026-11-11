@@ -1,7 +1,7 @@
 use super::{RowReader, Vector, VectorReader, WithReader};
 use crate::{
     Result,
-    types::{Array, List, ListIndex, Map, Struct},
+    types::{Array, List, ListIndex, Map, Union},
 };
 
 /// Reads `LIST` rows, with the element reader prepared once.
@@ -383,7 +383,7 @@ impl<T: WithReader, const N: usize> WithReader for Array<T, N> {
     }
 }
 
-impl WithReader for Struct {
+impl WithReader for Union {
     type Reader<'a> = VectorReader<'a, Self>;
 
     fn row_reader<'a>(vector: &'a Vector<'a, Self>) -> Result<Self::Reader<'a>> {

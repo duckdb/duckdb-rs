@@ -220,4 +220,31 @@ mod tests {
         assert_eq!(indices, [Some(1), None, Some(2), Some(0)]);
         Ok(())
     }
+
+    #[test]
+    fn enum_indices_compose_into_lists() -> Result<()> {
+        use crate::{
+            types::List,
+            vector::{RowReader, RowWriter},
+        };
+        let conn = connection()?;
+        let list = LogicalType::from_text(&conn, "ENUM('a', 'b', 'c')[]")?;
+        let mut chunk = DataChunk::create(&conn, &[list], true)?;
+        let mut vector = chunk.get_vector_at_mut::<List<EnumIndex<u8>>>(0)?;
+        vector.set_size(1)?;
+        {
+            let mut writer = vector.list_writer()?;
+            writer.set(0, &List(vec![Some(EnumIndex(2)), None, Some(EnumIndex(0))]))?;
+            assert!(writer.set(0, &List(vec![Some(EnumIndex(3))])).is_err());
+        }
+        assert_eq!(vector.get_value_slow(0)?.dbg_string()?, "[c, NULL, a]");
+        let reader = vector.list_reader()?;
+        let row = reader.get(0)?.unwrap();
+        let indices = row
+            .iter()
+            .map(|index| index.map(|index| index.index()))
+            .collect::<Vec<_>>();
+        assert_eq!(indices, [Some(2), None, Some(0)]);
+        Ok(())
+    }
 }

@@ -465,4 +465,28 @@ mod tests {
         assert!((1..100).all(|index| row.get(index) == Some(Some(""))));
         Ok(())
     }
+
+    #[test]
+    fn untyped_structs_and_unions_compose_into_lists() -> Result<()> {
+        use crate::{
+            logical_type::LogicalType,
+            types::{Struct, Union},
+            vector::RowReader,
+        };
+        let conn = connection()?;
+        let structs = LogicalType::from_text(&conn, "STRUCT(a INTEGER)[]")?;
+        let unions = LogicalType::from_text(&conn, "UNION(n INTEGER, s VARCHAR)[]")?;
+        let mut chunk = DataChunk::create(&conn, &[structs, unions], true)?;
+        let mut vector = chunk.get_vector_at_mut::<List<Struct>>(0)?;
+        vector.set_size(1)?;
+        vector.list_writer()?.set_elements(0, [Some(&()), None])?;
+        assert_eq!(vector.get_value_slow(0)?.dbg_string()?, "[{'a': 0}, NULL]");
+        let reader = vector.list_reader()?;
+        assert_eq!(reader.get(0)?.unwrap().iter().collect::<Vec<_>>(), [Some(()), None]);
+        let mut unions = chunk.get_vector_at_mut::<List<Union>>(1)?;
+        unions.set_size(1)?;
+        let reader = unions.list_reader()?;
+        assert_eq!(reader.get(0)?.unwrap().len(), 0);
+        Ok(())
+    }
 }

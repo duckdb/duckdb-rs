@@ -259,7 +259,7 @@ leaf_rows!(
     [const WIDTH: u8, const SCALE: u8] Decimal<WIDTH, SCALE> where [Width<WIDTH>: DecimalWidth],
     [] DateValue, [] TimeValue, [] TimeNsValue, [] TimeTzValue, [] TimestampValue, [] TimestampSecValue,
     [] TimestampMsValue, [] TimestampNsValue, [] TimestampTzValue, [] TimestampTzNsValue, [] IntervalValue,
-    [] UuidValueRaw, [] Variant,
+    [] UuidValueRaw, [] Variant, [T: EnumStorage] EnumIndex<T>, [] Struct,
 );
 
 #[cfg(feature = "uuid")]
