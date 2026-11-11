@@ -210,6 +210,15 @@ impl VectorCollection {
         self.complete.set(false);
     }
 
+    /// Refresh every cached child after its parent was resized or written, keeping the wrappers.
+    pub(crate) fn refresh_cached(&mut self) -> Result<()> {
+        for vector in self.cache.iter_mut().filter_map(OnceCell::get_mut) {
+            vector.refresh_from_handle()?;
+        }
+        self.complete.set(false);
+        Ok(())
+    }
+
     /// Drop every cached view after an operation that may have changed the vectors.
     pub(crate) fn evict_all(&mut self) {
         self.cache.iter_mut().for_each(|slot| drop(slot.take()));

@@ -285,14 +285,23 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         self.access == Access::Writable
     }
 
-    /// Drop the cached view, arena and child wrappers after a state change, e.g. set_size.
+    /// Drop the cached view and arena after a state change, e.g. set_size, and refresh the children in place.
+    ///
+    /// DuckDB keeps child vectors when it resizes or writes their parent, so child wrappers, and writers
+    /// pointing to them, stay valid; only their sizes and buffers change.
     fn refresh_buffers(&mut self) -> Result<()> {
         self.view.take();
         self.heap = None;
         if let Some(children) = &mut self.children {
-            children.evict_all();
+            children.refresh_cached()?;
         }
         Ok(())
+    }
+
+    /// Re-read this child's size and drop its buffers after its parent changed.
+    pub(crate) fn refresh_from_handle(&mut self) -> Result<()> {
+        self.len = vector_len(self.handle)?;
+        self.refresh_buffers()
     }
 
     pub(crate) fn cast_unchecked<U: VectorElement>(self) -> Vector<'a, U> {

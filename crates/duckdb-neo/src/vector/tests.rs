@@ -3127,3 +3127,22 @@ fn set_size_reinitializes_rows_after_shrinking() -> crate::Result<()> {
     assert_eq!(reader.get(1)?, None);
     Ok(())
 }
+
+#[test]
+fn set_size_refreshes_cached_children_in_place() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[GrownRow::logical_type(&conn)?], true)?;
+    let mut rows = chunk.get_vector_at_mut::<GrownRow>(0)?;
+    rows.set_size(2)?;
+    let before = rows.children().unwrap().get_untyped_vector_at(0)? as *const Vector<'_, super::Unknown> as usize;
+    assert_eq!(rows.children().unwrap().get_untyped_vector_at(0)?.len(), 2);
+    rows.set_size(3000)?;
+    let names = rows.children().unwrap().get_untyped_vector_at(0)?;
+    assert_eq!(before, names as *const Vector<'_, super::Unknown> as usize);
+    assert_eq!(names.len(), 3000);
+    assert_eq!(names.cast_ref::<String>()?.reader()?.get(2999)?, Some(""));
+    rows.set_size(1)?;
+    assert_eq!(rows.children().unwrap().get_untyped_vector_at(0)?.len(), 1);
+    Ok(())
+}
