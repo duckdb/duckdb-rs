@@ -150,6 +150,7 @@ mod tests {
         data_chunk::DataChunk,
         environment::{Environment, StorageLocation},
         types::DuckDBType,
+        vector::RowReader,
     };
 
     fn dec(text: &str) -> rust_decimal::Decimal {
@@ -241,10 +242,7 @@ mod tests {
         assert!(chunk.get_vector_at::<rust_decimal::Decimal>(5).is_err());
 
         let map = chunk.get_vector_at::<crate::types::Map<i32, rust_decimal::Decimal>>(6)?;
-        assert_eq!(
-            map.reader()?.get(0)?.unwrap().get_index(0),
-            Some((&1, Some(dec("1.21"))))
-        );
+        assert_eq!(map.map_reader()?.get(0)?.unwrap().get(0), Some((&1, Some(dec("1.21")))));
 
         Ok(())
     }
