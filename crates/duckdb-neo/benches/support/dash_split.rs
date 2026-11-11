@@ -134,7 +134,7 @@ impl TableFunctionCallbacks for DashSplit {
                     vector.set_size(parts.len())?;
                     let mut writer = vector.writer()?;
                     for row in 0..parts.len() {
-                        writer.set(row, Some((first_index + row) as i64))?;
+                        writer.set(row, Some(&((first_index + row) as i64)))?;
                     }
                 }
                 _ => {

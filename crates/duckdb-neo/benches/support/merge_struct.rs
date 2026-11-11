@@ -1,8 +1,6 @@
 //! `merge_struct(i, s, m, u, d)`: packs an `INTEGER`, `VARCHAR`, `MAP`, `UNION` and `DECIMAL`
 //! into one `STRUCT`, keeping each argument's NULLs in its field.
 
-use std::collections::HashMap;
-
 use duckdb_neo::{
     AsDuckDBUnion, Error, Parameters, Result,
     connection::{Connection, Context},
@@ -63,7 +61,7 @@ impl ScalarCallbacks for MergeStruct {
             let mut field = fields.get_vector_at_mut::<i32>(0)?;
             let mut writer = field.writer()?;
             for (row, value) in ints.reader()?.iter().enumerate() {
-                writer.set_ref(row, value)?;
+                writer.set(row, value)?;
             }
         }
         {
@@ -75,21 +73,19 @@ impl ScalarCallbacks for MergeStruct {
         }
         {
             let maps = maps.reader()?;
-            let mut field = fields.get_vector_at_mut::<Map<String, i32>>(2)?;
+            let mut field = fields.get_vector_at_mut::<Map<&str, i32>>(2)?;
             let entries = maps.iter().flatten().map(|map| map.len()).sum();
             // SAFETY: the entries the rows below leave unwritten are trimmed afterwards.
             unsafe { field.set_child_size(entries)? };
             {
                 let mut writer = field.writer()?;
                 for (row, map) in maps.iter().enumerate() {
-                    let map = map
-                        .map(|map| {
-                            map.iter()
-                                .map(|(key, value)| Ok((key.ok_or_else(null_key)?, value.copied())))
-                                .collect::<Result<HashMap<_, _>>>()
-                        })
-                        .transpose()?;
-                    writer.set(row, map)?;
+                    let map = map.map(|map| {
+                        map.iter()
+                            .map(|(key, value)| (key, value.copied()))
+                            .collect::<Map<_, _>>()
+                    });
+                    writer.set(row, map.as_ref())?;
                 }
             }
             let written = field.child_offset();
@@ -104,22 +100,18 @@ impl ScalarCallbacks for MergeStruct {
                     UnionInputRef::Num(value) => UnionInput::Num(value.copied()),
                     UnionInputRef::Str(value) => UnionInput::Str(value),
                 });
-                writer.set(row, value)?;
+                writer.set(row, value.as_ref())?;
             }
         }
         {
             let mut field = fields.get_vector_at_mut::<Amount>(4)?;
             let mut writer = field.writer()?;
             for (row, value) in amounts.reader()?.iter().enumerate() {
-                writer.set_ref(row, value)?;
+                writer.set(row, value)?;
             }
         }
         Ok(())
     }
-}
-
-fn null_key() -> Error {
-    Error::invalid_input("MAP key is NULL")
 }
 
 pub fn register(conn: &Connection) -> Result<()> {
@@ -163,8 +155,7 @@ pub fn create_input(conn: &Connection, rows: usize) -> Result<()> {
 
 pub const QUERY: &str = "SELECT merge_struct(i, s, m, u, d) FROM scalar_input";
 
-/// Check `merge_struct` against its arguments over `scalar_input`. MAP entries compare unordered,
-/// since the typed MAP writer takes a `HashMap`.
+/// Check `merge_struct` against its arguments over `scalar_input`, comparing MAP entries unordered.
 pub fn verify(conn: &Connection) -> Result<()> {
     let mismatches = super::query_i64(
         conn,

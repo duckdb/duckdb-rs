@@ -103,8 +103,8 @@ merge_struct(i INTEGER, s VARCHAR, m MAP(VARCHAR, INTEGER),
 - Write the output column by column: size the struct to the row count, mark every struct row valid, then
   write each field's child vector.
   - `m`: size the entries child to the total entry count of the input rows before writing, and trim it to
-    the entries actually written afterwards. Fail on a NULL key. Entry order may change (the Rust writer
-    takes a `HashMap`); the checks compare entries unordered.
+    the entries actually written afterwards. Fail on a NULL key. Entry order may change between APIs;
+    the checks compare entries unordered.
   - `u`: keep the member tag: member 0 (`num`) or member 1 (`str`), with its value or NULL. A NULL union
     row stays NULL.
   - `d`: copy the scaled integer (storage `int64` for width 18).

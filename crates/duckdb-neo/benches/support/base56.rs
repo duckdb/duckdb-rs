@@ -451,7 +451,7 @@ fn decode_column<'f, T>(
     bytes: &mut Vec<u8>,
 ) -> Result<()>
 where
-    T: FixedWidth + VectorElement + for<'w> WritableVectorElement<Write<'w> = T>,
+    T: FixedWidth + VectorElement + WritableVectorElement<Write = T>,
 {
     let mut vector = output.get_vector_at_mut::<T>(index)?;
     vector.set_size(rows)?;
@@ -465,7 +465,7 @@ where
                 Some(T::from_le_bytes(bytes)?)
             }
         };
-        writer.set(row, value)?;
+        writer.set(row, value.as_ref())?;
     }
     Ok(())
 }

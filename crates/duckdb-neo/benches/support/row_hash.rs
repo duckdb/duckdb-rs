@@ -117,7 +117,7 @@ impl AggregateCallbacks for RowHash {
         let mut result = result.cast::<u64>()?;
         let mut writer = result.writer()?;
         for (index, state) in states.iter().enumerate() {
-            writer.set(result_offset + index, (state.rows > 0).then_some(state.hash))?;
+            writer.set(result_offset + index, (state.rows > 0).then_some(&state.hash))?;
         }
         Ok(())
     }

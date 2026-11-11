@@ -26,6 +26,21 @@ fn merge_struct_packs_arguments() -> Result<()> {
 }
 
 #[test]
+fn merge_struct_preserves_null_and_empty_maps() -> Result<()> {
+    let fixture = Fixture::new()?;
+    merge_struct::create_input(&fixture.conn, ROWS)?;
+    fixture.conn.execute(
+        "UPDATE scalar_input SET m = CASE i % 5
+            WHEN 0 THEN NULL
+            WHEN 1 THEN MAP {}::MAP(VARCHAR, INTEGER)
+            WHEN 2 THEN MAP {'nullable': NULL::INTEGER, 'value': i}
+            ELSE m END",
+        Parameters::None,
+    )?;
+    merge_struct::verify(&fixture.conn)
+}
+
+#[test]
 fn merge_struct_preserves_null_unions_and_members() -> Result<()> {
     let fixture = Fixture::new()?;
     merge_struct::create_input(&fixture.conn, ROWS)?;
