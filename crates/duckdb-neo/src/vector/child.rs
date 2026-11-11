@@ -101,6 +101,15 @@ impl<T: NativeElement> ChildVector<'_, List<T>> {
     pub fn set_child_size(&mut self, elements: usize) -> Result<()> {
         self.0.set_child_size(elements)
     }
+
+    /// See [`Vector::set_child_size_uninit`].
+    ///
+    /// # Safety
+    /// As for [`Vector::set_child_size_uninit`].
+    pub unsafe fn set_child_size_uninit(&mut self, elements: usize) -> Result<()> {
+        // SAFETY: the caller upholds the contract of the forwarded call.
+        unsafe { self.0.set_child_size_uninit(elements) }
+    }
 }
 
 impl<T: WithWriter> ChildVector<'_, List<T>> {
@@ -114,6 +123,15 @@ impl<K: NativeElement, V: NativeElement> ChildVector<'_, Map<K, V>> {
     /// Size the entries child, as for a top-level [`Map`] vector.
     pub fn set_child_size(&mut self, entries: usize) -> Result<()> {
         self.0.set_child_size(entries)
+    }
+
+    /// See [`Vector::set_child_size_uninit`].
+    ///
+    /// # Safety
+    /// As for [`Vector::set_child_size_uninit`].
+    pub unsafe fn set_child_size_uninit(&mut self, entries: usize) -> Result<()> {
+        // SAFETY: the caller upholds the contract of the forwarded call.
+        unsafe { self.0.set_child_size_uninit(entries) }
     }
 }
 
