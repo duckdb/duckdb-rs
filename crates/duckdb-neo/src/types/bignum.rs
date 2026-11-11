@@ -39,9 +39,9 @@ impl BigNum {
     fn encoded(&self) -> &[u8] {
         let length = unsafe { self.0.value.inlined.length };
         let bytes = if length <= ffi::DUCKDB_V2_BYTES_INLINE_LENGTH {
-            unsafe { self.0.value.inlined.inlined.as_ptr() as *const u8 }
+            unsafe { self.0.value.inlined.inlined.as_ptr().cast::<u8>() }
         } else {
-            unsafe { self.0.value.pointer.ptr as *const u8 }
+            unsafe { self.0.value.pointer.ptr.cast::<u8>() }
         };
         unsafe { std::slice::from_raw_parts(bytes, length as usize) }
     }
