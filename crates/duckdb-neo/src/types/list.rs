@@ -24,6 +24,11 @@ pub struct ListIndex {
 }
 
 impl ListIndex {
+    /// Create an entry covering `length` child elements from `offset`.
+    pub const fn new(offset: u64, length: u64) -> Self {
+        Self { offset, length }
+    }
+
     /// Return the starting index in the child vector.
     pub fn offset(&self) -> u64 {
         self.offset

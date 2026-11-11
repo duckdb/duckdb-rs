@@ -82,7 +82,9 @@ impl<'writer, T: VectorElement> VectorWriter<'writer, T> {
         unsafe { Self::from_raw(NonNull::from(vector).cast()) }
     }
 
-    unsafe fn from_raw(mut vector: NonNull<Vector<'writer, T>>) -> Result<Self> {
+    /// # Safety
+    /// The vector must stay exclusively borrowed, and not be rewrapped, for the writer's lifetime.
+    pub(super) unsafe fn from_raw(mut vector: NonNull<Vector<'writer, T>>) -> Result<Self> {
         // SAFETY: the caller exclusively borrows this vector for the writer's lifetime.
         let borrowed = unsafe { vector.as_mut() };
         if !borrowed.is_writable() {
@@ -250,6 +252,14 @@ impl<'writer, T: VectorElement> VectorWriter<'writer, T> {
         Ok(())
     }
 
+    /// Resize the vector like [`Vector::set_size`] and reacquire its buffers.
+    pub(super) fn resize(&mut self, len: usize) -> Result<()> {
+        let result = self.vector_mut().set_size(len);
+        self.len = self.vector().len();
+        self.refresh_buffers()?;
+        result
+    }
+
     pub(crate) fn vector(&self) -> &Vector<'writer, T> {
         // SAFETY: construction retains the vector's borrow, and this reference cannot outlive self.
         unsafe { self.vector.as_ref() }
@@ -356,6 +366,29 @@ impl<T: VectorElement> VectorWriter<'_, T> {
         )?;
         self.data = check_api_call!(ffi::duckdb_v2_vector_get_data_mutable, self.vector().raw(), RET)?;
         Ok(())
+    }
+
+    /// Mark rows `start..end` valid, a whole word at a time where possible.
+    ///
+    /// # Safety
+    /// `end` must not exceed [`Self::len`], and the rows must hold initialized values.
+    pub(crate) unsafe fn mark_valid_range(&mut self, start: usize, end: usize) {
+        if start >= end {
+            return;
+        }
+        let (first, last) = (start / 64, (end - 1) / 64);
+        let low = u64::MAX << (start % 64);
+        let high = u64::MAX >> (63 - (end - 1) % 64);
+        // SAFETY: the caller guarantees the rows are within the mask.
+        unsafe {
+            if first == last {
+                *self.validity.add(first) |= low & high;
+                return;
+            }
+            *self.validity.add(first) |= low;
+            std::slice::from_raw_parts_mut(self.validity.add(first + 1), last - first - 1).fill(u64::MAX);
+            *self.validity.add(last) |= high;
+        }
     }
 
     #[inline(always)]

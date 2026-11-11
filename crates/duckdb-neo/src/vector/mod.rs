@@ -110,10 +110,14 @@ pub use crate::{arena::Arena, bytes::DuckDBBytes};
 mod child;
 mod combined;
 mod init;
+mod list_writer;
+mod map_writer;
 mod reader;
 mod writer;
 
 pub use child::ChildVector;
+pub use list_writer::{Elements, ListWriter};
+pub use map_writer::MapWriter;
 
 #[doc(hidden)]
 pub use combined::VectorReaderTuple;

@@ -717,3 +717,39 @@ fn writer_typed_writes_follow_slow_writes() -> Result<()> {
     }
     Ok(())
 }
+
+#[test]
+fn writer_marks_valid_ranges_across_mask_words() -> Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
+    vector.set_size(300)?;
+    for (start, end) in [
+        (0, 0),
+        (5, 5),
+        (0, 1),
+        (3, 64),
+        (0, 64),
+        (63, 65),
+        (10, 200),
+        (64, 128),
+        (1, 300),
+    ] {
+        let mut writer = vector.writer()?;
+        // SAFETY: set_size initialized every row.
+        unsafe {
+            writer.fill_validity(false)?;
+            writer.mark_valid_range(start, end);
+        }
+        let reader = vector.reader()?;
+        for row in 0..300 {
+            assert_eq!(
+                !reader.is_null(row)?,
+                (start..end).contains(&row),
+                "{start}..{end} row {row}"
+            );
+        }
+    }
+    Ok(())
+}

@@ -474,7 +474,8 @@ where
     T: FixedWidth + VectorElement + WritableVectorElement<Write = T>,
 {
     let mut vector = output.get_vector_at_mut::<T>(index)?;
-    vector.set_size(rows)?;
+    // SAFETY: `split_fields` gives every row one field per column, and the loop writes each.
+    unsafe { vector.set_size_uninit(rows)? };
     let mut writer = vector.writer()?;
     for (row, field) in fields.enumerate() {
         let value = match field {
@@ -498,7 +499,8 @@ fn decode_strings<'f>(
     bytes: &mut Vec<u8>,
 ) -> Result<()> {
     let mut vector = output.get_vector_at_mut::<String>(index)?;
-    vector.set_size(rows)?;
+    // SAFETY: `split_fields` gives every row one field per column, and the loop writes each.
+    unsafe { vector.set_size_uninit(rows)? };
     let mut writer = vector.writer()?;
     for (row, field) in fields.enumerate() {
         if field == [NULL_FIELD] {

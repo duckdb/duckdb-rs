@@ -1,6 +1,6 @@
 use std::ops::Deref;
 
-use super::{Unknown, Vector, VectorElement, VectorWriter};
+use super::{ListWriter, MapWriter, Unknown, Vector, VectorElement, VectorWriter};
 use crate::{
     Result,
     data_chunk::ChildrenMut,
@@ -103,6 +103,11 @@ impl<T: VectorElement> ChildVector<'_, List<T>> {
     pub fn set_child_offset(&mut self, offset: usize) -> Result<()> {
         self.0.set_child_offset(offset)
     }
+
+    /// See [`Vector::list_writer`].
+    pub fn list_writer(&mut self) -> Result<ListWriter<'_, T>> {
+        self.0.list_writer()
+    }
 }
 
 impl<K: VectorElement, V: VectorElement> ChildVector<'_, Map<K, V>> {
@@ -118,5 +123,10 @@ impl<K: VectorElement, V: VectorElement> ChildVector<'_, Map<K, V>> {
     /// Continue writes at `offset`, as for a top-level vector.
     pub fn set_child_offset(&mut self, offset: usize) -> Result<()> {
         self.0.set_child_offset(offset)
+    }
+
+    /// See [`Vector::map_writer`].
+    pub fn map_writer(&mut self) -> Result<MapWriter<'_, K, V>> {
+        self.0.map_writer()
     }
 }

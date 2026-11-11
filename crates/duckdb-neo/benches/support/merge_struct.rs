@@ -6,7 +6,6 @@ use duckdb_neo::{
     connection::{Connection, Context},
     data_chunk::VectorCollection,
     enums::FunctionProperty,
-    ffi,
     logical_type::LogicalType,
     scalar::{ScalarCallbacks, ScalarFunctionBuilder},
     signature::{FunctionParameter, SignatureBuilder},
@@ -51,9 +50,11 @@ impl ScalarCallbacks for MergeStruct {
         let amounts = readable::<Amount>(amounts)?;
 
         let mut output = output.cast::<Struct>()?;
-        output.set_size(rows)?;
         // SAFETY: every field of every row is written below.
-        unsafe { output.writer()?.fill_validity(true)? };
+        unsafe {
+            output.set_size_uninit(rows)?;
+            output.writer()?.fill_validity(true)?;
+        }
         let mut fields = output
             .children_mut()
             .ok_or_else(|| Error::invalid_input("merge_struct output has no fields"))?;
@@ -102,56 +103,22 @@ fn copy_maps(
     super::ensure(parent.len() == rows, || {
         "MAP row count differs from the input chunk".to_owned()
     })?;
-    // SAFETY: every reserved entry is written through the key/value writers below.
-    unsafe { field.set_child_size(entries)? };
-    let (entry_data, parent_validity) = {
-        let mut writer = field.writer()?;
-        let data = writer.as_mut_ptr().cast::<ffi::duckdb_v2_list_entry>();
-        // SAFETY: every row descriptor is written below; NULL rows are invalidated.
-        unsafe {
-            writer.fill_validity(true)?;
-            (data, writer.validity_mut()?.as_mut_ptr())
+    let mut writer = field.map_writer()?;
+    writer.reserve(entries)?;
+    for row in 0..parent.len() {
+        let Some(entry) = parent.get_list_entry(row)? else {
+            writer.set_null(row)?;
+            continue;
+        };
+        for index in entry.offset() as usize..(entry.offset() + entry.length()) as usize {
+            let key = keys
+                .get(index)?
+                .ok_or_else(|| Error::invalid_input("MAP key is NULL"))?;
+            writer.push(key, values.get(index)?)?;
         }
-    };
-    let mut written = 0;
-    {
-        let mut children = field.children_mut().unwrap();
-        let mut output_entries = children.get_vector_at_mut::<Struct>(0)?;
-        // SAFETY: MAP entries are non-NULL structs, with both fields initialized below.
-        unsafe { output_entries.writer()?.fill_validity(true)? };
-        let mut output_fields = output_entries.children_mut().unwrap();
-        let [key_vector, value_vector] = output_fields.get_vector_array_mut([0, 1])?;
-        let mut key_vector = key_vector.cast::<String>()?;
-        let mut value_vector = value_vector.cast::<i32>()?;
-        let mut key_field = key_vector.writer()?;
-        let mut value_field = value_vector.writer()?;
-        for row in 0..parent.len() {
-            let offset = written;
-            let entry = parent.get_list_entry(row)?;
-            if let Some(entry) = entry {
-                for index in entry.offset()..entry.offset() + entry.length() {
-                    let key = keys
-                        .get(index as usize)?
-                        .ok_or_else(|| Error::invalid_input("MAP key is NULL"))?;
-                    key_field.set(written, Some(key))?;
-                    value_field.set(written, values.get(index as usize)?)?;
-                    written += 1;
-                }
-            } else {
-                // SAFETY: the in-bounds parent's mask is stable; MAP NULLs do not null shared entries.
-                unsafe { *parent_validity.add(row / 64) &= !(1u64 << (row % 64)) };
-            }
-            // SAFETY: this in-bounds descriptor covers only the initialized entries just written.
-            unsafe {
-                entry_data.add(row).write(ffi::duckdb_v2_list_entry {
-                    offset: offset as u64,
-                    length: (written - offset) as u64,
-                });
-            }
-        }
+        writer.finish_row(row)?;
     }
-    field.set_child_offset(written)?;
-    Ok(())
+    writer.finish()
 }
 
 #[inline(never)]
