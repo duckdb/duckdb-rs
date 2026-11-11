@@ -28,5 +28,3 @@ crates/libduckdb-sys/._duckdb
 
 .duckdb_rs_history
 *.duckdb_extension
-
-*cpp*

@@ -129,11 +129,12 @@ fn combined_iterator_handles_large_and_null_constants() -> Result<()> {
     }
     drop(constant);
     drop(flat);
-    let [constant, flat] = chunk.get_vector_array_mut([0, 1])?;
-    let constant = constant
-        .cast::<i32>()?
+    // The constant column is not writable output, so make the NULL constant in a new chunk.
+    let mut nulls = DataChunk::create(&conn, &types[..1], true)?;
+    let constant = nulls
+        .get_vector_at_mut::<i32>(0)?
         .make_constant(Value::null(&conn, &types[0])?, count)?;
-    let flat = flat.cast::<i64>()?;
+    let flat = chunk.get_vector_at::<i64>(1)?;
     let flat = flat.reader()?;
     for (index, (constant, flat)) in CombinedVectorIterator::new((constant.reader()?, flat))?.enumerate() {
         assert_eq!(constant, None);

@@ -1,5 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
+use syn::ext::IdentExt;
 
 use super::struct_fields::{
     ContainerAttributes, StructFields, bounded_generics, container_attributes, fresh_type_ident, option_inner_type,
@@ -132,19 +133,22 @@ pub(crate) fn as_native_element(input: &syn::DeriveInput) -> syn::Result<TokenSt
             ::core::result::Result::Ok(true)
         },
     );
-    let rows = struct_rows(input, &fields, &types, attributes);
+    let rows = struct_rows(input, &fields, &types, attributes)?;
     Ok(quote! {
         #native
         #rows
     })
 }
 
+/// Reader methods that a field accessor of the same name would shadow or duplicate.
+const READER_METHODS: [&str; 7] = ["new", "len", "is_empty", "is_null", "get", "get_unchecked", "iter"];
+
 fn struct_rows(
     input: &syn::DeriveInput,
     fields: &StructFields<'_>,
     types: &[&syn::Type],
     attributes: ContainerAttributes,
-) -> TokenStream {
+) -> syn::Result<TokenStream> {
     let ident = &input.ident;
     let vis = &input.vis;
     let field_idents = &fields.idents;
@@ -166,6 +170,23 @@ fn struct_rows(
         let element_generics = bounded_generics(input, types, &bound);
         let (element_impl_generics, _, element_where_clause) = element_generics.split_for_impl();
         let params = item_params(input, types.len());
+        for (field, ident) in fields.fields.iter().zip(field_idents) {
+            let name = ident.unraw().to_string();
+            if READER_METHODS.contains(&name.as_str()) {
+                return Err(syn::Error::new_spanned(
+                    field,
+                    format!(
+                        "reader accessor `{name}` collides with a reader method; rename the Rust field and keep \
+                         its SQL name with #[duckdb(rename = \"{name}\")]"
+                    ),
+                ));
+            }
+        }
+        let field_indexes = indexes.iter().map(|index| syn::Index::from(*index)).collect::<Vec<_>>();
+        let accessor_docs = field_idents
+            .iter()
+            .map(|ident| format!("Borrow the reader of field `{}`, for columnar reads.", ident.unraw()))
+            .collect::<Vec<_>>();
         output.extend(quote! {
             #[doc = #ref_doc]
             #[derive(::core::fmt::Debug, ::core::clone::Clone, ::core::marker::Copy, ::core::cmp::PartialEq, ::core::cmp::Eq, ::core::hash::Hash)]
@@ -175,8 +196,10 @@ fn struct_rows(
 
             #[doc = #reader_doc]
             #vis struct #reader_ident #generics #where_clause {
-                rows: ::duckdb_neo::vector::VectorReader<#lifetime, #ident #type_generics>,
-                #(#field_vis #field_idents: <#types as #bound>::Reader<#lifetime>,)*
+                parts: ::duckdb_neo::__derive::ReaderParts<
+                    ::duckdb_neo::vector::VectorReader<#lifetime, #ident #type_generics>,
+                    (#(<#types as #bound>::Reader<#lifetime>,)*),
+                >,
             }
 
             impl #impl_generics #reader_ident #reader_generics #where_clause {
@@ -184,20 +207,29 @@ fn struct_rows(
                 pub fn new(
                     vector: &#lifetime ::duckdb_neo::vector::Vector<#lifetime, #ident #type_generics>,
                 ) -> ::duckdb_neo::Result<Self> {
+                    let rows = vector.reader()?;
+                    // SAFETY: validation checked every child as its field's type.
+                    let fields = (#(unsafe {
+                        ::duckdb_neo::__derive::child_reader::<#ident #type_generics, #types>(vector, #indexes)?
+                    },)*);
                     ::core::result::Result::Ok(Self {
-                        rows: vector.reader()?,
-                        // SAFETY: validation checked every child as its field's type.
-                        #(#field_idents: unsafe {
-                            ::duckdb_neo::__derive::child_reader::<#ident #type_generics, #types>(vector, #indexes)?
-                        },)*
+                        // SAFETY: DuckDB sizes every field of a STRUCT like the STRUCT itself.
+                        parts: unsafe { ::duckdb_neo::__derive::ReaderParts::new(rows, fields) },
                     })
                 }
+
+                #(
+                    #[doc = #accessor_docs]
+                    #field_vis fn #field_idents(&self) -> &<#types as #bound>::Reader<#lifetime> {
+                        &self.parts.fields().#field_indexes
+                    }
+                )*
             }
 
             impl #impl_generics ::core::fmt::Debug for #reader_ident #reader_generics #where_clause {
                 fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                     f.debug_struct(::core::stringify!(#reader_ident))
-                        .field("len", &::duckdb_neo::vector::RowReader::len(&self.rows))
+                        .field("len", &::duckdb_neo::vector::RowReader::len(self.parts.rows()))
                         .finish()
                 }
             }
@@ -208,20 +240,21 @@ fn struct_rows(
                 > where Self: #item_lifetime;
 
                 fn len(&self) -> ::core::primitive::usize {
-                    ::duckdb_neo::vector::RowReader::len(&self.rows)
+                    ::duckdb_neo::vector::RowReader::len(self.parts.rows())
                 }
 
                 fn is_null(&self, row: ::core::primitive::usize) -> ::duckdb_neo::Result<::core::primitive::bool> {
-                    ::duckdb_neo::vector::RowReader::is_null(&self.rows, row)
+                    ::duckdb_neo::vector::RowReader::is_null(self.parts.rows(), row)
                 }
 
                 #[inline]
                 unsafe fn get_unchecked(&self, row: ::core::primitive::usize) -> ::core::option::Option<Self::Item<'_>> {
                     // SAFETY: the caller guarantees bounds; every field has one row per parent row.
                     unsafe {
-                        ::duckdb_neo::__derive::get_unchecked(&self.rows, row)?;
+                        ::duckdb_neo::__derive::get_unchecked(self.parts.rows(), row)?;
+                        let fields = self.parts.fields();
                         ::core::option::Option::Some(#ref_ident {
-                            #(#field_idents: ::duckdb_neo::__derive::get_unchecked(&self.#field_idents, row),)*
+                            #(#field_idents: ::duckdb_neo::__derive::get_unchecked(&fields.#field_indexes, row),)*
                         })
                     }
                 }
@@ -378,7 +411,7 @@ fn struct_rows(
             }
         });
     }
-    output
+    Ok(output)
 }
 
 #[cfg(test)]
@@ -445,6 +478,31 @@ mod tests {
                 "WithWriter for Row"
             ]
         );
+    }
+
+    #[test]
+    fn reader_accessors_must_not_collide() {
+        let input = syn::parse_quote!(
+            #[duckdb(reader)]
+            struct Row {
+                len: i32,
+            }
+        );
+        assert!(
+            as_native_element(&input)
+                .unwrap_err()
+                .to_string()
+                .starts_with("reader accessor `len` collides with a reader method")
+        );
+        let renamed = syn::parse_quote!(
+            #[duckdb(reader)]
+            struct Row {
+                #[duckdb(rename = "len")]
+                length: i32,
+                rows: i32,
+            }
+        );
+        assert!(as_native_element(&renamed).is_ok());
     }
 
     #[test]

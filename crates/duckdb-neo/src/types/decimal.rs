@@ -62,11 +62,11 @@ macro_rules! decimal_storage {
                 }
             }
 
-            // SAFETY: `validate` accepts only the widths DuckDB stores as `$type`.
+            // SAFETY: `validate` accepts only the widths DuckDB stores as `$type`, which `$name` wraps.
             unsafe impl NativeElement for $name {
                 const TYPE_ID: LogicalTypeID = LogicalTypeID::Decimal;
 
-                type Native<'a> = $type;
+                type Native<'a> = $name;
 
                 fn validate(other: &LogicalType, _children: Option<&VectorCollection>) -> Result<bool> {
                     if other.id()? != Self::TYPE_ID {
@@ -243,14 +243,14 @@ where
     }
 }
 
-// SAFETY: `validate` accepts only `DECIMAL(WIDTH, SCALE)`, which DuckDB stores as `Native`.
+// SAFETY: `validate` accepts only `DECIMAL(WIDTH, SCALE)`, which DuckDB stores as the wrapped `Storage`.
 unsafe impl<const WIDTH: u8, const SCALE: u8> NativeElement for Decimal<WIDTH, SCALE>
 where
     Width<WIDTH>: DecimalWidth,
 {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Decimal;
 
-    type Native<'a> = <Width<WIDTH> as DecimalWidth>::Storage;
+    type Native<'a> = Self;
 
     fn validate(other: &LogicalType, _children: Option<&VectorCollection>) -> Result<bool> {
         if other.id()? != Self::TYPE_ID {

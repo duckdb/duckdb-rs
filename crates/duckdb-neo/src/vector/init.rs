@@ -1,6 +1,6 @@
 //! Initialization of rows a resize exposes, so safe reads never see uninitialized storage.
 
-use super::{NativeElement, Vector};
+use super::{NativeElement, Vector, out_of_bounds};
 use crate::{
     Result, check_api_call, ffi,
     logical_type::{LogicalType, LogicalTypeID},
@@ -56,6 +56,7 @@ impl<T: NativeElement> Vector<'_, T> {
         if start >= end {
             return Ok(());
         }
+        self.check_rows(end)?;
         match fill(&self.logical_type)? {
             Fill::Zero(size) => {
                 let data = check_api_call!(ffi::duckdb_v2_vector_get_data_mutable, self.handle, RET)?.cast::<u8>();
@@ -89,6 +90,7 @@ impl<T: NativeElement> Vector<'_, T> {
         if start >= end {
             return Ok(());
         }
+        self.check_rows(end)?;
         let validity = check_api_call!(ffi::duckdb_v2_vector_flat_get_validity_mutable, self.handle, RET)?;
         // SAFETY: the mask covers every reserved row.
         unsafe { clear_bits(validity, start, end) };
@@ -103,6 +105,15 @@ impl<T: NativeElement> Vector<'_, T> {
             for child in children.cached_iter_mut()? {
                 child.null_rows(start * size, end * size)?;
             }
+        }
+        Ok(())
+    }
+}
+
+impl<T: NativeElement> Vector<'_, T> {
+    fn check_rows(&self, end: usize) -> Result<()> {
+        if end > self.len {
+            return Err(out_of_bounds(end - 1, self.len));
         }
         Ok(())
     }

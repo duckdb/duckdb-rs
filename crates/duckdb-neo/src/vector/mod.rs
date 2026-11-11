@@ -122,6 +122,16 @@ pub(crate) enum Access {
     Writable,
 }
 
+impl Access {
+    /// Downgrade writable access for storage other than flat, whose buffers cannot hold every row.
+    pub(crate) fn for_kind(self, kind: StorageKind) -> Self {
+        match (self, kind) {
+            (Self::Writable, StorageKind::Flat) | (Self::Shared | Self::Exclusive, _) => self,
+            (Self::Writable, _) => Self::Exclusive,
+        }
+    }
+}
+
 /// A typed view of a DuckDB vector borrowed from its owning data chunk.
 ///
 /// Storage representation and writability are runtime properties. Casting only
@@ -172,6 +182,7 @@ impl<'a, T: NativeElement> Vector<'a, T> {
         let kind =
             check_api_call!(ffi::duckdb_v2_vector_get_vector_type, *handle, RET).map(StorageKind::try_from)??;
         let len = check_api_call!(ffi::duckdb_v2_vector_get_size, *handle, RET).map(|x| x as usize)?;
+        let access = access.for_kind(kind);
 
         let child_count = check_api_call!(ffi::duckdb_v2_vector_get_child_count, *handle, RET).map(|x| x as usize)?;
         let mut child_handles = Vec::with_capacity(child_count as usize);

@@ -609,7 +609,23 @@ fn derived_vector_preserves_nulls_and_borrows_fields() -> Result<()> {
     assert_eq!(fourth.value, None);
     assert_eq!(vector.row_reader()?.iter().count(), 4);
     assert!(vector.row_reader()?.get(4).is_err());
+    let reader = vector.row_reader()?;
+    assert_eq!(reader.name().len(), 4);
+    assert_eq!(reader.value().get(3)?, None);
     Ok(())
+}
+
+#[test]
+fn derived_null_children_checks_bounds() -> Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[Row::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<Row>(0)?;
+    vector.set_size(1)?;
+    let mut writer = vector.writer()?;
+    assert!(duckdb_neo::__derive::null_children(&mut writer, 1).is_err());
+    assert!(duckdb_neo::__derive::null_children(&mut writer, 100_000).is_err());
+    duckdb_neo::__derive::null_children(&mut writer, 0)
 }
 
 #[test]

@@ -585,18 +585,10 @@ fn vector_write_checks_rows_before_dispatch() -> crate::Result<()> {
     chunk
         .get_vector_at_mut::<i32>(0)?
         .make_constant(42_i32.value(&conn)?, 1)?;
-    assert_eq!(
-        chunk.get_vector_at_mut::<Probe>(0)?.writer().unwrap_err().message,
-        "vector is not flat"
-    );
-    assert_eq!(
-        chunk
-            .get_vector_at_mut::<super::Unknown>(0)?
-            .writer()
-            .unwrap_err()
-            .message,
-        "vector is not flat"
-    );
+    let err = chunk.get_vector_at_mut::<Probe>(0)?.writer().unwrap_err();
+    assert!(err.message.starts_with("vector is not writable"), "{}", err.message);
+    let err = chunk.get_vector_at_mut::<super::Unknown>(0)?.writer().unwrap_err();
+    assert!(err.message.starts_with("vector is not writable"), "{}", err.message);
     Ok(())
 }
 
@@ -664,7 +656,16 @@ fn vector_writer_rejects_non_flat_storage() -> crate::Result<()> {
         .get_vector_at_mut::<i32>(0)?
         .make_constant(42_i32.value(&conn)?, 1)?;
     let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
-    assert_eq!(vector.writer().unwrap_err().message, "vector is not flat");
+    assert!(!vector.is_writable());
+    assert!(vector.set_size(2048).is_err());
+    assert_eq!(vector.len(), 1);
+    assert!(
+        vector
+            .writer()
+            .unwrap_err()
+            .message
+            .starts_with("vector is not writable")
+    );
     assert_eq!(vector.row_reader()?.get(0)?, Some(&42));
     Ok(())
 }

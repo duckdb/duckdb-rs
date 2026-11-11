@@ -156,38 +156,6 @@ fn row_hash_is_order_independent() -> Result<()> {
     row_hash::verify(&fixture.conn)
 }
 
-#[test]
-#[ignore = "requires NEO_BENCH_CPP pointing to the C++ benchmark executable"]
-fn base56_cpp_interoperability() -> Result<()> {
-    let executable = std::env::var("NEO_BENCH_CPP").expect("set NEO_BENCH_CPP to neo_cpp_bench");
-    let fixture = Fixture::new()?;
-    for percent in [0, 10, 100] {
-        base56::create_input_with_nulls(&fixture.conn, 1_000, Nulls::new(percent)?)?;
-        let dir = tempfile::tempdir().unwrap();
-        let rust = dir.path().join("rust.b56");
-        let cpp = dir.path().join("cpp.b56");
-        fixture.drain(&base56::copy_to_sql(rust.to_str().unwrap()))?;
-        let output = std::process::Command::new(&executable)
-            .env("NEO_BENCH_NULL_PERCENT", percent.to_string())
-            .args(["--import", rust.to_str().unwrap(), "--export", cpp.to_str().unwrap()])
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
-        assert_eq!(std::fs::read(&rust).unwrap(), std::fs::read(&cpp).unwrap());
-        base56::create_target(&fixture.conn, "copy_verify")?;
-        fixture.drain(&base56::copy_from_sql("copy_verify", cpp.to_str().unwrap()))?;
-        assert_eq!(
-            support::query_i64(
-                &fixture.conn,
-                "SELECT count(*) FROM ((FROM copy_input EXCEPT ALL FROM copy_verify)
-                 UNION ALL (FROM copy_verify EXCEPT ALL FROM copy_input))",
-            )?,
-            0
-        );
-    }
-    Ok(())
-}
-
 fn assert_null_rate(conn: &Connection, source: &str, column: &str, percent: u8) -> Result<()> {
     let rows = support::query_i64(conn, &format!("SELECT count(*) FROM {source}"))?;
     let nulls = support::query_i64(conn, &format!("SELECT count(*) FROM {source} WHERE {column} IS NULL"))?;

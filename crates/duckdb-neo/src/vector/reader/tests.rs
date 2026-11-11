@@ -174,9 +174,10 @@ fn constant_reader_does_not_index_the_shared_selection() -> Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
     let ty = i32::logical_type(&conn)?;
-    let mut chunk = DataChunk::create(&conn, std::slice::from_ref(&ty), true)?;
     for count in [0, 1, 2 * crate::vector::CONSTANT_SELECTION_LEN + 1] {
         for expected in [Some(42), None] {
+            // A constant column is not writable output, so each constant needs a fresh chunk.
+            let mut chunk = DataChunk::create(&conn, std::slice::from_ref(&ty), true)?;
             let value = match expected {
                 Some(value) => value.value(&conn)?,
                 None => Value::null(&conn, &ty)?,

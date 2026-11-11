@@ -120,6 +120,35 @@ pub mod __derive {
         unsafe { VectorWriter::from_raw(vector) }
     }
 
+    /// A derived reader's rows and field readers, kept together so safe code cannot pair them with
+    /// the readers of another vector.
+    #[derive(Debug, Clone, Copy)]
+    pub struct ReaderParts<R, F> {
+        rows: R,
+        fields: F,
+    }
+
+    impl<R, F> ReaderParts<R, F> {
+        /// # Safety
+        /// Every field reader must have a row for each row of `rows`.
+        #[inline]
+        pub unsafe fn new(rows: R, fields: F) -> Self {
+            Self { rows, fields }
+        }
+
+        /// The reader of the derived vector's own rows.
+        #[inline(always)]
+        pub fn rows(&self) -> &R {
+            &self.rows
+        }
+
+        /// The field readers, in field order.
+        #[inline(always)]
+        pub fn fields(&self) -> &F {
+            &self.fields
+        }
+    }
+
     /// Prepare the reader of child `index` of `vector`.
     ///
     /// # Safety

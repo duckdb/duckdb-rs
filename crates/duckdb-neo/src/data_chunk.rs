@@ -145,7 +145,7 @@ impl VectorCollection {
         for index in 0..self.cache.len() {
             if self.cache[index]
                 .get()
-                .is_none_or(|vector| vector.access != self.access)
+                .is_none_or(|vector| vector.access != self.access.for_kind(vector.storage_kind()))
             {
                 self.cache[index] = OnceCell::from(self.wrap(index, self.access)?);
             }

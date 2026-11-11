@@ -30,6 +30,24 @@ use crate::{
 /// ```
 ///
 /// The borrowed projection keeps every field nullable, even when the Rust input field is required.
+/// Field readers are borrowed through accessors, so a reader cannot be paired with another vector's:
+///
+/// ```compile_fail,E0615
+/// use duckdb_neo::{AsDuckDB, Result, vector::{RowReader, Vector}};
+///
+/// #[derive(AsDuckDB)]
+/// #[duckdb(reader)]
+/// struct Record {
+///     id: Option<i32>,
+/// }
+///
+/// fn swap<'a>(vector: &'a Vector<'a, Record>, ids: &'a Vector<'a, i32>) -> Result<()> {
+///     let mut reader = vector.row_reader()?;
+///     reader.id = ids.row_reader()?;
+///     Ok(())
+/// }
+/// ```
+///
 /// Readers borrow the vector and prevent mutation while in use:
 ///
 /// ```compile_fail,E0502
@@ -271,12 +289,6 @@ pub(crate) fn plain_slot(logical_type: &LogicalType) -> Result<Option<slot::Slot
         Float => Slot::F32,
         Double => Slot::F64,
         Interval => Slot::Interval,
-        Decimal => match crate::types::DecimalSignature::from_logical_type(logical_type)?.width {
-            ..=4 => Slot::I16,
-            5..=9 => Slot::I32,
-            10..=18 => Slot::I64,
-            _ => Slot::I128,
-        },
         _ => return Ok(None),
     }))
 }
@@ -318,8 +330,4 @@ plain_native!(
     crate::types::TimestampTzValue => I64,
     crate::types::TimestampTzNsValue => I64,
     crate::types::IntervalValue => Interval,
-    crate::types::ShortDecimal => I16,
-    crate::types::WordDecimal => I32,
-    crate::types::LongDecimal => I64,
-    crate::types::HugeDecimal => I128,
 );

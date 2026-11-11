@@ -56,9 +56,9 @@ NEO_BENCH_NULL_PERCENT=25 cargo bench -p duckdb-neo --bench functions -- scalar
 python3 scripts/neo_bench.py run --null-percent 0 --filter scalar
 ```
 
-Both comparison scripts accept `--null-percent` (overriding the environment) and record the requested
-percentage in their reports. Rebuild every compared implementation with matching fixture generators:
-older revisions/binaries ignore this variable and use different inputs. Historical timings are therefore
+The comparison script accepts `--null-percent` (overriding the environment) and records the requested
+percentage in its reports. Rebuild every compared revision with matching fixture generators: older
+revisions ignore this variable and use different inputs. Historical timings are therefore
 not directly comparable, even when passed the same percentage.
 
 Divan's own options also apply, e.g. `-- --sample-count 20` or `DIVAN_MAX_TIME=2`.
@@ -139,9 +139,6 @@ Benchmark names (`group/function/rows`) identify results across versions; renami
 `removed` and `new`.
 
 ## Other languages
-
-[`cpp/`](cpp/README.md) implements the same six workloads using DuckDB's public v2 C++ API, with
-correctness checks, a byte-for-byte Rust/C++ COPY interoperability test, and a three-way comparison runner.
 
 [`instructions.md`](instructions.md) specifies the functions, inputs, checks, benchmarks, comparison and
 CI precisely enough to rebuild them on another DuckDB API, with golden values to validate against.

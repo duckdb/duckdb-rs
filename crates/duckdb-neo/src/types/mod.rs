@@ -14,9 +14,8 @@
 //! [`crate::vector::NativeElement`] implementations live together in family modules grouped by
 //! logical type: `primitive`, `string` (`VARCHAR`/`BLOB`/`BIT`), `temporal`
 //! (`DATE`/`TIME`/`TIMESTAMP`/`INTERVAL`), `uuid`, `decimal`, `bignum`, `rust_decimal` (feature-gated),
-//! `list`, `array`, `map`, `structs`, `union`, `variant`, and `tuple`. Each family module is private;
-//! its public types are re-exported below. The row readers and writers of nested types, such as
-//! [`crate::vector::ListReader`], live in [`crate::vector`].
+//! `list`, `array`, `map`, `structs`, `union`, `enums`, `variant`, and `tuple`. The row readers and
+//! writers of nested types, such as [`crate::vector::ListReader`], live in [`crate::vector`].
 //!
 //! Named Rust structs map to `STRUCT` through [`crate::AsDuckDB`], which derives the value
 //! conversions and, with `#[duckdb(reader, writer)]`, a row reader and writer. [`Struct`]

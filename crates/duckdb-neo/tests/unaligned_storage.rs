@@ -43,6 +43,25 @@ where
     .register(conn)
 }
 
+/// Copies wide decimals through their physical slots, which DuckDB aligns to 8 bytes only.
+fn register_slot_copy(conn: &Connection) -> Result<()> {
+    MicroScalar::create(
+        "copy_decimal_slots",
+        |_ctx, input: Vector<'_, Decimal<38, 2>>, mut output: Vector<'_, Decimal<38, 2>>| {
+            let reader = input.reader()?;
+            // SAFETY: the scanned column has no NULLs, so every slot is initialized.
+            let slots: &[Decimal<38, 2>] = unsafe { reader.as_slice() }.expect("DECIMAL exposes its slots");
+            let selection = reader.selection();
+            let mut writer = output.writer()?;
+            for row in 0..reader.len() {
+                writer.set(row, &slots[selection.index(row)])?;
+            }
+            Ok(())
+        },
+    )
+    .register(conn)
+}
+
 #[test]
 fn scans_of_uncompressed_wide_values_round_trip() -> Result<()> {
     let dir = std::env::temp_dir().join(format!("neo-unaligned-{}", std::process::id()));
@@ -58,9 +77,11 @@ fn scans_of_uncompressed_wide_values_round_trip() -> Result<()> {
     execute(&conn, "CHECKPOINT")?;
     register_copy::<UuidValueRaw>(&conn, "copy_uuid")?;
     register_copy::<Decimal<38, 2>>(&conn, "copy_decimal")?;
+    register_slot_copy(&conn)?;
     let counts = execute(
         &conn,
-        "SELECT count(*) FILTER (copy_uuid(u) = u AND copy_decimal(d) = d)::BIGINT FROM t",
+        "SELECT count(*) FILTER (copy_uuid(u) = u AND copy_decimal(d) = d AND copy_decimal_slots(d) = d)::BIGINT
+         FROM t",
     )?;
     assert_eq!(counts, [100_000]);
     std::fs::remove_dir_all(&dir).ok();
