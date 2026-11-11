@@ -1,7 +1,7 @@
 use std::ops::Deref;
 
 use super::{
-    ListWriter, MapWriter, UnionMembers, UnionWriter, Unknown, Vector, VectorElement, VectorWriter, WithWriter,
+    ListWriter, MapWriter, UnionWriter, UnionWriters, Unknown, Vector, VectorElement, VectorWriter, WithWriter,
 };
 use crate::{
     Result,
@@ -84,7 +84,7 @@ impl<T: VectorElement> ChildVector<'_, T> {
     }
 
     /// See [`Vector::union_writer`].
-    pub fn union_writer<M: UnionMembers>(&mut self) -> Result<UnionWriter<'_, M>> {
+    pub fn union_writer<'w, M: UnionWriters + 'w>(&'w mut self) -> Result<UnionWriter<'w, M>> {
         self.0.union_writer()
     }
 }

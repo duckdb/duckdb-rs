@@ -84,7 +84,7 @@ impl<'writer, T: VectorElement> VectorWriter<'writer, T> {
 
     /// # Safety
     /// The vector must stay exclusively borrowed, and not be rewrapped, for the writer's lifetime.
-    pub(super) unsafe fn from_raw(mut vector: NonNull<Vector<'writer, T>>) -> Result<Self> {
+    pub(crate) unsafe fn from_raw(mut vector: NonNull<Vector<'writer, T>>) -> Result<Self> {
         // SAFETY: the caller exclusively borrows this vector for the writer's lifetime.
         let borrowed = unsafe { vector.as_mut() };
         if !borrowed.is_writable() {

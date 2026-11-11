@@ -344,6 +344,16 @@ fn vector_element(input: &syn::DeriveInput, variants: &UnionVariants<'_>) -> Tok
                 unsafe { <#ident #type_generics as #bound>::get(reader, physical, logical) }
             }
         }
+
+        impl #impl_generics ::duckdb_neo::vector::WithReader for #ident #type_generics #where_clause {
+            type Reader<#lifetime> = ::duckdb_neo::vector::VectorReader<#lifetime, Self> where Self: #lifetime;
+
+            fn row_reader<#lifetime>(
+                vector: &#lifetime ::duckdb_neo::vector::Vector<#lifetime, Self>,
+            ) -> ::duckdb_neo::Result<Self::Reader<#lifetime>> {
+                vector.reader()
+            }
+        }
     }
 }
 
@@ -487,6 +497,20 @@ fn writable_impl(
                     return ::core::result::Result::Err(error);
                 }
                 ::core::result::Result::Ok(())
+            }
+        }
+
+        // SAFETY: the vector writer only writes values through the validated layout.
+        unsafe impl #impl_generics ::duckdb_neo::vector::WithWriter for #target #where_clause {
+            type Writer<'__duckdb_writer> = ::duckdb_neo::vector::VectorWriter<'__duckdb_writer, Self>
+            where
+                Self: '__duckdb_writer;
+
+            unsafe fn row_writer<'__duckdb_writer>(
+                vector: ::core::ptr::NonNull<::duckdb_neo::vector::Vector<'__duckdb_writer, Self>>,
+            ) -> ::duckdb_neo::Result<Self::Writer<'__duckdb_writer>> {
+                // SAFETY: the caller upholds the borrow contract.
+                unsafe { ::duckdb_neo::__derive::vector_writer(vector) }
             }
         }
 

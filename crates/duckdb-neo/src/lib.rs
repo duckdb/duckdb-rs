@@ -105,6 +105,17 @@ pub use types::{DuckDBType, FromValue, ToValue};
 pub mod __derive {
     pub use crate::types::structs::derive_support::*;
     pub use crate::types::union::derive_support::*;
+
+    /// Build a [`VectorWriter`](crate::vector::VectorWriter) for a derived [`WithWriter`](crate::vector::WithWriter).
+    ///
+    /// # Safety
+    /// As for [`WithWriter::row_writer`](crate::vector::WithWriter::row_writer).
+    pub unsafe fn vector_writer<'w, T: crate::vector::VectorElement>(
+        vector: std::ptr::NonNull<crate::vector::Vector<'w, T>>,
+    ) -> crate::Result<crate::vector::VectorWriter<'w, T>> {
+        // SAFETY: the caller upholds the borrow contract.
+        unsafe { crate::vector::VectorWriter::from_raw(vector) }
+    }
 }
 
 /// This result type is used extensively throughout the crate to represent the result of (FFI) operations that can fail.
