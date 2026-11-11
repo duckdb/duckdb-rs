@@ -152,12 +152,6 @@ unsafe impl<K: NativeElement, V: NativeElement> WritableNativeElement for Map<K,
         // SAFETY: the caller guarantees an in-bounds row, and the entry covers initialized entries.
         unsafe { writer.write_internal(index, Some(*value)) }
     }
-
-    #[inline]
-    unsafe fn write_null(writer: &mut VectorWriter<'_, Self>, index: usize) -> Result<()> {
-        // SAFETY: the caller guarantees an in-bounds row, and an empty entry references no entries.
-        unsafe { writer.write_internal(index, Some(ListIndex::default())) }
-    }
 }
 
 impl<K: NativeElement, V: NativeElement> Vector<'_, Map<K, V>> {

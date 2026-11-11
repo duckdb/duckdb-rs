@@ -169,12 +169,6 @@ unsafe impl<T: NativeElement> WritableNativeElement for List<T> {
         // SAFETY: the caller guarantees an in-bounds row, and the entry covers initialized elements.
         unsafe { writer.write_internal(index, Some(*value)) }
     }
-
-    #[inline]
-    unsafe fn write_null(writer: &mut VectorWriter<'_, Self>, index: usize) -> Result<()> {
-        // SAFETY: the caller guarantees an in-bounds row, and an empty entry references no elements.
-        unsafe { writer.write_internal(index, Some(ListIndex::default())) }
-    }
 }
 
 /// Reject an entry past the `len` rows of the child.

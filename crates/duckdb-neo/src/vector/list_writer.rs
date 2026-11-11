@@ -167,11 +167,8 @@ impl<'w, T: WithWriter + 'w> ListWriter<'w, T> {
         if row >= self.len() {
             return Err(out_of_bounds(row, self.len()));
         }
-        // SAFETY: the row is in bounds, and an empty entry references no elements.
-        unsafe {
-            self.parent.write_internal(row, Some(ListIndex::new(0, 0)))?;
-            self.parent.set_validity_unchecked(row, false);
-        }
+        // SAFETY: the row is in bounds.
+        unsafe { self.parent.set_validity_unchecked(row, false) };
         Ok(())
     }
 
