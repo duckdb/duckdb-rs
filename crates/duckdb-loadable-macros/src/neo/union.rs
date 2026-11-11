@@ -569,9 +569,12 @@ mod tests {
                 "Hash",
                 "VectorElement",
                 "VectorElement",
+                "WithReader",
                 "WritableVectorElement",
+                "WithWriter",
                 "HasChildren",
                 "WritableVectorElement",
+                "WithWriter",
                 "HasChildren"
             ]
         );

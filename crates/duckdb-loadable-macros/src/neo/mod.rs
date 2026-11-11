@@ -188,7 +188,9 @@ mod tests {
                 "Eq",
                 "Hash",
                 "VectorElement",
+                "WithReader",
                 "WritableVectorElement",
+                "WithWriter",
                 "HasChildren"
             ]
         );
