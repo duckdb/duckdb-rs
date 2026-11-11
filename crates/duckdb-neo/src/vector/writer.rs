@@ -551,18 +551,13 @@ impl<T: PlainNative> VectorWriter<'_, T> {
     }
 }
 
-impl<T: WritableNativeElement> VectorWriter<'_, T> {
+impl<T: NativeElement> VectorWriter<'_, T> {
     /// Make every row SQL NULL, along with the descendants DuckDB requires to be NULL.
     pub fn fill_null(&mut self) -> Result<()> {
-        if self.vector().children().is_none() && T::TYPE_ID != LogicalTypeID::Variant {
-            // SAFETY: NULL rows need no data, and the vector has no descendants.
-            return unsafe { self.fill_validity(false) };
-        }
-        for row in 0..self.len() {
-            // SAFETY: the row is in bounds.
-            unsafe { self.set_null_unchecked(row)? };
-        }
-        Ok(())
+        let len = self.len();
+        let result = self.vector_mut().null_rows(0, len);
+        self.refresh_buffers()?;
+        result
     }
 }
 

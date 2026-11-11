@@ -926,3 +926,32 @@ fn writer_writes_slices_as_the_physical_type() -> Result<()> {
     );
     Ok(())
 }
+
+#[test]
+fn writer_fills_untyped_and_variant_nulls() -> Result<()> {
+    use crate::logical_type::LogicalType;
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let types = [
+        "STRUCT(a INTEGER[], b VARIANT)",
+        "UNION(n INTEGER, s VARCHAR)",
+        "INTEGER[2]",
+    ]
+    .map(|text| LogicalType::from_text(&conn, text))
+    .into_iter()
+    .collect::<Result<Vec<_>>>()?;
+    let mut chunk = DataChunk::create(&conn, &types, true)?;
+    for column in 0..types.len() {
+        let mut vector = chunk.get_vector_at_mut::<Unknown>(column)?;
+        vector.set_size(3)?;
+        vector.writer()?.fill_null()?;
+        for row in 0..3 {
+            assert_eq!(
+                vector.get_value_slow(row)?.dbg_string()?,
+                "NULL",
+                "column {column} row {row}"
+            );
+        }
+    }
+    Ok(())
+}
