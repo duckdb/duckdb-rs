@@ -553,7 +553,7 @@ impl<'a> DataChunkRef<'a> {
     /// let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
     /// let shared = chunk.get_vector_at::<i32>(0)?;
     /// let mut exclusive = chunk.get_vector_at_mut::<i32>(0)?;
-    /// exclusive.writer()?.set(0, Some(&1))?;
+    /// exclusive.writer()?.set(0, &1)?;
     /// let _ = shared.reader()?.get(0)?;
     /// # Ok(())
     /// # }
@@ -706,9 +706,9 @@ mod tests {
         let types = [i32::logical_type(&conn)?];
         let mut writable = DataChunk::create(&conn, &types, true)?;
         let mut vector = writable.get_vector_at_mut::<i32>(0)?;
-        assert!(vector.writer()?.set(0, Some(&42)).is_err());
+        assert!(vector.writer()?.set(0, &42).is_err());
         vector.set_size(1)?;
-        vector.writer()?.set(0, Some(&42))?;
+        vector.writer()?.set(0, &42)?;
         assert_eq!(vector.reader()?.get(0)?, Some(&42));
 
         let mut read_only = DataChunk::create(&conn, &types, false)?;
@@ -742,7 +742,7 @@ mod tests {
                 let copy = dc.copy(context)?;
                 let vec = copy.get_vector_at::<i32>(0)?;
                 for (index, value) in vec.reader()?.iter().enumerate() {
-                    result.writer()?.set(index, value)?;
+                    result.writer()?.set_option(index, value)?;
                 }
                 Ok(())
             },
@@ -777,7 +777,7 @@ mod tests {
         list.set_size(1)?;
         // SAFETY: the row below writes both elements.
         unsafe { list.set_child_size(2)? };
-        list.writer()?.set(0, Some(&List(vec![Some(0), Some(0)])))?;
+        list.writer()?.set(0, &List(vec![Some(0), Some(0)]))?;
         {
             let mut children = list.children_mut().unwrap();
             let child = children.get_vector_at_mut::<i64>(0)?;

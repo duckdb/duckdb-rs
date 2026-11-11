@@ -155,10 +155,10 @@ macro_rules! declare_writable_vector_element {
             unsafe fn write(
                 vector: &mut crate::vector::VectorWriter<'_, Self>,
                 index: usize,
-                value: Option<&Self::Write>,
+                value: &Self::Write,
             ) -> Result<()> {
                 // SAFETY: The caller guarantees a writable, flat, in-bounds row.
-                unsafe { vector.write_internal(index, value.copied()) }
+                unsafe { vector.write_internal(index, Some(*value)) }
             }
         }
     };

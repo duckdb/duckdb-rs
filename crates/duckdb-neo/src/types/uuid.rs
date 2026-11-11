@@ -93,10 +93,10 @@ unsafe impl WritableNativeElement for UuidValueRaw {
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<&Self::Write>,
+        value: &Self::Write,
     ) -> Result<()> {
         // SAFETY: The caller guarantees a writable, flat, in-bounds row.
-        unsafe { vector.write_internal(index, value.copied()) }
+        unsafe { vector.write_internal(index, Some(*value)) }
     }
 }
 
@@ -202,10 +202,10 @@ mod external {
         unsafe fn write(
             vector: &mut crate::vector::VectorWriter<'_, Self>,
             index: usize,
-            value: Option<&Self::Write>,
+            value: &Self::Write,
         ) -> Result<()> {
             // SAFETY: The caller guarantees a writable, flat, in-bounds row.
-            unsafe { vector.write_internal(index, value.copied().map(UuidValueRaw::from)) }
+            unsafe { vector.write_internal(index, Some(UuidValueRaw::from(*value))) }
         }
     }
 
@@ -250,9 +250,9 @@ mod external {
             let mut values = chunk.get_vector_at_mut::<Uuid>(0)?;
             values.set_size(expected.len() + 1)?;
             for (index, uuid) in expected.into_iter().enumerate() {
-                values.writer()?.set(index, Some(&uuid))?;
+                values.writer()?.set(index, &uuid)?;
             }
-            values.writer()?.set(expected.len(), None)?;
+            values.writer()?.set_null(expected.len())?;
             let mut all = expected.map(Some).to_vec();
             all.push(None);
             assert_eq!(values.reader()?.iter().collect::<Vec<_>>(), all);

@@ -155,12 +155,17 @@ impl<T: WritableNativeElement> RowWriter for VectorWriter<'_, T> {
 
     #[inline(always)]
     fn set(&mut self, row: usize, value: &T::Write) -> Result<()> {
-        VectorWriter::set(self, row, Some(value))
+        VectorWriter::set(self, row, value)
     }
 
     #[inline(always)]
     fn set_null(&mut self, row: usize) -> Result<()> {
-        VectorWriter::set(self, row, None)
+        VectorWriter::set_null(self, row)
+    }
+
+    #[inline(always)]
+    fn set_option(&mut self, row: usize, value: Option<&T::Write>) -> Result<()> {
+        VectorWriter::set_option(self, row, value)
     }
 
     fn resize_rows(&mut self, len: usize) -> Result<()> {

@@ -90,9 +90,9 @@ macro_rules! decimal_storage {
                 type Write = $name;
 
                 #[inline]
-                unsafe fn write(vector: &mut crate::vector::VectorWriter<'_, Self>, index: usize, value: Option<&Self::Write>) -> Result<()> {
+                unsafe fn write(vector: &mut crate::vector::VectorWriter<'_, Self>, index: usize, value: &Self::Write,) -> Result<()> {
                     // SAFETY: The caller guarantees a writable, flat, in-bounds row.
-                    unsafe { vector.write_internal(index, value.copied()) }
+                    unsafe { vector.write_internal(index, Some(*value)) }
                 }
             }
         )+
@@ -281,10 +281,10 @@ where
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<&Self::Write>,
+        value: &Self::Write,
     ) -> Result<()> {
         // SAFETY: The caller guarantees a writable, flat, in-bounds row.
-        unsafe { vector.write_internal(index, value.copied()) }
+        unsafe { vector.write_internal(index, Some(*value)) }
     }
 }
 
@@ -509,8 +509,8 @@ mod tests {
         let mut chunk = DataChunk::create(&conn, &[Decimal::<9, 2>::logical_type(&conn)?], true)?;
         let mut vector = chunk.get_vector_at_mut::<Decimal<9, 2>>(0)?;
         vector.set_size(2)?;
-        vector.writer()?.set(0, Some(&Decimal::new(-1)))?;
-        vector.writer()?.set(1, None)?;
+        vector.writer()?.set(0, &Decimal::new(-1))?;
+        vector.writer()?.set_null(1)?;
         assert_eq!(vector.reader()?.get(0)?, Some(&Decimal::new(-1)));
         assert_eq!(vector.reader()?.get(1)?, None);
 

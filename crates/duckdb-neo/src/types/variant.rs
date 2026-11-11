@@ -44,12 +44,14 @@ unsafe impl WritableNativeElement for Variant {
     unsafe fn write(
         writer: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<&Self::Write>,
+        value: &Self::Write,
     ) -> Result<()> {
-        match value {
-            Some(value) => writer.write_value_slow(index, value),
-            None => writer.set_null_slow(index),
-        }
+        writer.write_value_slow(index, value)
+    }
+
+    #[inline]
+    unsafe fn write_null(writer: &mut crate::vector::VectorWriter<'_, Self>, index: usize) -> Result<()> {
+        writer.set_null_slow(index)
     }
 }
 

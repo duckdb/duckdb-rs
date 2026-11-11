@@ -486,7 +486,7 @@ where
                 Some(T::from_le_bytes(bytes)?)
             }
         };
-        writer.set(row, value.as_ref())?;
+        writer.set_option(row, value.as_ref())?;
     }
     Ok(())
 }
@@ -504,13 +504,13 @@ fn decode_strings<'f>(
     let mut writer = vector.writer()?;
     for (row, field) in fields.enumerate() {
         if field == [NULL_FIELD] {
-            writer.set(row, None)?;
+            writer.set_null(row)?;
             continue;
         }
         bytes.clear();
         decode_into(field, bytes)?;
         let text = std::str::from_utf8(bytes).map_err(|error| Error::invalid_input(error.to_string()))?;
-        writer.set(row, Some(text))?;
+        writer.set(row, text)?;
     }
     Ok(())
 }

@@ -103,12 +103,8 @@ unsafe impl WritableNativeElement for rust_decimal::Decimal {
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<&Self::Write>,
+        value: &Self::Write,
     ) -> Result<()> {
-        let Some(value) = value else {
-            // SAFETY: The caller guarantees a writable, flat, in-bounds row; no data is written.
-            return unsafe { vector.write_internal::<()>(index, None) };
-        };
         let DecimalSignature { width, scale } = vector.vector().decimal_signature()?;
         let from_scale = value.scale();
         let to_scale = u32::from(scale);
@@ -261,20 +257,20 @@ mod tests {
             let mut chunk = DataChunk::create(&conn, &[logical_type], true)?;
             let mut vector = chunk.get_vector_at_mut::<rust_decimal::Decimal>(0)?;
             vector.set_size(4)?;
-            vector.writer()?.set(0, Some(&dec("1.5")))?;
-            vector.writer()?.set(1, Some(&dec("-12.300")))?;
-            vector.writer()?.set(2, None)?;
-            vector.writer()?.set(3, Some(&dec("99.99")))?;
+            vector.writer()?.set(0, &dec("1.5"))?;
+            vector.writer()?.set(1, &dec("-12.300"))?;
+            vector.writer()?.set_null(2)?;
+            vector.writer()?.set(3, &dec("99.99"))?;
             assert_eq!(
                 vector.reader()?.iter().collect::<Vec<_>>(),
                 vec![Some(dec("1.50")), Some(dec("-12.30")), None, Some(dec("99.99"))]
             );
 
-            assert!(vector.writer()?.set(0, Some(&dec("1.234"))).is_err());
+            assert!(vector.writer()?.set(0, &dec("1.234")).is_err());
             let too_big = 10i128.pow(u32::from(width) - 2);
             let error = vector
                 .writer()?
-                .set(0, Some(&rust_decimal::Decimal::from_i128_with_scale(too_big, 0)))
+                .set(0, &rust_decimal::Decimal::from_i128_with_scale(too_big, 0))
                 .unwrap_err();
             assert!(
                 error

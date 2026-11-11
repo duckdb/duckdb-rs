@@ -35,7 +35,7 @@ use crate::{
 /// }
 ///
 /// fn write(vector: &mut Vector<'_, Input>) -> Result<()> {
-///     vector.writer()?.set(0, Some(&Input::Str(Some("duck".to_owned()))))
+///     vector.writer()?.set(0, &Input::Str(Some("duck".to_owned())))
 /// }
 /// ```
 #[derive(Debug)]

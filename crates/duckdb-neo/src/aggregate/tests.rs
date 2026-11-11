@@ -131,7 +131,7 @@ impl<T: Display + Send + Sync + 'static> AggregateCallbacks for BasicAggregate<T
                 bind_data.unwrap()[1],
                 self.item
             );
-            result.writer()?.set(result_offset + index, Some(&to_write))?;
+            result.writer()?.set(result_offset + index, &to_write)?;
         }
 
         Ok(())
@@ -392,7 +392,7 @@ impl AggregateCallbacks for PaddedSum {
     ) -> crate::Result<()> {
         let mut result = result.cast::<i64>()?;
         for (index, state) in states.iter().enumerate() {
-            result.writer()?.set(result_offset + index, Some(*state))?;
+            result.writer()?.set(result_offset + index, *state)?;
         }
         Ok(())
     }

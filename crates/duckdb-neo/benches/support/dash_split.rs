@@ -135,7 +135,7 @@ impl TableFunctionCallbacks for DashSplit {
                     unsafe { vector.set_size_uninit(parts.len())? };
                     let mut writer = vector.writer()?;
                     for row in 0..parts.len() {
-                        writer.set(row, Some(&((first_index + row) as i64)))?;
+                        writer.set(row, &((first_index + row) as i64))?;
                     }
                 }
                 _ => {
@@ -144,7 +144,7 @@ impl TableFunctionCallbacks for DashSplit {
                     unsafe { vector.set_size_uninit(parts.len())? };
                     let mut writer = vector.writer()?;
                     for (row, &(start, end)) in parts.iter().enumerate() {
-                        writer.set(row, Some(&input[start..end]))?;
+                        writer.set(row, &input[start..end])?;
                     }
                 }
             }

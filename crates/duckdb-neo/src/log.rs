@@ -147,7 +147,7 @@ mod tests {
                 Log::log_on_context(ctx, LogLevel::Warn, "first message", "cpp_api_test")?;
                 let mut writer = output.writer()?;
                 for row in 0..writer.len() {
-                    writer.set(row, None)?;
+                    writer.set_null(row)?;
                 }
                 Ok(())
             },

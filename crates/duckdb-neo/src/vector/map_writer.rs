@@ -387,9 +387,7 @@ mod tests {
             // SAFETY: the rows below only use the inner elements they write.
             unsafe { fields.get_vector_at_mut::<List<i32>>(1)?.set_child_size(3)? };
         }
-        vector
-            .writer()?
-            .set(0, Some(&Map(vec![(1, Some(List(vec![Some(1)])))])))?;
+        vector.writer()?.set(0, &Map(vec![(1, Some(List(vec![Some(1)])))]))?;
         {
             let mut writer = vector.map_writer()?;
             writer.push(&2, Some(&List(vec![Some(2), None])))?;

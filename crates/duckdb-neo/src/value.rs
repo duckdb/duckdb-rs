@@ -477,7 +477,7 @@ mod tests {
                 .return_type(i32::logical_type(&conn)?),
             |ctx, _input, mut output: Vector<'_, i32>| {
                 assert_length_mismatches_rejected(ctx)?;
-                output.writer()?.set(0, Some(&1))
+                output.writer()?.set(0, &1)
             },
         )
         .register(&conn)?;

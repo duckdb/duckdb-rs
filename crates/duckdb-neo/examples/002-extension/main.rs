@@ -6,7 +6,7 @@ pub fn entrypoint(extension: &Extension) -> Result<(), Box<dyn ::std::error::Err
     MicroScalar::create("test", |_ctx, input: Vector<'_, i32>, mut output: Vector<'_, i32>| {
         let mut writer = output.writer()?;
         for (i, item) in input.reader()?.iter().enumerate() {
-            writer.set(i, item.map(|value| value * 10).as_ref())?;
+            writer.set_option(i, item.map(|value| value * 10).as_ref())?;
         }
         Ok(())
     })

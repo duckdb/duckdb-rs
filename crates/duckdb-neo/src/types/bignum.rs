@@ -105,10 +105,10 @@ unsafe impl WritableNativeElement for BigNum {
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<&Self::Write>,
+        value: &Self::Write,
     ) -> Result<()> {
         // SAFETY: The caller guarantees a writable, flat, in-bounds row.
-        unsafe { vector.write_bytes(index, value.map(BigNum::encoded)) }
+        unsafe { vector.write_bytes(index, Some(value.encoded())) }
     }
 }
 
@@ -180,13 +180,11 @@ unsafe impl WritableNativeElement for BigNumValue {
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<&Self::Write>,
+        value: &Self::Write,
     ) -> Result<()> {
-        let encoded = value
-            .map(|value| Value::encode_bignum(&value.magnitude, value.is_negative))
-            .transpose()?;
+        let encoded = Value::encode_bignum(&value.magnitude, value.is_negative)?;
         // SAFETY: The caller guarantees a writable, flat, in-bounds row.
-        unsafe { vector.write_bytes(index, encoded.as_deref()) }
+        unsafe { vector.write_bytes(index, Some(&encoded)) }
     }
 }
 

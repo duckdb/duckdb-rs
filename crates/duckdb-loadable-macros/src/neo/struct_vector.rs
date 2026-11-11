@@ -218,29 +218,31 @@ pub(crate) fn as_writable_native_element(input: &syn::DeriveInput) -> syn::Resul
             unsafe fn write(
                 writer: &mut ::duckdb_neo::vector::VectorWriter<'_, Self>,
                 index: ::core::primitive::usize,
-                value: ::core::option::Option<&Self>,
+                value: &Self,
             ) -> ::duckdb_neo::Result<()> {
-                match value {
-                    ::core::option::Option::Some(value) => {
-                        let mut written: ::duckdb_neo::Result<()> = ::core::result::Result::Ok(());
-                        #(if written.is_ok() {
-                            // SAFETY: validation checked every child, and the caller guarantees row bounds.
-                            written = unsafe { writer.write_child_unchecked::<#types>(#indexes, index, #values) };
-                        })*
-                        if let ::core::result::Result::Err(error) = written {
-                            // Earlier fields were written, so NULL the row to keep its children consistent.
-                            // SAFETY: the caller guarantees row bounds.
-                            unsafe { writer.set_unchecked(index, ::core::option::Option::None)? };
-                            return ::core::result::Result::Err(error);
-                        }
-                    }
-                    ::core::option::Option::None => {
-                        // SAFETY: a NULL struct must also null each of its validated children.
-                        #(unsafe {
-                            writer.write_child_unchecked::<#types>(#indexes, index, ::core::option::Option::None)?
-                        };)*
-                    }
+                let mut written: ::duckdb_neo::Result<()> = ::core::result::Result::Ok(());
+                #(if written.is_ok() {
+                    // SAFETY: validation checked every child, and the caller guarantees row bounds.
+                    written = unsafe { writer.write_child_unchecked::<#types>(#indexes, index, #values) };
+                })*
+                if let ::core::result::Result::Err(error) = written {
+                    // Earlier fields were written, so NULL the row to keep its children consistent.
+                    // SAFETY: the caller guarantees row bounds.
+                    unsafe { writer.set_null_unchecked(index)? };
+                    return ::core::result::Result::Err(error);
                 }
+                ::core::result::Result::Ok(())
+            }
+
+            #[inline]
+            unsafe fn write_null(
+                writer: &mut ::duckdb_neo::vector::VectorWriter<'_, Self>,
+                index: ::core::primitive::usize,
+            ) -> ::duckdb_neo::Result<()> {
+                // SAFETY: a NULL struct must also null each of its validated children.
+                #(unsafe {
+                    writer.write_child_unchecked::<#types>(#indexes, index, ::core::option::Option::None)?
+                };)*
                 ::core::result::Result::Ok(())
             }
         }

@@ -118,7 +118,7 @@ fn combined_iterator_handles_large_and_null_constants() -> Result<()> {
     {
         let mut writer = flat.writer()?;
         for index in 0..count {
-            writer.set(index, (index % 5 != 0).then_some(&(index as i64)))?;
+            writer.set_option(index, (index % 5 != 0).then_some(&(index as i64)))?;
         }
     }
     let constant = constant.make_constant(42_i32.value(&conn)?, count)?;
@@ -255,8 +255,8 @@ fn flat_and_mixed_folds_preserve_nulls_and_indices() -> Result<()> {
     first.set_size(3)?;
     second.set_size(3)?;
     for (index, value) in [Some(1), None, Some(3)].into_iter().enumerate() {
-        first.writer()?.set(index, value.as_ref())?;
-        second.writer()?.set(index, Some(&9))?;
+        first.writer()?.set_option(index, value.as_ref())?;
+        second.writer()?.set(index, &9)?;
     }
     let flat = CombinedVectorIterator::new((first.reader()?, second.reader()?))?;
     assert!(flat.all_flat);
@@ -316,7 +316,7 @@ fn combined_iterator_handles_native_dictionary_layouts() -> Result<()> {
             for (index, (first, constant, repeated)) in rows.enumerate() {
                 assert_eq!(constant, Some(&9));
                 assert_eq!(first, repeated);
-                writer.set(index, first)?;
+                writer.set_option(index, first)?;
             }
             Ok(())
         },

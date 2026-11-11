@@ -106,11 +106,11 @@ fn owned_struct_fields_roundtrip_without_a_write_projection() -> Result<()> {
     }
     {
         let mut writer = vector.writer()?;
-        writer.set(2, None)?;
-        writer.set(0, Some(&record()))?;
-        writer.set(1, Some(&record()))?;
-        writer.set(1, None)?;
-        assert!(writer.set(3, Some(&record())).is_err());
+        writer.set_null(2)?;
+        writer.set(0, &record())?;
+        writer.set(1, &record())?;
+        writer.set_null(1)?;
+        assert!(writer.set(3, &record()).is_err());
     }
     let row = vector.reader()?.get(0)?.unwrap();
     assert_eq!(row.primary.unwrap().name, Some("owned nested string"));
@@ -174,8 +174,8 @@ fn owned_binary_and_bignum_fields_roundtrip() -> Result<()> {
     vector.set_size(2)?;
     {
         let mut writer = vector.writer()?;
-        writer.set(0, Some(&payload()))?;
-        writer.set(1, None)?;
+        writer.set(0, &payload())?;
+        writer.set_null(1)?;
     }
     assert_eq!(vector.get_value_slow(0)?.get::<Payload>()?, Some(payload()));
     let row = vector.reader()?.get(0)?.unwrap();
@@ -229,7 +229,7 @@ impl ScalarCallbacks for RowProbe {
         output.set_size(vector.len())?;
         let mut writer = output.writer()?;
         for (index, row) in vector.reader()?.iter().enumerate() {
-            writer.set(index, row.and_then(|row| row.value.copied()).as_ref())?;
+            writer.set_option(index, row.and_then(|row| row.value.copied()).as_ref())?;
         }
         Ok(())
     }
@@ -333,13 +333,13 @@ fn derived_struct_raw_identifiers_roundtrip() -> Result<()> {
     vector.set_size(2)?;
     {
         let mut writer = vector.writer()?;
-        writer.set(0, Some(&input))?;
+        writer.set(0, &input)?;
         writer.set(
             1,
-            Some(&Keyword {
+            &Keyword {
                 r#type: 7,
                 r#match: None,
-            }),
+            },
         )?;
     }
     let row = vector.reader()?.get(0)?.unwrap();
@@ -367,20 +367,20 @@ fn derived_writer_preserves_nulls_and_copies_strings() -> Result<()> {
         let mut writer = vector.writer()?;
         writer.set(
             0,
-            Some(&Row {
+            &Row {
                 name: Some(text),
                 value: Some(42),
-            }),
+            },
         )?;
         writer.set(
             1,
-            Some(&Row {
+            &Row {
                 name: None,
                 value: None,
-            }),
+            },
         )?;
-        writer.set(2, None)?;
-        assert!(writer.set(3, None).is_err());
+        writer.set_null(2)?;
+        assert!(writer.set_null(3).is_err());
     }
     let row = vector.reader()?.get(0)?.unwrap();
     assert_eq!(row.name, Some("a string longer than the inline storage"));
@@ -394,13 +394,13 @@ fn derived_writer_preserves_nulls_and_copies_strings() -> Result<()> {
     assert_eq!(children.get_vector_at::<i32>(1)?.reader()?.get(2)?, None);
     {
         let mut writer = vector.writer()?;
-        writer.set(0, None)?;
+        writer.set_null(0)?;
         writer.set(
             2,
-            Some(&Row {
+            &Row {
                 name: Some("rewritten".to_owned()),
                 value: Some(7),
-            }),
+            },
         )?;
     }
     assert!(vector.reader()?.get(0)?.is_none());
@@ -431,25 +431,25 @@ fn derived_writer_supports_nested_fields_and_growth() -> Result<()> {
     };
     vector.writer()?.set(
         0,
-        Some(&Nested {
+        &Nested {
             row: Some(Row {
                 name: Some("nested".to_owned()),
                 value: Some(9),
             }),
             items: Some(List(vec![Some(4), None, Some(8)])),
-        }),
+        },
     )?;
     // Resizing the parent drops its cached child views, but not the list offset.
     vector.set_size(3)?;
     {
         let mut writer = vector.writer()?;
-        writer.set(1, None)?;
+        writer.set_null(1)?;
         writer.set(
             2,
-            Some(&Nested {
+            &Nested {
                 row: None,
                 items: Some(List(vec![Some(5), Some(6)])),
-            }),
+            },
         )?;
     }
     let row = vector.reader()?.get(0)?.unwrap();
@@ -489,11 +489,11 @@ fn derived_writer_supports_generic_and_empty_structs() -> Result<()> {
         let mut writer = vector.writer()?;
         writer.set(
             0,
-            Some(&Generic::<String> {
+            &Generic::<String> {
                 value: Some("generic".to_owned()),
-            }),
+            },
         )?;
-        writer.set(1, Some(&Generic::<String> { value: None }))?;
+        writer.set(1, &Generic::<String> { value: None })?;
     }
     let vector = chunk.get_vector_at::<Generic<String>>(0)?;
     assert_eq!(vector.reader()?.get(0)?.unwrap().value, Some("generic"));
@@ -502,8 +502,8 @@ fn derived_writer_supports_generic_and_empty_structs() -> Result<()> {
         let mut vector = chunk.get_vector_at_mut::<Empty>(1)?;
         vector.set_size(2)?;
         let mut writer = vector.writer()?;
-        writer.set(0, Some(&Empty {}))?;
-        writer.set(1, None)?;
+        writer.set(0, &Empty {})?;
+        writer.set_null(1)?;
     }
     let vector = chunk.get_vector_at::<Empty>(1)?;
     assert!(vector.reader()?.get(0)?.is_some());
@@ -560,7 +560,7 @@ fn derived_writer_uses_custom_vector_validation() -> Result<()> {
     {
         let mut vector = chunk.get_vector_at_mut::<CustomReader>(0)?;
         vector.set_size(1)?;
-        vector.writer()?.set(0, Some(&CustomReader { value: Some(42) }))?;
+        vector.writer()?.set(0, &CustomReader { value: Some(42) })?;
     }
     assert_eq!(
         chunk.get_vector_at::<Layout>(0)?.reader()?.get(0)?.unwrap().value,
@@ -579,9 +579,9 @@ fn derived_writer_checks_fixed_array_schema() -> Result<()> {
     vector.set_size(2)?;
     vector.writer()?.set(
         0,
-        Some(&Fixed {
+        &Fixed {
             values: Some(Array([Some(1), Some(2)])),
-        }),
+        },
     )?;
     let wrong_type = LogicalType::from_text(&conn, "STRUCT(values INTEGER[3])")?;
     let mut wrong = DataChunk::create(&conn, &[wrong_type], true)?;
@@ -593,11 +593,11 @@ fn derived_writer_checks_fixed_array_schema() -> Result<()> {
         let mut writer = vector.writer()?;
         writer.set(
             0,
-            Some(&Fixed {
+            &Fixed {
                 values: Some(Array([Some(3), None])),
-            }),
+            },
         )?;
-        writer.set(1, Some(&Fixed { values: None }))?;
+        writer.set(1, &Fixed { values: None })?;
     }
     let row = vector.reader()?.get(0)?.unwrap();
     assert_eq!(row.values.unwrap().iter().collect::<Vec<_>>(), [Some(&3), None]);
@@ -795,11 +795,11 @@ fn set_writes_borrowed_rows_without_moving_them() -> Result<()> {
     {
         let mut writer = vector.writer()?;
         for (index, row) in rows.iter().enumerate() {
-            writer.set(index, Some(row))?;
+            writer.set(index, row)?;
         }
-        writer.set(2, Some(&rows[0]))?;
-        writer.set(3, None)?;
-        assert!(writer.set(4, Some(&rows[0])).is_err());
+        writer.set(2, &rows[0])?;
+        writer.set_null(3)?;
+        assert!(writer.set(4, &rows[0]).is_err());
     }
     for (index, expected) in [0, 1, 0].into_iter().enumerate() {
         assert_eq!(
@@ -851,10 +851,10 @@ fn nested_list_offsets_survive_new_parent_wrappers() -> Result<()> {
         let mut vector = chunk.get_vector_at_mut::<Matrix>(0)?;
         vector.set_size(3)?;
         size_matrix_children(&mut vector, 3)?;
-        vector.writer()?.set(0, Some(&matrix(&[1, 2], &[3, 4])))?;
+        vector.writer()?.set(0, &matrix(&[1, 2], &[3, 4]))?;
         // Resizing evicts every cached descendant wrapper.
         vector.set_size(3)?;
-        vector.writer()?.set(1, Some(&matrix(&[5, 6], &[7, 8])))?;
+        vector.writer()?.set(1, &matrix(&[5, 6], &[7, 8]))?;
     }
     {
         let mut vector = chunk.get_vector_at_mut::<Matrix>(0)?;
@@ -866,7 +866,7 @@ fn nested_list_offsets_survive_new_parent_wrappers() -> Result<()> {
             inner.children().unwrap().get_vector_at::<List<i32>>(0)?.child_offset(),
             4
         );
-        vector.writer()?.set(2, Some(&matrix(&[9, 10], &[11, 12])))?;
+        vector.writer()?.set(2, &matrix(&[9, 10], &[11, 12]))?;
     }
     let vector = chunk.get_vector_at::<Matrix>(0)?;
     for (index, (items, inner)) in [([1, 2], [3, 4]), ([5, 6], [7, 8]), ([9, 10], [11, 12])]
@@ -890,7 +890,7 @@ fn clearing_a_chunk_restarts_nested_list_offsets() -> Result<()> {
         let mut vector = chunk.get_vector_at_mut::<Matrix>(0)?;
         vector.set_size(1)?;
         size_matrix_children(&mut vector, 1)?;
-        vector.writer()?.set(0, Some(&matrix(&[1, 2], &[3, 4])))?;
+        vector.writer()?.set(0, &matrix(&[1, 2], &[3, 4]))?;
     }
     chunk.clear()?;
     let vector = chunk.get_vector_at_mut::<Matrix>(0)?;
@@ -919,13 +919,13 @@ fn struct_fields_allow_writes_and_flattening() -> Result<()> {
     let mut chunk = DataChunk::create(&conn, &[Outer::logical_type(&conn)?], true)?;
     let mut vector = chunk.get_vector_at_mut::<Outer>(0)?;
     vector.set_size(2)?;
-    vector.writer()?.set(1, None)?;
+    vector.writer()?.set_null(1)?;
     {
         let mut children = vector.children_mut().unwrap();
         let [inner] = children.get_vector_array_mut([0])?;
         let mut inner = inner.cast::<Wide>()?;
         inner.flatten()?;
-        inner.writer()?.set(0, Some(&Wide { x: Some(1) }))?;
+        inner.writer()?.set(0, &Wide { x: Some(1) })?;
         let mut fields = inner.children_mut().unwrap();
         let mut x = fields.get_vector_at_mut::<i64>(0)?;
         x.write_value_slow(0, &7_i64.value(&conn)?)?;
@@ -944,7 +944,7 @@ fn chunks_over_children_are_read_only() -> Result<()> {
     let mut chunk = DataChunk::create(&conn, &[Wide::logical_type(&conn)?], true)?;
     let mut vector = chunk.get_vector_at_mut::<Wide>(0)?;
     vector.set_size(1)?;
-    vector.writer()?.set(0, Some(&Wide { x: Some(42) }))?;
+    vector.writer()?.set(0, &Wide { x: Some(42) })?;
     {
         let mut children = vector.children_mut().unwrap();
         let mut fields = children.to_data_chunk(&conn)?;
@@ -985,7 +985,7 @@ fn casts_convert_every_row() -> Result<()> {
         let mut writer = src.writer()?;
         for row in 0..5000 {
             let value = (row % 7 != 0).then_some(row as i32);
-            writer.set(row, Some(&List(vec![value, Some(-1)])))?;
+            writer.set(row, &List(vec![value, Some(-1)]))?;
         }
     }
     for target_type in [List::<i32>::logical_type(&conn)?, List::<i64>::logical_type(&conn)?] {
@@ -1028,14 +1028,14 @@ fn failed_struct_writes_leave_the_row_null() -> Result<()> {
     };
     {
         let mut writer = vector.writer()?;
-        writer.set(0, None)?;
-        writer.set(1, Some(&valid))?;
-        assert!(writer.set(0, Some(&invalid)).is_err());
+        writer.set_null(0)?;
+        writer.set(1, &valid)?;
+        assert!(writer.set(0, &invalid).is_err());
         let invalid = Fallible {
             x: Some(42),
             bits: Some(BitValue(vec![])),
         };
-        assert!(writer.set(1, Some(&invalid)).is_err());
+        assert!(writer.set(1, &invalid).is_err());
     }
     let reader = vector.reader()?;
     let fields = vector.children().unwrap().get_vector_at::<i32>(0)?.reader()?;
@@ -1056,10 +1056,10 @@ fn failed_array_writes_leave_the_row_null() -> Result<()> {
     vector.set_size(1)?;
     {
         let mut writer = vector.writer()?;
-        writer.set(0, None)?;
+        writer.set_null(0)?;
         assert!(
             writer
-                .set(0, Some(&Array([Some(BitValue(vec![0, 1])), Some(BitValue(vec![]))])))
+                .set(0, &Array([Some(BitValue(vec![0, 1])), Some(BitValue(vec![]))]))
                 .is_err()
         );
     }
@@ -1122,7 +1122,7 @@ fn renamed_struct_fields_use_their_sql_names() -> Result<()> {
     let mut chunk = DataChunk::create(&conn, &[logical_type], true)?;
     let mut vector = chunk.get_vector_at_mut::<Renamed>(0)?;
     vector.set_size(1)?;
-    vector.writer()?.set(0, Some(&input))?;
+    vector.writer()?.set(0, &input)?;
     let row = vector.reader()?.get(0)?.unwrap();
     assert_eq!(format!("{row:?}"), "RenamedRef { kind: Some(7), name: Some(\"duck\") }");
     Ok(())

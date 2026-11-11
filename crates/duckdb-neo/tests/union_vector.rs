@@ -193,7 +193,7 @@ fn derived_union_nested_null_values_roundtrip() -> Result<()> {
     let mut vector = chunk.get_vector_at_mut::<Outer>(0)?;
     vector.set_size(rows.len())?;
     for (index, row) in rows.iter().enumerate() {
-        vector.writer()?.set(index, row.as_ref())?;
+        vector.writer()?.set_option(index, row.as_ref())?;
         let value = row.value(&conn)?;
         assert_eq!(value.logical_type()?, logical_type);
         assert_eq!(value.is_null()?, row.is_none(), "row {index}");
@@ -220,7 +220,7 @@ fn derived_union_variants_can_use_associated_type_names() -> Result<()> {
         .iter()
         .enumerate()
     {
-        vector.writer()?.set(index, Some(row))?;
+        vector.writer()?.set(index, row)?;
         assert_eq!(row.value(&conn)?.get::<Named>()?.as_ref(), Some(row));
     }
     assert_eq!(vector.reader()?.get(0)?, Some(NamedRef::Ref(Some(&7))));
@@ -412,14 +412,14 @@ fn derived_union_writes_vectors() -> Result<()> {
     let long = "a string longer than the inline storage".to_owned();
     {
         let mut writer = vector.writer()?;
-        writer.set(0, Some(&Input::str(long.clone())))?;
-        writer.set(1, Some(&Input::Num(1)))?;
-        writer.set(2, None)?;
-        writer.set(3, Some(&Input::Num(9)))?;
+        writer.set(0, &Input::str(long.clone()))?;
+        writer.set(1, &Input::Num(1))?;
+        writer.set_null(2)?;
+        writer.set(3, &Input::Num(9))?;
         // Switching a row's member must NULL the previously active one.
-        writer.set(0, Some(&Input::Num(-1)))?;
-        writer.set(1, Some(&Input::str(long.clone())))?;
-        assert!(writer.set(4, None).is_err());
+        writer.set(0, &Input::Num(-1))?;
+        writer.set(1, &Input::str(long.clone()))?;
+        assert!(writer.set_null(4).is_err());
     }
     let rows: Vec<_> = vector.reader()?.iter().collect();
     assert_eq!(
@@ -472,14 +472,14 @@ fn derived_union_writes_null_members_and_duplicate_types() -> Result<()> {
         let mut nullable = nullable.cast::<Nullable>()?;
         nullable.set_size(3)?;
         let mut writer = nullable.writer()?;
-        writer.set(0, Some(&Nullable::Key(None)))?;
-        writer.set(1, Some(&Nullable::Label(Some("label".to_owned()))))?;
-        writer.set(2, Some(&Nullable::Label(None)))?;
+        writer.set(0, &Nullable::Key(None))?;
+        writer.set(1, &Nullable::Label(Some("label".to_owned())))?;
+        writer.set(2, &Nullable::Label(None))?;
         let mut same = same.cast::<Same>()?;
         same.set_size(2)?;
         let mut writer = same.writer()?;
-        writer.set(0, Some(&Same::Right(5)))?;
-        writer.set(1, Some(&Same::Left(5)))?;
+        writer.set(0, &Same::Right(5))?;
+        writer.set(1, &Same::Left(5))?;
     }
     let nullable = chunk.get_vector_at::<Nullable>(0)?;
     let rows: Vec<_> = nullable.reader()?.iter().collect();
@@ -524,13 +524,13 @@ fn derived_union_nests_in_structs_and_lists() -> Result<()> {
         record.set_size(records.len())?;
         let mut writer = record.writer()?;
         for (index, row) in records.iter().enumerate() {
-            writer.set(index, Some(row))?;
+            writer.set(index, row)?;
         }
         let mut items = items.cast::<List<Input>>()?;
         items.set_size(1)?;
         // SAFETY: the single row below writes all three elements.
         unsafe { items.set_child_size(3)? };
-        items.writer()?.set(0, Some(&list))?;
+        items.writer()?.set(0, &list)?;
     }
     let vector = chunk.get_vector_at::<Record>(0)?;
     for (index, record) in records.iter().enumerate() {
@@ -592,22 +592,22 @@ fn derived_union_refs_write_vectors() -> Result<()> {
         let mut writer = input.writer()?;
         // Rewriting shifted rows switches their active member, which must NULL the previous one.
         for row in 0..4 {
-            writer.set(row, inputs.get((row + 1) % 4)?.as_ref())?;
+            writer.set_option(row, inputs.get((row + 1) % 4)?.as_ref())?;
         }
         for row in 0..4 {
-            writer.set(row, inputs.get(row)?.as_ref())?;
+            writer.set_option(row, inputs.get(row)?.as_ref())?;
         }
         let mut nullable = nullable.cast::<NullableRef<'_>>()?;
         nullable.set_size(4)?;
         let mut writer = nullable.writer()?;
         for (row, value) in nullables.iter().enumerate() {
-            writer.set(row, value.as_ref())?;
+            writer.set_option(row, value.as_ref())?;
         }
         let mut either = either.cast::<EitherRef<'_, i64, String>>()?;
         either.set_size(4)?;
         let mut writer = either.writer()?;
         for (row, value) in eithers.iter().enumerate() {
-            writer.set(row, value.as_ref())?;
+            writer.set_option(row, value.as_ref())?;
         }
     }
     let copied = chunk.get_vector_at::<Input>(0)?;
@@ -673,10 +673,10 @@ fn failed_union_writes_leave_the_row_null() -> Result<()> {
     vector.set_size(2)?;
     {
         let mut writer = vector.writer()?;
-        writer.set(0, Some(&Fallible::X(1)))?;
-        writer.set(1, Some(&Fallible::Bits(BitValue(vec![0, 1]))))?;
-        assert!(writer.set(0, Some(&Fallible::Bits(BitValue(vec![])))).is_err());
-        assert!(writer.set(1, Some(&Fallible::Bits(BitValue(vec![])))).is_err());
+        writer.set(0, &Fallible::X(1))?;
+        writer.set(1, &Fallible::Bits(BitValue(vec![0, 1])))?;
+        assert!(writer.set(0, &Fallible::Bits(BitValue(vec![]))).is_err());
+        assert!(writer.set(1, &Fallible::Bits(BitValue(vec![]))).is_err());
     }
     let reader = vector.reader()?;
     let children = vector.children().unwrap();
@@ -698,9 +698,9 @@ fn failed_union_ref_writes_leave_the_row_null() -> Result<()> {
         let mut vector = chunk.get_vector_at_mut::<FallibleRef<'_>>(0)?;
         vector.set_size(2)?;
         let mut writer = vector.writer()?;
-        writer.set(0, Some(&FallibleRef::X(Some(&1))))?;
-        writer.set(1, Some(&FallibleRef::Bits(Some(&[0, 1]))))?;
-        assert!(writer.set(0, Some(&FallibleRef::Bits(Some(&[])))).is_err());
+        writer.set(0, &FallibleRef::X(Some(&1)))?;
+        writer.set(1, &FallibleRef::Bits(Some(&[0, 1])))?;
+        assert!(writer.set(0, &FallibleRef::Bits(Some(&[]))).is_err());
     }
     let vector = chunk.get_vector_at::<Fallible>(0)?;
     assert!(vector.reader()?.get(0)?.is_none());
@@ -793,7 +793,7 @@ impl ScalarCallbacks for InputProbe {
                 InputRef::Num(value) => format!("Num:{}", value.map_or("NULL".to_owned(), i16::to_string)),
                 InputRef::str(value) => format!("str:{}", value.unwrap_or("NULL")),
             });
-            writer.set(index, text.as_deref())?;
+            writer.set_option(index, text.as_deref())?;
         }
         Ok(())
     }
@@ -828,7 +828,7 @@ impl ScalarCallbacks for ToInput {
                     label: "point".to_owned(),
                 }),
             };
-            writer.set(index, Some(&row))?;
+            writer.set(index, &row)?;
         }
         Ok(())
     }

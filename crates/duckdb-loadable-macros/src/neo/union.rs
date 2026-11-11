@@ -457,20 +457,25 @@ fn writable_impl(
             type Write = Self;
 
             #[inline]
+            unsafe fn write_null(
+                writer: &mut ::duckdb_neo::vector::VectorWriter<'_, Self>,
+                index: ::core::primitive::usize,
+            ) -> ::duckdb_neo::Result<()> {
+                // SAFETY: a NULL union must also null its tag and each of its validated members.
+                unsafe {
+                    writer.write_child_unchecked::<::core::primitive::u8>(0, index, ::core::option::Option::None)?;
+                    #(writer.write_child_unchecked::<#types>(#child_indexes, index, ::core::option::Option::None)?;)*
+                }
+                ::core::result::Result::Ok(())
+            }
+
+            #[inline]
             #[allow(unreachable_patterns)]
             unsafe fn write(
                 writer: &mut ::duckdb_neo::vector::VectorWriter<'_, Self>,
                 index: ::core::primitive::usize,
-                value: ::core::option::Option<&Self>,
+                value: &Self,
             ) -> ::duckdb_neo::Result<()> {
-                let ::core::option::Option::Some(value) = value else {
-                    // SAFETY: a NULL union must also null its tag and each of its validated members.
-                    unsafe {
-                        writer.write_child_unchecked::<::core::primitive::u8>(0, index, ::core::option::Option::None)?;
-                        #(writer.write_child_unchecked::<#types>(#child_indexes, index, ::core::option::Option::None)?;)*
-                        return ::core::result::Result::Ok(());
-                    }
-                };
                 let tag: ::core::primitive::u8 = match value {
                     #(Self::#idents(_) => #tags,)*
                 };
@@ -493,7 +498,7 @@ fn writable_impl(
                 if let ::core::result::Result::Err(error) = write_children() {
                     // The tag and earlier members were written, so NULL the row to keep its children consistent.
                     // SAFETY: the caller guarantees row bounds.
-                    unsafe { writer.set_unchecked(index, ::core::option::Option::None)? };
+                    unsafe { writer.set_null_unchecked(index)? };
                     return ::core::result::Result::Err(error);
                 }
                 ::core::result::Result::Ok(())

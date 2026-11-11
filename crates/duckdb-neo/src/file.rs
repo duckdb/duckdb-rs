@@ -576,7 +576,7 @@ mod tests {
             let mut chunk = DataChunk::create(&conn, [i32::logical_type(&conn)?], true)?;
             let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
             vector.set_size(1)?;
-            vector.writer()?.set(0, Some(&42))?;
+            vector.writer()?.set(0, &42)?;
             chunk.copy(&conn)?
         };
 

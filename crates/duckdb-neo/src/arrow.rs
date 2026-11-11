@@ -407,7 +407,7 @@ mod tests {
                 + v2.map_or(0, |x| if *x { 2 } else { 1 }) as i64
                 + v3.unwrap_or_default().len() as i64;
 
-            writer.set(row, Some(&sum))?;
+            writer.set(row, &sum)?;
         }
 
         Ok(())

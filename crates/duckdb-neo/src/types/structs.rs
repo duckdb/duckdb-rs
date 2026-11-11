@@ -501,8 +501,8 @@ mod tests {
             let mut vector = chunk.get_vector_at_mut::<EmptyRow>(0)?;
             vector.set_size(2)?;
             let mut writer = vector.writer()?;
-            writer.set(0, Some(&EmptyRow {}))?;
-            writer.set(1, None)?;
+            writer.set(0, &EmptyRow {})?;
+            writer.set_null(1)?;
         }
         let vector = chunk.get_vector_at::<Struct>(0)?;
         let reader = vector.reader()?;

@@ -42,7 +42,7 @@ use crate::{Result, error::Error, types::List, types::ListIndex};
 /// let mut writer = vector.list_writer()?;
 /// writer.reserve(3)?;
 /// for (index, value) in [7, 8, 9].iter().enumerate() {
-///     writer.elements().set(index, Some(value))?;
+///     writer.elements().set(index, value)?;
 /// }
 /// writer.set_entry(0, ListIndex::new(0, 2))?;
 /// writer.set_entry(1, ListIndex::new(2, 1))?;
@@ -375,8 +375,8 @@ mod tests {
             let mut writer = vector.list_writer()?;
             writer.reserve(3)?;
             assert_eq!(writer.elements().len(), 3);
-            writer.elements().set(0, Some(&7))?;
-            writer.elements().set(1, Some(&8))?;
+            writer.elements().set(0, &7)?;
+            writer.elements().set(1, &8)?;
             writer.set_entry(0, ListIndex::new(0, 2))?;
             // Unwritten elements below the child's size are initialized.
             writer.set_entry(1, ListIndex::new(2, 1))?;
@@ -403,7 +403,7 @@ mod tests {
         vector.set_size(3)?;
         // SAFETY: row 0 writes both elements.
         unsafe { vector.set_child_size(2)? };
-        vector.writer()?.set(0, Some(&List(vec![Some(1), Some(2)])))?;
+        vector.writer()?.set(0, &List(vec![Some(1), Some(2)]))?;
         // Rewinding makes the next rows overwrite the elements, but trimming must keep them.
         vector.set_child_offset(0)?;
         {
@@ -460,7 +460,7 @@ mod tests {
         vector.set_size(1)?;
         let mut writer = vector.list_writer()?;
         writer.reserve(100)?;
-        writer.elements().set(0, Some("written"))?;
+        writer.elements().set(0, "written")?;
         writer.set_entry(0, ListIndex::new(0, 100))?;
         std::mem::forget(writer);
         let reader = vector.reader()?;

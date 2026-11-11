@@ -56,7 +56,7 @@ fn reader_exposes_flat_data_and_physical_validity() -> Result<()> {
     let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
     vector.set_size(130)?;
     for index in 0..vector.len() {
-        vector.writer()?.set(index, Some(&(index as i32)))?;
+        vector.writer()?.set(index, &(index as i32))?;
     }
     let reader = vector.reader()?;
     assert_eq!(reader.selection(), Selection::Identity);
@@ -67,7 +67,7 @@ fn reader_exposes_flat_data_and_physical_validity() -> Result<()> {
     assert_physical_reads(&reader)?;
 
     for index in [0, 64, 129] {
-        vector.writer()?.set(index, None)?;
+        vector.writer()?.set_null(index)?;
     }
     let reader = vector.reader()?;
     let mask = reader.validity().unwrap();
@@ -106,7 +106,7 @@ fn flat_reader_handles_empty_rows_nulls_and_bounds() -> Result<()> {
     vector.set_size(130)?;
     for index in 0..vector.len() {
         let value = (index % 3 != 0).then_some(index as i32);
-        vector.writer()?.set(index, value.as_ref())?;
+        vector.writer()?.set_option(index, value.as_ref())?;
     }
     let reader: VectorReader<'_, i32> = vector.reader()?;
     assert_eq!(reader.vector().storage_kind(), StorageKind::Flat);
@@ -135,7 +135,7 @@ fn reader_iterator_tracks_remaining_rows() -> Result<()> {
     let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
     vector.set_size(3)?;
     for (index, value) in [Some(1), None, Some(3)].into_iter().enumerate() {
-        vector.writer()?.set(index, value.as_ref())?;
+        vector.writer()?.set_option(index, value.as_ref())?;
     }
     let mut iter = vector.reader()?.iter();
     fn assert_traits(_: &impl ExactSizeIterator, _: &impl std::iter::FusedIterator) {}
@@ -350,7 +350,7 @@ fn reader_handles_native_storage_layouts() -> Result<()> {
                 assert!(reader.is_null(2).is_err());
             }
             for (index, value) in reader.iter().enumerate() {
-                output.writer()?.set(index, value)?;
+                output.writer()?.set_option(index, value)?;
             }
             Ok(())
         },
@@ -409,13 +409,13 @@ fn cached_views_follow_writes_and_resizes() -> Result<()> {
     assert!(vector.reader()?.validity().is_none());
 
     // The writer allocates the mask after the view was cached.
-    vector.writer()?.set(1, None)?;
+    vector.writer()?.set_null(1)?;
     assert_view_is_current(&vector)?;
     assert_eq!(vector.reader()?.iter().collect::<Vec<_>>(), [Some(&1), None]);
 
     vector.set_size(5000)?;
     assert_view_is_current(&vector)?;
-    vector.writer()?.set(4999, Some(&7))?;
+    vector.writer()?.set(4999, &7)?;
     let reader = vector.reader()?;
     assert_eq!(reader.len(), 5000);
     assert_eq!(reader.get(0)?, Some(&1));
@@ -459,7 +459,7 @@ fn cached_child_views_follow_parent_writes() -> Result<()> {
             .is_none()
     );
 
-    vector.writer()?.set(1, Some(&CachedField { x: None }))?;
+    vector.writer()?.set(1, &CachedField { x: None })?;
     assert_eq!(read(&vector)?, [Some(Some(1)), Some(None)]);
     assert_view_is_current(vector.children().unwrap().get_vector_at::<i32>(0)?)?;
     Ok(())

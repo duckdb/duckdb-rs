@@ -213,13 +213,13 @@ mod tests {
             for i in 0..reader.len() {
                 let input_value = reader.get(i)?;
                 if input_value.is_none() {
-                    writer.set(i, None)?;
+                    writer.set_null(i)?;
                     continue;
                 }
                 let input_value = input_value.unwrap();
                 let output_value = input_value.parse::<f32>().unwrap() + self.offset as f32;
 
-                writer.set(i, Some(&output_value))?;
+                writer.set(i, &output_value)?;
             }
             Ok(())
         }

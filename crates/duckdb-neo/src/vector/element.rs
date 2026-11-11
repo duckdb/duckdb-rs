@@ -157,13 +157,13 @@ pub unsafe trait HasChildren: NativeElement {
 /// }
 ///
 /// fn write(vector: &mut Vector<'_, Record>) -> Result<()> {
-///     vector.writer()?.set(0, Some(&Record { name: "duck".to_owned(), value: Some(42) }))
+///     vector.writer()?.set(0, &Record { name: "duck".to_owned(), value: Some(42) })
 /// }
 /// ```
 ///
-/// `Option<T>` fields preserve NULLs; plain fields write non-NULL values. Passing
-/// `None` to the writer nulls the whole struct and its descendants, without requiring
-/// `Default`. Writes borrow their inputs without moving or cloning them. Nested fields
+/// `Option<T>` fields preserve NULLs; plain fields write non-NULL values.
+/// [`VectorWriter::set_null`](crate::vector::VectorWriter::set_null) nulls the whole struct and its
+/// descendants, without requiring `Default`. Writes borrow their inputs without moving or cloning them. Nested fields
 /// must implement `Borrow<T::Write>`; strings use `str` and binary values use `[u8]`.
 /// Write inputs with borrowed fields cannot outlive their data:
 ///
@@ -190,15 +190,10 @@ pub unsafe trait WritableNativeElement: NativeElement {
     /// The borrowed input for one row, such as `Self`, `str`, or `[u8]`.
     type Write: ?Sized;
 
-    /// Encode one value into a writable vector.
+    /// Encode one non-NULL value into a writable vector.
     ///
-    /// [`VectorWriter::set`](crate::vector::VectorWriter::set) and
-    /// [`VectorWriter::set_unchecked`](crate::vector::VectorWriter::set_unchecked)
-    /// maintain the row's validity after
-    /// successful encoding. Nested NULL values must still propagate to descendants,
-    /// and value-API writers preserve cast nullness.
-    ///
-    /// Prefer [`VectorWriter::set`](crate::vector::VectorWriter::set), which upholds these requirements.
+    /// [`VectorWriter::set`](crate::vector::VectorWriter::set) marks the row valid after successful
+    /// encoding; prefer it, since it upholds these requirements.
     ///
     /// # Safety
     ///
@@ -207,10 +202,22 @@ pub unsafe trait WritableNativeElement: NativeElement {
     /// ```compile_fail,E0133
     /// # use duckdb_neo::vector::{Vector, WritableNativeElement};
     /// fn write(vector: &mut Vector<'_, i32>) -> duckdb_neo::Result<()> {
-    ///     <i32 as WritableNativeElement>::write(&mut vector.writer()?, 0, Some(&1))
+    ///     <i32 as WritableNativeElement>::write(&mut vector.writer()?, 0, &1)
     /// }
     /// ```
-    unsafe fn write(writer: &mut VectorWriter<'_, Self>, index: usize, value: Option<&Self::Write>) -> Result<()>;
+    unsafe fn write(writer: &mut VectorWriter<'_, Self>, index: usize, value: &Self::Write) -> Result<()>;
+
+    /// Prepare a row for SQL NULL, e.g. by nulling the descendants DuckDB requires to be NULL.
+    ///
+    /// [`VectorWriter::set_null`](crate::vector::VectorWriter::set_null) marks the row NULL afterwards.
+    ///
+    /// # Safety
+    ///
+    /// - `index` must be less than [`VectorWriter::len`].
+    unsafe fn write_null(writer: &mut VectorWriter<'_, Self>, index: usize) -> Result<()> {
+        let _ = (writer, index);
+        Ok(())
+    }
 }
 
 /// The element type has not been checked against the vector's logical type yet.

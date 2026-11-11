@@ -51,7 +51,7 @@ use super::{
 /// fn resize(vector: &mut Vector<'_, i32>) -> Result<()> {
 ///     let mut writer = vector.writer()?;
 ///     vector.set_size(10)?;
-///     writer.set(0, Some(&42))?;
+///     writer.set(0, &42)?;
 ///     Ok(())
 /// }
 /// ```
@@ -149,9 +149,9 @@ impl<'writer, T: NativeElement> VectorWriter<'writer, T> {
     ///
     /// fn overwrite(vector: &mut Vector<'_, i32>) -> Result<()> {
     ///     let mut writer = vector.writer()?;
-    ///     writer.set(0, Some(&1))?;
+    ///     writer.set(0, &1)?;
     ///     let data = unsafe { writer.as_slice_mut() }.unwrap();
-    ///     writer.set(0, Some(&2))?;
+    ///     writer.set(0, &2)?;
     ///     data[0] = 3;
     ///     Ok(())
     /// }
@@ -183,9 +183,9 @@ impl<'writer, T: NativeElement> VectorWriter<'writer, T> {
     ///
     /// fn overwrite(vector: &mut Vector<'_, i32>) -> Result<()> {
     ///     let mut writer = vector.writer()?;
-    ///     writer.set(0, Some(&1))?;
+    ///     writer.set(0, &1)?;
     ///     let mask = unsafe { writer.validity_mut()? };
-    ///     writer.set(0, None)?;
+    ///     writer.set_null(0)?;
     ///     mask[0] = 0;
     ///     Ok(())
     /// }
@@ -314,7 +314,7 @@ impl<'writer, T: HasChildren> VectorWriter<'writer, T> {
         // SAFETY: the caller guarantees the child's type and row bounds.
         unsafe {
             self.child_writer_unchecked::<U>(child_index)?
-                .set_unchecked(index, value)
+                .set_option_unchecked(index, value)
         }
     }
 
@@ -333,10 +333,10 @@ impl<'writer, T: HasChildren> VectorWriter<'writer, T> {
 }
 
 impl<T: WritableNativeElement> VectorWriter<'_, T> {
-    /// Copy a borrowed input into the vector and update validity; `None` writes SQL NULL.
-    /// Nested NULLs propagate to descendants, and logical value checks remain enforced.
+    /// Copy a borrowed value into the vector and mark the row valid.
+    /// Logical value checks remain enforced.
     #[inline(always)]
-    pub fn set(&mut self, index: usize, value: Option<&T::Write>) -> Result<()> {
+    pub fn set(&mut self, index: usize, value: &T::Write) -> Result<()> {
         if index >= self.len() {
             return Err(out_of_bounds(index, self.len()));
         }
@@ -344,22 +344,71 @@ impl<T: WritableNativeElement> VectorWriter<'_, T> {
         unsafe { self.set_unchecked(index, value) }
     }
 
-    /// Encode a value and update its validity without checking bounds.
+    /// Make a row SQL NULL, along with the descendants DuckDB requires to be NULL.
+    #[inline(always)]
+    pub fn set_null(&mut self, index: usize) -> Result<()> {
+        if index >= self.len() {
+            return Err(out_of_bounds(index, self.len()));
+        }
+        // SAFETY: The writer is flat and writable, and the row is in bounds.
+        unsafe { self.set_null_unchecked(index) }
+    }
+
+    /// Write a row; `None` writes SQL NULL.
+    #[inline(always)]
+    pub fn set_option(&mut self, index: usize, value: Option<&T::Write>) -> Result<()> {
+        match value {
+            Some(value) => self.set(index, value),
+            None => self.set_null(index),
+        }
+    }
+
+    /// Encode a value and mark the row valid without checking bounds.
     ///
     /// Logical value checks still apply.
     ///
     /// # Safety
     /// `index` must be less than [`Self::len`].
     #[inline(always)]
-    pub unsafe fn set_unchecked(&mut self, index: usize, value: Option<&T::Write>) -> Result<()> {
-        let is_valid = value.is_some();
+    pub unsafe fn set_unchecked(&mut self, index: usize, value: &T::Write) -> Result<()> {
         // SAFETY: The writer guarantees flat, writable storage; the caller guarantees bounds.
         unsafe { T::write(self, index, value)? };
         // VARIANT's value API determines nullness after casting the supplied Value.
         if T::TYPE_ID != LogicalTypeID::Variant {
-            unsafe { self.set_validity_unchecked(index, is_valid) };
+            // SAFETY: as above; the row now holds a value.
+            unsafe { self.set_validity_unchecked(index, true) };
         }
         Ok(())
+    }
+
+    /// Make a row SQL NULL without checking bounds.
+    ///
+    /// # Safety
+    /// `index` must be less than [`Self::len`].
+    #[inline(always)]
+    pub unsafe fn set_null_unchecked(&mut self, index: usize) -> Result<()> {
+        // SAFETY: The writer guarantees flat, writable storage; the caller guarantees bounds.
+        unsafe { T::write_null(self, index)? };
+        if T::TYPE_ID != LogicalTypeID::Variant {
+            // SAFETY: as above.
+            unsafe { self.set_validity_unchecked(index, false) };
+        }
+        Ok(())
+    }
+
+    /// Write a row without checking bounds; `None` writes SQL NULL.
+    ///
+    /// # Safety
+    /// `index` must be less than [`Self::len`].
+    #[inline(always)]
+    pub unsafe fn set_option_unchecked(&mut self, index: usize, value: Option<&T::Write>) -> Result<()> {
+        // SAFETY: the caller guarantees bounds.
+        unsafe {
+            match value {
+                Some(value) => self.set_unchecked(index, value),
+                None => self.set_null_unchecked(index),
+            }
+        }
     }
 }
 

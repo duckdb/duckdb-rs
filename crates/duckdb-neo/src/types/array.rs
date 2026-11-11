@@ -142,25 +142,31 @@ unsafe impl<T: NativeElement, const N: usize> HasChildren for Array<T, N> {
 /// # Safety
 /// `index` must be in bounds, and the child must be validated as `T`.
 #[inline]
-unsafe fn write_array<T: NativeElement, V, const N: usize>(
+unsafe fn write_array<'v, T, const N: usize>(
     vector: &mut VectorWriter<'_, Array<T, N>>,
     index: usize,
-    values: Option<impl Iterator<Item = V>>,
-    mut write: impl FnMut(&mut VectorWriter<'_, T>, usize, Option<V>) -> Result<()>,
-) -> Result<()> {
+    values: Option<impl Iterator<Item = &'v Option<T>>>,
+) -> Result<()>
+where
+    T: WritableNativeElement + std::borrow::Borrow<T::Write> + 'v,
+{
     // SAFETY: the caller guarantees that the child was validated as T; preparing it sized it to N per row.
     let child = unsafe { vector.child_writer_unchecked::<T>(0)? };
     let offset = index * N;
     if let Some(values) = values {
+        // SAFETY: the elements of an in-bounds row are in bounds of the child.
         let written = (offset..offset + N)
             .zip(values)
-            .try_for_each(|(element, value)| write(child, element, Some(value)));
+            .try_for_each(|(element, value)| unsafe {
+                child.set_option_unchecked(element, value.as_ref().map(std::borrow::Borrow::borrow))
+            });
         if written.is_ok() {
             return Ok(());
         }
         // Earlier elements were written, so NULL the row to keep its elements consistent.
         for element in offset..offset + N {
-            write(child, element, None)?;
+            // SAFETY: as above.
+            unsafe { child.set_null_unchecked(element)? };
         }
         // SAFETY: the caller guarantees an in-bounds row.
         unsafe { vector.set_validity_unchecked(index, false) };
@@ -168,7 +174,8 @@ unsafe fn write_array<T: NativeElement, V, const N: usize>(
     }
     // DuckDB requires a NULL array row's elements to be NULL too.
     for element in offset..offset + N {
-        write(child, element, None)?;
+        // SAFETY: as above.
+        unsafe { child.set_null_unchecked(element)? };
     }
     Ok(())
 }
@@ -181,18 +188,15 @@ where
     type Write = Self;
 
     #[inline]
-    unsafe fn write(vector: &mut VectorWriter<'_, Self>, index: usize, value: Option<&Self::Write>) -> Result<()> {
+    unsafe fn write(vector: &mut VectorWriter<'_, Self>, index: usize, value: &Self::Write) -> Result<()> {
         // SAFETY: the caller guarantees an in-bounds row; validation checked the child as T.
-        unsafe {
-            write_array(
-                vector,
-                index,
-                value.map(|value| value.0.iter()),
-                |child, element, value| {
-                    child.set_unchecked(element, value.and_then(Option::as_ref).map(std::borrow::Borrow::borrow))
-                },
-            )
-        }
+        unsafe { write_array(vector, index, Some(value.0.iter())) }
+    }
+
+    #[inline]
+    unsafe fn write_null(vector: &mut VectorWriter<'_, Self>, index: usize) -> Result<()> {
+        // SAFETY: the caller guarantees an in-bounds row; validation checked the child as T.
+        unsafe { write_array(vector, index, None::<std::slice::Iter<'_, Option<T>>>) }
     }
 }
 
@@ -354,10 +358,10 @@ mod tests {
         let mut chunk = DataChunk::create(&conn, &[Array::<i32, 2>::logical_type(&conn)?], true)?;
         let mut vector = chunk.get_vector_at_mut::<Array<i32, 2>>(0)?;
         vector.set_size(1)?;
-        vector.writer()?.set(0, Some(&Array([Some(11), Some(12)])))?;
+        vector.writer()?.set(0, &Array([Some(11), Some(12)]))?;
         let child_len = vector.children().unwrap().get_untyped_vector_at(0)?.len();
 
-        let err = vector.writer()?.set(1, Some(&Array([Some(21), Some(22)]))).unwrap_err();
+        let err = vector.writer()?.set(1, &Array([Some(21), Some(22)])).unwrap_err();
         assert!(err.to_string().contains("Vector index 1 is out of bounds for length 1"));
         assert_eq!(vector.children().unwrap().get_untyped_vector_at(0)?.len(), child_len);
         assert_eq!(
@@ -390,12 +394,12 @@ mod tests {
         let owned = Array([Some("a string longer than the inline storage".to_owned()), None]);
         {
             let mut writer = vector.writer()?;
-            writer.set(0, Some(&Array([Some("a".to_owned()), Some("b".to_owned())])))?;
-            writer.set(1, Some(&owned))?;
-            writer.set(2, Some(&Array([Some("c".to_owned()), Some("d".to_owned())])))?;
+            writer.set(0, &Array([Some("a".to_owned()), Some("b".to_owned())]))?;
+            writer.set(1, &owned)?;
+            writer.set(2, &Array([Some("c".to_owned()), Some("d".to_owned())]))?;
             // Rewriting reuses the row's elements, and a NULL row nulls them.
-            writer.set(0, Some(&Array([None, Some("e".to_owned())])))?;
-            writer.set(2, None)?;
+            writer.set(0, &Array([None, Some("e".to_owned())]))?;
+            writer.set_null(2)?;
         }
         assert_eq!(
             vector.get_value_slow(0)?.get::<Array<String, 2>>()?,
@@ -421,8 +425,8 @@ mod tests {
         unsafe { vector.set_child_size(3)? };
         {
             let mut writer = vector.writer()?;
-            writer.set(0, Some(&List(vec![Some(Array([Some(1), Some(2)])), None])))?;
-            writer.set(1, Some(&List(vec![Some(Array([None, Some(4)]))])))?;
+            writer.set(0, &List(vec![Some(Array([Some(1), Some(2)])), None]))?;
+            writer.set(1, &List(vec![Some(Array([None, Some(4)]))]))?;
         }
         assert_eq!(
             vector.get_value_slow(0)?.get::<List<Array<i32, 2>>>()?,
@@ -441,13 +445,13 @@ mod tests {
         let mut chunk = DataChunk::create(&conn, &[Array::<i32, 2048>::logical_type(&conn)?], true)?;
         let mut vector = chunk.get_vector_at_mut::<Array<i32, 2048>>(0)?;
         vector.set_size(1)?;
-        vector.writer()?.set(0, Some(&Array([Some(1); 2048])))?;
+        vector.writer()?.set(0, &Array([Some(1); 2048]))?;
         // DuckDB grows the parent validity before the child reservation fails.
         assert!(vector.set_size(1 << 25).is_err());
         assert_eq!(vector.len(), 1);
-        vector.writer()?.set(0, None)?;
+        vector.writer()?.set_null(0)?;
         assert!(vector.reader()?.get(0)?.is_none());
-        vector.writer()?.set(0, Some(&Array([Some(2); 2048])))?;
+        vector.writer()?.set(0, &Array([Some(2); 2048]))?;
         assert_eq!(vector.reader()?.get(0)?.unwrap().iter().nth(2047), Some(Some(&2)));
         Ok(())
     }

@@ -276,10 +276,10 @@ unsafe impl WritableNativeElement for UncheckedString {
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<&Self::Write>,
+        value: &Self::Write,
     ) -> Result<()> {
         // SAFETY: The caller guarantees a writable, flat, in-bounds row.
-        unsafe { vector.write_bytes(index, value.map(|v| v.as_bytes())) }
+        unsafe { vector.write_bytes(index, Some(value.as_bytes())) }
     }
 }
 
@@ -291,10 +291,10 @@ unsafe impl WritableNativeElement for String {
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<&Self::Write>,
+        value: &Self::Write,
     ) -> Result<()> {
         // SAFETY: The caller guarantees a writable, flat, in-bounds row.
-        unsafe { vector.write_bytes(index, value.map(|v| v.as_bytes())) }
+        unsafe { vector.write_bytes(index, Some(value.as_bytes())) }
     }
 }
 
@@ -306,10 +306,10 @@ unsafe impl WritableNativeElement for BlobValue {
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<&Self::Write>,
+        value: &Self::Write,
     ) -> Result<()> {
         // SAFETY: The caller guarantees a writable, flat, in-bounds row.
-        unsafe { vector.write_bytes(index, value) }
+        unsafe { vector.write_bytes(index, Some(value)) }
     }
 }
 
@@ -318,16 +318,10 @@ unsafe impl WritableNativeElement for BitValue {
     type Write = [u8];
 
     #[inline]
-    unsafe fn write(
-        vector: &mut crate::vector::VectorWriter<'_, Self>,
-        index: usize,
-        value: Option<&[u8]>,
-    ) -> Result<()> {
-        if let Some(value) = value {
-            check_bit(value)?;
-        }
+    unsafe fn write(vector: &mut crate::vector::VectorWriter<'_, Self>, index: usize, value: &[u8]) -> Result<()> {
+        check_bit(value)?;
         // SAFETY: The caller guarantees a writable, flat, in-bounds row.
-        unsafe { vector.write_bytes(index, value) }
+        unsafe { vector.write_bytes(index, Some(value)) }
     }
 }
 
@@ -369,9 +363,9 @@ unsafe impl WritableNativeElement for &str {
     unsafe fn write(
         writer: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<&Self::Write>,
+        value: &Self::Write,
     ) -> Result<()> {
-        unsafe { writer.write_bytes(index, value.map(str::as_bytes)) }
+        unsafe { writer.write_bytes(index, Some(value.as_bytes())) }
     }
 }
 
@@ -426,7 +420,7 @@ mod tests {
         ];
         vector.set_size(values.len())?;
         for (index, value) in values.iter().enumerate() {
-            vector.writer()?.set(index, *value)?;
+            vector.writer()?.set_option(index, *value)?;
             assert_eq!(vector.reader()?.get(index)?, *value);
         }
         assert_eq!(vector.reader()?.iter().collect::<Vec<_>>(), values);

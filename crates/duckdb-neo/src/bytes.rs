@@ -56,7 +56,7 @@ use crate::{
 /// fn overwrite(vector: &mut Vector<'_, String>) -> Result<()> {
 ///     let mut writer = vector.writer()?;
 ///     let bytes = writer.arena()?.add_str("a value stored in the arena")?;
-///     writer.set(0, Some("replacement"))?;
+///     writer.set(0, "replacement")?;
 ///     assert_eq!(bytes.get_data(), b"a value stored in the arena");
 ///     Ok(())
 /// }

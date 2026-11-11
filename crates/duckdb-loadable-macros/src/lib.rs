@@ -234,8 +234,8 @@ pub fn as_native_element(input: TokenStream) -> TokenStream {
 ///
 /// `set` borrows the struct and writes each field through its borrowed write input.
 /// Requires `NativeElement` and fields implementing `WritableNativeElement + Borrow<T::Write>`.
-/// Plain fields write non-NULL values; optional fields preserve NULL. Passing `None` as the
-/// entire input nulls every child without requiring `Default` or a separate write struct.
+/// Plain fields write non-NULL values; optional fields preserve NULL. `set_null` nulls every
+/// child without requiring `Default` or a separate write struct.
 /// A custom unsafe `NativeElement` implementation must validate the complete named field layout;
 /// derive `AsNativeElement` to generate that validation. Writes do not revalidate the schema.
 #[cfg(feature = "neo")]

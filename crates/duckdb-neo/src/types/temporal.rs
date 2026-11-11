@@ -51,9 +51,9 @@ macro_rules! declare_storage_value {
             type Write = Self;
 
             #[inline]
-            unsafe fn write(vector: &mut crate::vector::VectorWriter<'_, Self>, index: usize, value: Option<&Self::Write>) -> Result<()> {
+            unsafe fn write(vector: &mut crate::vector::VectorWriter<'_, Self>, index: usize, value: &Self::Write,) -> Result<()> {
                 // SAFETY: The caller guarantees a writable, flat, in-bounds row.
-                unsafe { vector.write_internal(index, value.copied()) }
+                unsafe { vector.write_internal(index, Some(*value)) }
             }
         }
     };
@@ -239,10 +239,10 @@ unsafe impl WritableNativeElement for IntervalValue {
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<&Self::Write>,
+        value: &Self::Write,
     ) -> Result<()> {
         // SAFETY: The caller guarantees a writable, flat, in-bounds row.
-        unsafe { vector.write_internal(index, value.copied()) }
+        unsafe { vector.write_internal(index, Some(*value)) }
     }
 }
 
