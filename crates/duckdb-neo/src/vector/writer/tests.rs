@@ -862,3 +862,67 @@ fn writer_fills_nested_nulls() -> Result<()> {
     );
     Ok(())
 }
+
+#[test]
+fn writer_writes_slices_as_the_physical_type() -> Result<()> {
+    use crate::{logical_type::LogicalType, types::HugeInt};
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let types = [
+        "BIGINT",
+        "TIMESTAMP",
+        "TIME",
+        "DECIMAL(18, 3)",
+        "INTEGER",
+        "UUID",
+        "ENUM('a')",
+        "BOOLEAN",
+    ]
+    .map(|text| LogicalType::from_text(&conn, text))
+    .into_iter()
+    .collect::<Result<Vec<_>>>()?;
+    let mut chunk = DataChunk::create(&conn, &types, true)?;
+    for column in 0..types.len() {
+        chunk.get_vector_at_mut::<Unknown>(column)?.set_size(2)?;
+    }
+    for column in 0..4 {
+        let mut vector = chunk.get_vector_at_mut::<Unknown>(column)?;
+        let mut writer = vector.writer()?;
+        writer.write_slice_as(0, &[1_000_i64, 2_000])?;
+        assert!(writer.write_slice_as(1, &[1_i64, 2]).is_err());
+        assert!(writer.write_slice_as(0, &[1_i32]).is_err());
+    }
+    let mut integer = chunk.get_vector_at_mut::<Unknown>(4)?;
+    let error = integer.writer()?.write_slice_as(0, &[1_i64]).unwrap_err();
+    assert!(error.message.contains("INTEGER rows are not stored as i64"), "{error}");
+    let mut uuid = chunk.get_vector_at_mut::<Unknown>(5)?;
+    uuid.writer()?.write_slice_as(
+        0,
+        &[HugeInt {
+            lower: 0,
+            upper: i64::MIN,
+        }; 2],
+    )?;
+    let mut enumeration = chunk.get_vector_at_mut::<Unknown>(6)?;
+    assert!(enumeration.writer()?.write_slice_as(0, &[1_u8]).is_err());
+    let mut boolean = chunk.get_vector_at_mut::<Unknown>(7)?;
+    assert!(boolean.writer()?.write_slice_as(0, &[2_u8]).is_err());
+    boolean.writer()?.write_slice_as(0, &[true, false])?;
+    let rows = (0..types.len())
+        .map(|column| chunk.get_vector_at::<Unknown>(column)?.get_value_slow(0)?.dbg_string())
+        .collect::<Result<Vec<_>>>()?;
+    assert_eq!(
+        rows,
+        [
+            "1000",
+            "1970-01-01 00:00:00.001",
+            "00:00:00.001",
+            "1.000",
+            "0",
+            "00000000-0000-0000-0000-000000000000",
+            "a",
+            "true"
+        ]
+    );
+    Ok(())
+}

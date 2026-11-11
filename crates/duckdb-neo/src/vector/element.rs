@@ -212,48 +212,114 @@ unsafe impl ReadableNativeElement for Unknown {
 
 /// Element types stored as themselves: a slot holds exactly one `Self`, so slices copy unchanged.
 ///
-/// Enables [`VectorWriter::write_slice`](crate::vector::VectorWriter::write_slice) and
+/// Enables [`VectorWriter::write_slice`](crate::vector::VectorWriter::write_slice),
+/// [`VectorWriter::write_slice_as`](crate::vector::VectorWriter::write_slice_as) and
 /// [`VectorWriter::copy_from`](crate::vector::VectorWriter::copy_from).
 ///
 /// # Safety
 ///
 /// `Self` must have the size and alignment of one physical slot, and every value of `Self` must be
-/// a valid row of every logical type `validate` accepts.
-pub unsafe trait PlainNative: WritableNativeElement<Write = Self> + ReadableNativeElement + Copy {}
+/// a valid row of every logical type DuckDB stores in the same physical type.
+pub unsafe trait PlainNative:
+    slot::PlainSlot + WritableNativeElement<Write = Self> + ReadableNativeElement + Copy
+{
+}
+
+mod slot {
+    /// DuckDB's physical types for the slots of plain elements.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum Slot {
+        Bool,
+        I8,
+        I16,
+        I32,
+        I64,
+        I128,
+        U8,
+        U16,
+        U32,
+        U64,
+        U128,
+        F32,
+        F64,
+        Interval,
+    }
+
+    pub trait PlainSlot {
+        const SLOT: Slot;
+    }
+}
+
+/// Return the physical type of `logical_type`'s slots when every value of that type is a valid row.
+pub(crate) fn plain_slot(logical_type: &LogicalType) -> Result<Option<slot::Slot>> {
+    use LogicalTypeID::*;
+    use slot::Slot;
+    Ok(Some(match logical_type.id()? {
+        Boolean => Slot::Bool,
+        TinyInt => Slot::I8,
+        SmallInt => Slot::I16,
+        Integer | Date => Slot::I32,
+        BigInt | Time | TimeNs | Timestamp | TimestampSec | TimestampMs | TimestampNs | TimestampTz | TimestampTzNs => {
+            Slot::I64
+        }
+        HugeInt | Uuid => Slot::I128,
+        UTinyInt => Slot::U8,
+        USmallInt => Slot::U16,
+        UInteger => Slot::U32,
+        UBigInt | TimeTz => Slot::U64,
+        UHugeInt => Slot::U128,
+        Float => Slot::F32,
+        Double => Slot::F64,
+        Interval => Slot::Interval,
+        Decimal => match crate::types::DecimalSignature::from_logical_type(logical_type)?.width {
+            ..=4 => Slot::I16,
+            5..=9 => Slot::I32,
+            10..=18 => Slot::I64,
+            _ => Slot::I128,
+        },
+        _ => return Ok(None),
+    }))
+}
 
 macro_rules! plain_native {
-    ($($type:ty),* $(,)?) => {$(
+    ($($type:ty => $slot:ident),* $(,)?) => {$(
+        impl slot::PlainSlot for $type {
+            const SLOT: slot::Slot = slot::Slot::$slot;
+        }
+
         // SAFETY: the type is its own physical slot, and every value is a valid row.
         unsafe impl PlainNative for $type {}
     )*};
 }
 
 plain_native!(
-    bool,
-    i8,
-    i16,
-    i32,
-    i64,
-    u8,
-    u16,
-    u32,
-    u64,
-    f32,
-    f64,
-    crate::types::HugeInt,
-    crate::types::UHugeInt,
-    crate::types::DateValue,
-    crate::types::TimeValue,
-    crate::types::TimeNsValue,
-    crate::types::TimeTzValue,
-    crate::types::TimestampValue,
-    crate::types::TimestampSecValue,
-    crate::types::TimestampMsValue,
-    crate::types::TimestampNsValue,
-    crate::types::TimestampTzValue,
-    crate::types::TimestampTzNsValue,
-    crate::types::IntervalValue,
-    crate::types::ShortDecimal,
-    crate::types::WordDecimal,
-    crate::types::LongDecimal,
+    bool => Bool,
+    i8 => I8,
+    i16 => I16,
+    i32 => I32,
+    i64 => I64,
+    u8 => U8,
+    u16 => U16,
+    u32 => U32,
+    u64 => U64,
+    f32 => F32,
+    f64 => F64,
+    crate::types::HugeInt => I128,
+    crate::types::UHugeInt => U128,
+    crate::types::UuidValueRaw => I128,
+    crate::types::DateValue => I32,
+    crate::types::TimeValue => I64,
+    crate::types::TimeNsValue => I64,
+    crate::types::TimeTzValue => U64,
+    crate::types::TimestampValue => I64,
+    crate::types::TimestampSecValue => I64,
+    crate::types::TimestampMsValue => I64,
+    crate::types::TimestampNsValue => I64,
+    crate::types::TimestampTzValue => I64,
+    crate::types::TimestampTzNsValue => I64,
+    crate::types::IntervalValue => Interval,
+    crate::types::ShortDecimal => I16,
+    crate::types::WordDecimal => I32,
+    crate::types::LongDecimal => I64,
+    crate::types::HugeDecimal => I128,
 );

@@ -1,7 +1,7 @@
 use std::{marker::PhantomData, ptr::NonNull};
 
 use crate::raw::RawExt;
-use crate::{Result, check_api_call, ffi, logical_type::LogicalTypeID};
+use crate::{Error, Result, check_api_call, ffi, logical_type::LogicalTypeID};
 
 use super::{
     Arena, DuckDBBytes, HasDuckDBBytes, NativeElement, PlainNative, Selection, StorageKind, Vector, VectorReader,
@@ -439,18 +439,32 @@ impl<T: NativeElement> VectorWriter<'_, T> {
     /// Copy `values` into rows `offset..offset + values.len()` and mark those rows valid.
     ///
     /// # Safety
-    /// `T` must be the physical slot type, and every value must be a valid row.
-    pub(crate) unsafe fn write_slice_unchecked(&mut self, offset: usize, values: &[T]) -> Result<()> {
+    /// `U` must be the physical slot type, and every value must be a valid row.
+    pub(crate) unsafe fn write_slice_unchecked<U>(&mut self, offset: usize, values: &[U]) -> Result<()> {
         let end = offset
             .checked_add(values.len())
             .filter(|end| *end <= self.len())
             .ok_or_else(|| out_of_bounds(offset.saturating_add(values.len()).saturating_sub(1), self.len()))?;
         // SAFETY: the rows are in bounds, and the caller guarantees `T` and the values are valid rows.
         unsafe {
-            std::ptr::copy_nonoverlapping(values.as_ptr(), self.data.cast::<T>().add(offset), values.len());
+            std::ptr::copy_nonoverlapping(values.as_ptr(), self.data.cast::<U>().add(offset), values.len());
             self.mark_valid_range(offset, end);
         }
         Ok(())
+    }
+
+    /// Copy `values` into rows `offset..offset + values.len()` and mark those rows valid, when DuckDB
+    /// stores this vector's rows as `U`: e.g. `i64` into `BIGINT`, `TIMESTAMP` or `DECIMAL(18, 3)`.
+    pub fn write_slice_as<U: PlainNative>(&mut self, offset: usize, values: &[U]) -> Result<()> {
+        let logical_type = self.vector().logical_type();
+        if super::element::plain_slot(logical_type)? != Some(U::SLOT) {
+            return Err(Error::invalid_input(format!(
+                "{logical_type} rows are not stored as {}",
+                std::any::type_name::<U>()
+            )));
+        }
+        // SAFETY: `U` has the physical type of this vector's slots, all of whose values are valid rows.
+        unsafe { self.write_slice_unchecked(offset, values) }
     }
 }
 
