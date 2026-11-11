@@ -209,3 +209,51 @@ unsafe impl ReadableNativeElement for Unknown {
     {
     }
 }
+
+/// Element types stored as themselves: a slot holds exactly one `Self`, so slices copy unchanged.
+///
+/// Enables [`VectorWriter::write_slice`](crate::vector::VectorWriter::write_slice) and
+/// [`VectorWriter::copy_from`](crate::vector::VectorWriter::copy_from).
+///
+/// # Safety
+///
+/// `Self` must have the size and alignment of one physical slot, and every value of `Self` must be
+/// a valid row of every logical type `validate` accepts.
+pub unsafe trait PlainNative: WritableNativeElement<Write = Self> + ReadableNativeElement + Copy {}
+
+macro_rules! plain_native {
+    ($($type:ty),* $(,)?) => {$(
+        // SAFETY: the type is its own physical slot, and every value is a valid row.
+        unsafe impl PlainNative for $type {}
+    )*};
+}
+
+plain_native!(
+    bool,
+    i8,
+    i16,
+    i32,
+    i64,
+    u8,
+    u16,
+    u32,
+    u64,
+    f32,
+    f64,
+    crate::types::HugeInt,
+    crate::types::UHugeInt,
+    crate::types::DateValue,
+    crate::types::TimeValue,
+    crate::types::TimeNsValue,
+    crate::types::TimeTzValue,
+    crate::types::TimestampValue,
+    crate::types::TimestampSecValue,
+    crate::types::TimestampMsValue,
+    crate::types::TimestampNsValue,
+    crate::types::TimestampTzValue,
+    crate::types::TimestampTzNsValue,
+    crate::types::IntervalValue,
+    crate::types::ShortDecimal,
+    crate::types::WordDecimal,
+    crate::types::LongDecimal,
+);

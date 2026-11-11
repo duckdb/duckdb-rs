@@ -196,6 +196,23 @@ impl<T: NativeElement> Vector<'_, List<T>> {
     pub fn set_child_size(&mut self, elements: usize) -> Result<()> {
         self.resize_list_child(elements)
     }
+
+    /// As [`Self::set_child_size`], leaving new elements uninitialized.
+    ///
+    /// # Safety
+    /// Every new element, and its descendants, must be written or marked NULL before anything reads
+    /// this vector.
+    pub unsafe fn set_child_size_uninit(&mut self, elements: usize) -> Result<()> {
+        // SAFETY: the caller initializes the new elements.
+        unsafe { self.resize_list_child_uninit(elements) }
+    }
+}
+
+impl<T: NativeElement> VectorWriter<'_, List<T>> {
+    /// Write `entries` into rows `offset..` and mark them valid, checked once against the child's size.
+    pub fn write_entries(&mut self, offset: usize, entries: &[ListIndex]) -> Result<()> {
+        Vector::write_list_entries(self, offset, entries, "LIST elements")
+    }
 }
 
 #[cfg(test)]
@@ -279,6 +296,43 @@ mod tests {
         // A NULL row's entry is never read.
         vector.writer()?.set_null(0)?;
         vector.set_child_size(0)?;
+        Ok(())
+    }
+
+    #[test]
+    fn list_entries_write_in_bulk() -> Result<()> {
+        let conn = connection()?;
+        let mut chunk = DataChunk::create(&conn, &[List::<i32>::logical_type(&conn)?], true)?;
+        let mut vector = chunk.get_vector_at_mut::<List<i32>>(0)?;
+        vector.set_size(3)?;
+        // SAFETY: all three elements are written below.
+        unsafe { vector.set_child_size_uninit(3)? };
+        {
+            let mut children = vector.children_mut().unwrap();
+            let mut elements = children.get_vector_at_mut::<i32>(0)?;
+            elements.writer()?.write_slice(0, &[1, 2, 3])?;
+        }
+        {
+            let mut writer = vector.writer()?;
+            let error = writer
+                .write_entries(0, &[ListIndex::new(0, 2), ListIndex::new(2, 2)])
+                .unwrap_err();
+            assert!(error.message.contains("past the 3 LIST elements"), "{error}");
+            assert!(
+                writer
+                    .write_entries(2, &[ListIndex::new(0, 0), ListIndex::new(0, 0)])
+                    .is_err()
+            );
+            writer.write_entries(0, &[ListIndex::new(0, 2), ListIndex::new(2, 1), ListIndex::new(0, 0)])?;
+            writer.set_null(2)?;
+        }
+        let rows = (0..3)
+            .map(|row| vector.get_value_slow(row)?.get::<List<i32>>())
+            .collect::<Result<Vec<_>>>()?;
+        assert_eq!(
+            rows,
+            [Some(List(vec![Some(1), Some(2)])), Some(List(vec![Some(3)])), None]
+        );
         Ok(())
     }
 }

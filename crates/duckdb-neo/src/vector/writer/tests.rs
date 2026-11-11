@@ -773,3 +773,92 @@ fn writer_marks_valid_ranges_across_mask_words() -> Result<()> {
     }
     Ok(())
 }
+
+#[test]
+fn writer_writes_slices_across_mask_words() -> Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[i64::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<i64>(0)?;
+    vector.set_size(200)?;
+    let values = (0..130).collect::<Vec<i64>>();
+    {
+        let mut writer = vector.writer()?;
+        writer.fill_null()?;
+        writer.write_slice(30, &values)?;
+        assert!(writer.write_slice(71, &values).is_err());
+        assert!(writer.write_slice(usize::MAX, &values[..2]).is_err());
+        writer.write_slice(200, &[])?;
+    }
+    let read = vector.reader()?.iter().map(|value| value.copied()).collect::<Vec<_>>();
+    for (row, value) in read.into_iter().enumerate() {
+        let expected = (30..160).contains(&row).then(|| row as i64 - 30);
+        assert_eq!(value, expected, "row {row}");
+    }
+    Ok(())
+}
+
+#[test]
+fn writer_copies_every_storage_layout() -> Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    MicroScalar::create(
+        "copy_probe",
+        |_ctx, mut input: Vector<'_, i32>, mut output: Vector<'_, i32>| {
+            if input.storage_kind() == StorageKind::Other {
+                input.flatten()?;
+            }
+            let reader = input.reader()?;
+            // Pre-fill with garbage values so stale bits would show.
+            output.writer()?.write_slice(0, &vec![-1; reader.len()])?;
+            output.writer()?.copy_from(&reader)?;
+            let copied = output.reader()?.iter().collect::<Vec<_>>();
+            assert_eq!(copied, reader.iter().collect::<Vec<_>>());
+            Ok(())
+        },
+    )
+    .register(&conn)?;
+    let mut result = conn.query(
+        "SELECT copy_probe(test_vector) FROM test_vector_types(NULL::INTEGER, all_flat := false)",
+        Parameters::None,
+    )?;
+    let mut rows = 0;
+    while let Some(chunk) = result.next_chunk()? {
+        rows += chunk.get_vector_at::<i32>(0)?.len();
+    }
+    assert!(rows > 0);
+    Ok(())
+}
+
+#[test]
+fn writer_fills_nested_nulls() -> Result<()> {
+    #[derive(Debug, AsDuckDB)]
+    #[duckdb(writer)]
+    struct Pair {
+        a: i32,
+        b: String,
+    }
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[Pair::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<Pair>(0)?;
+    vector.set_size(3)?;
+    vector.writer()?.fill_null()?;
+    assert!(vector.reader()?.iter().all(|row| row.is_none()));
+    let fields = vector.children().unwrap();
+    assert!(
+        fields
+            .get_vector_at::<i32>(0)?
+            .reader()?
+            .iter()
+            .all(|row| row.is_none())
+    );
+    assert!(
+        fields
+            .get_vector_at::<String>(1)?
+            .reader()?
+            .iter()
+            .all(|row| row.is_none())
+    );
+    Ok(())
+}

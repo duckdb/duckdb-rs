@@ -167,6 +167,23 @@ impl<K: NativeElement, V: NativeElement> Vector<'_, Map<K, V>> {
     pub fn set_child_size(&mut self, entries: usize) -> Result<()> {
         self.resize_list_child(entries)
     }
+
+    /// As [`Self::set_child_size`], leaving new entries uninitialized.
+    ///
+    /// # Safety
+    /// Every new entry's key and value, and their descendants, must be written or marked NULL before
+    /// anything reads this vector; the entry rows themselves must be marked valid.
+    pub unsafe fn set_child_size_uninit(&mut self, entries: usize) -> Result<()> {
+        // SAFETY: the caller initializes the new entries.
+        unsafe { self.resize_list_child_uninit(entries) }
+    }
+}
+
+impl<K: NativeElement, V: NativeElement> VectorWriter<'_, Map<K, V>> {
+    /// Write `entries` into rows `offset..` and mark them valid, checked once against the entries child.
+    pub fn write_entries(&mut self, offset: usize, entries: &[ListIndex]) -> Result<()> {
+        Vector::write_list_entries(self, offset, entries, "MAP entries")
+    }
 }
 
 #[cfg(test)]

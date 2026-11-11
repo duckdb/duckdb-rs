@@ -380,6 +380,60 @@ impl<'a, T: NativeElement> Vector<'a, T> {
 
     /// Resize the first child of a `LIST` or `MAP`, refusing to cut the elements of a valid row.
     pub(crate) fn resize_list_child(&mut self, len: usize) -> Result<()> {
+        self.check_list_child_shrink(len)?;
+        self.children_collection_mut()
+            .expect("validated LIST and MAP vectors have a child")
+            .get_untyped_vector_at_mut(0)?
+            .set_size(len)
+    }
+
+    /// As [`Self::resize_list_child`], leaving new child rows uninitialized.
+    ///
+    /// # Safety
+    /// As for [`Vector::set_size_uninit`], for the new rows of the child and their descendants.
+    pub(crate) unsafe fn resize_list_child_uninit(&mut self, len: usize) -> Result<()> {
+        self.check_list_child_shrink(len)?;
+        // SAFETY: the caller initializes the new child rows.
+        unsafe {
+            self.children_collection_mut()
+                .expect("validated LIST and MAP vectors have a child")
+                .get_untyped_vector_at_mut(0)?
+                .set_size_uninit(len)
+        }
+    }
+
+    /// Write `entries` into rows `offset..` of a `LIST` or `MAP`, checked once against the child's size.
+    pub(crate) fn write_list_entries(
+        writer: &mut VectorWriter<'_, T>,
+        offset: usize,
+        entries: &[crate::types::ListIndex],
+        what: &str,
+    ) -> Result<()> {
+        let end = offset
+            .checked_add(entries.len())
+            .filter(|end| *end <= writer.len())
+            .ok_or_else(|| out_of_bounds(offset.saturating_add(entries.len()).saturating_sub(1), writer.len()))?;
+        let child_len = writer.vector().list_child_len()? as u64;
+        if let Some(entry) = entries
+            .iter()
+            .find(|entry| entry.end().is_none_or(|end| end > child_len))
+        {
+            crate::types::list::check_entry(entry, child_len as usize, what)?;
+        }
+        // SAFETY: the rows are in bounds, LIST and MAP rows store list entries, and every entry
+        // covers initialized child rows.
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                entries.as_ptr(),
+                writer.as_mut_ptr().cast::<crate::types::ListIndex>().add(offset),
+                entries.len(),
+            );
+            writer.mark_valid_range(offset, end);
+        }
+        Ok(())
+    }
+
+    fn check_list_child_shrink(&mut self, len: usize) -> Result<()> {
         if !self.is_writable() {
             return Err(not_writable());
         }
@@ -400,10 +454,7 @@ impl<'a, T: NativeElement> Vector<'a, T> {
                 }
             }
         }
-        self.children_collection_mut()
-            .expect("validated LIST and MAP vectors have a child")
-            .get_untyped_vector_at_mut(0)?
-            .set_size(len)
+        Ok(())
     }
 
     pub(crate) fn validate_as<U: NativeElement>(&self) -> Result<()> {

@@ -49,7 +49,7 @@ mod variant;
 
 // `pub(crate)` so `crate::vector` can size array vectors via `array::array_size`.
 pub(crate) mod array;
-mod list;
+pub(crate) mod list;
 mod map;
 pub(crate) mod structs;
 pub(crate) mod union;

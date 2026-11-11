@@ -4,8 +4,8 @@ use crate::raw::RawExt;
 use crate::{Result, check_api_call, ffi, logical_type::LogicalTypeID};
 
 use super::{
-    Arena, DuckDBBytes, HasDuckDBBytes, NativeElement, StorageKind, Vector, WritableNativeElement, not_flat,
-    not_writable, out_of_bounds,
+    Arena, DuckDBBytes, HasDuckDBBytes, NativeElement, PlainNative, Selection, StorageKind, Vector, VectorReader,
+    WritableNativeElement, not_flat, not_writable, out_of_bounds,
 };
 
 /// Exclusive access to a writable flat vector.
@@ -432,6 +432,112 @@ impl<T: NativeElement> VectorWriter<'_, T> {
     unsafe fn mark_null_unchecked(&mut self, index: usize) {
         // SAFETY: The owning writer guarantees flat, writable storage; the caller guarantees bounds.
         unsafe { *self.validity.add(index / 64) &= !(1u64 << (index % 64)) };
+    }
+}
+
+impl<T: PlainNative> VectorWriter<'_, T> {
+    /// Copy `values` into rows `offset..offset + values.len()` and mark those rows valid.
+    ///
+    /// ```
+    /// # use duckdb_neo::{DuckDBType, Result, data_chunk::DataChunk, environment::{Environment, StorageLocation}};
+    /// # fn main() -> Result<()> {
+    /// # let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+    /// let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
+    /// let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
+    /// vector.set_size(4)?;
+    /// let mut writer = vector.writer()?;
+    /// writer.write_slice(1, &[7, 8, 9])?;
+    /// writer.set_null(2)?;
+    /// # drop(writer);
+    /// assert_eq!(vector.reader()?.iter().collect::<Vec<_>>(), [Some(&0), Some(&7), None, Some(&9)]);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn write_slice(&mut self, offset: usize, values: &[T]) -> Result<()> {
+        let end = offset
+            .checked_add(values.len())
+            .filter(|end| *end <= self.len())
+            .ok_or_else(|| out_of_bounds(offset.saturating_add(values.len()).saturating_sub(1), self.len()))?;
+        // SAFETY: the rows are in bounds, and `T` is the physical slot type.
+        unsafe {
+            std::ptr::copy_nonoverlapping(values.as_ptr(), self.data.cast::<T>().add(offset), values.len());
+            self.mark_valid_range(offset, end);
+        }
+        Ok(())
+    }
+
+    /// Copy every row of `source`, values and NULLs, into the first rows of this vector.
+    ///
+    /// Flat sources copy whole buffers; dictionary and constant sources copy row by row.
+    pub fn copy_from(&mut self, source: &VectorReader<'_, T>) -> Result<()> {
+        let len = source.len();
+        if len > self.len() {
+            return Err(out_of_bounds(len - 1, self.len()));
+        }
+        if len == 0 {
+            return Ok(());
+        }
+        let data = self.data.cast::<T>();
+        match source.selection() {
+            Selection::Identity => {
+                // SAFETY: both vectors hold at least `len` slots of `T`.
+                unsafe { std::ptr::copy_nonoverlapping(source.as_ptr().cast::<T>(), data, len) };
+                match source.validity() {
+                    // SAFETY: the rows are in bounds and hold the values just copied.
+                    None => unsafe { self.mark_valid_range(0, len) },
+                    // SAFETY: as above; the source mask covers `len` rows.
+                    Some(mask) => unsafe { self.copy_validity(mask, len) },
+                }
+            }
+            selection => {
+                let (slots, validity) = (source.as_ptr().cast::<T>(), source.validity());
+                for row in 0..len {
+                    let physical = selection.index(row);
+                    let valid = validity.is_none_or(|mask| mask[physical / 64] & (1 << (physical % 64)) != 0);
+                    // SAFETY: the row is in bounds, the selection maps it to a source slot, and `T` is
+                    // the physical slot type.
+                    unsafe {
+                        if valid {
+                            data.add(row).write(*slots.add(physical));
+                            self.mark_valid_unchecked(row);
+                        } else {
+                            self.mark_null_unchecked(row);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// # Safety
+    /// `mask` must cover `len` rows, and `len` must not exceed [`Self::len`].
+    unsafe fn copy_validity(&mut self, mask: &[u64], len: usize) {
+        let (words, tail) = (len / 64, len % 64);
+        // SAFETY: the caller guarantees both masks cover `len` rows.
+        unsafe {
+            std::ptr::copy_nonoverlapping(mask.as_ptr(), self.validity, words);
+            if tail != 0 {
+                let keep = u64::MAX << tail;
+                let word = self.validity.add(words);
+                *word = (*word & keep) | (mask[words] & !keep);
+            }
+        }
+    }
+}
+
+impl<T: WritableNativeElement> VectorWriter<'_, T> {
+    /// Make every row SQL NULL, along with the descendants DuckDB requires to be NULL.
+    pub fn fill_null(&mut self) -> Result<()> {
+        if self.vector().children().is_none() && T::TYPE_ID != LogicalTypeID::Variant {
+            // SAFETY: NULL rows need no data, and the vector has no descendants.
+            return unsafe { self.fill_validity(false) };
+        }
+        for row in 0..self.len() {
+            // SAFETY: the row is in bounds.
+            unsafe { self.set_null_unchecked(row)? };
+        }
+        Ok(())
     }
 }
 
