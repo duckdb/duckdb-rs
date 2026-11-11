@@ -8,39 +8,38 @@
 //! This module also defines marker and wrapper types for values whose DuckDB
 //! representation has no direct Rust primitive equivalent, including decimals,
 //! nested types, intervals, UUIDs, `BIGNUM`, and `VARIANT`. Typed vector access
-//! uses these representations through [`crate::vector::VectorElement`].
+//! uses these representations through [`crate::vector::NativeElement`].
 //!
 //! Concrete representations and their [`ToValue`]/[`FromValue`]/
-//! [`crate::vector::VectorElement`]/[`crate::vector::WritableVectorElement`]
-//! implementations live together in family modules grouped by logical type:
-//! `primitive`, `string` (`VARCHAR`/`BLOB`/`BIT`), `temporal`
+//! [`crate::vector::NativeElement`] implementations live together in family modules grouped by
+//! logical type: `primitive`, `string` (`VARCHAR`/`BLOB`/`BIT`), `temporal`
 //! (`DATE`/`TIME`/`TIMESTAMP`/`INTERVAL`), `uuid`, `decimal`, `bignum`, `rust_decimal` (feature-gated),
-//! `list`, `array`, `map`, `structs`, `union`, `variant`, and `tuple`. Each
-//! family module is private; its public types, including the borrowed row,
-//! iterator, and writer types of nested families, are re-exported below.
+//! `list`, `array`, `map`, `structs`, `union`, `enums`, `variant`, and `tuple`. The row readers and
+//! writers of nested types, such as [`crate::vector::ListReader`], live in [`crate::vector`].
 //!
-//! Named Rust structs map to `STRUCT` through [`crate::AsDuckDB`], which derives
-//! the value conversions, a borrowed `NameRef` row, and vector writes. [`Struct`]
+//! Named Rust structs map to `STRUCT` through [`crate::AsDuckDB`], which derives the value
+//! conversions and, with `#[duckdb(reader, writer)]`, a row reader and writer. [`Struct`]
 //! accepts any `STRUCT` or `TUPLE` vector when the schema is only known at runtime.
 //! Enums of single-field variants map to `UNION` the same way through [`crate::AsDuckDBUnion`],
 //! with [`Union`] as the runtime fallback.
 //!
 //! ```
-//! use duckdb_neo::types::{ArrayIterator, ArrayRef, ListIterator, ListRef, MapRow};
+//! use duckdb_neo::{types::List, vector::{Elements, ListReader, RowReader, VectorReader}};
 //!
-//! fn array_items<'a>(row: ArrayRef<'a, i32>) -> ArrayIterator<'a, i32> {
-//!     row.iter()
+//! fn list_items<'r>(row: Elements<'r, VectorReader<'_, i32>>) -> Vec<Option<&'r i32>> {
+//!     row.iter().collect()
 //! }
-//! fn list_items<'a>(row: ListRef<'a, i32>) -> ListIterator<'a, i32> {
-//!     row.iter()
+//! fn first_row<'a>(lists: &'a ListReader<'a, i32>) -> duckdb_neo::Result<Option<Vec<Option<&'a i32>>>> {
+//!     Ok(lists.get(0)?.map(list_items))
 //! }
-//! fn map_row(_row: MapRow<'_, i32, i32>) {}
+//! # let _ = (first_row, std::marker::PhantomData::<List<i32>>);
 //! ```
 
 use crate::{Result, connection::FFILink, logical_type::LogicalType, value::Value};
 
 mod bignum;
 mod decimal;
+mod enums;
 mod primitive;
 mod string;
 mod temporal;
@@ -50,20 +49,21 @@ mod variant;
 
 // `pub(crate)` so `crate::vector` can size array vectors via `array::array_size`.
 pub(crate) mod array;
-mod list;
+pub(crate) mod list;
 mod map;
 pub(crate) mod structs;
 pub(crate) mod union;
 
 pub use self::uuid::UuidValueRaw;
-pub use array::{Array, ArrayIterator, ArrayRef};
+pub use array::Array;
 pub use bignum::{BigNum, BigNumValue};
 pub use decimal::{
     Decimal, DecimalContainer, DecimalSignature, DecimalValue, DecimalWidth, HugeDecimal, LongDecimal,
     MAX_DECIMAL_WIDTH, ShortDecimal, Width, WordDecimal,
 };
-pub use list::{List, ListIndex, ListIterator, ListRef};
-pub use map::{Map, MapRow, MapValue};
+pub use enums::{EnumIndex, EnumStorage};
+pub use list::{List, ListIndex};
+pub use map::Map;
 pub use primitive::Any;
 pub use primitive::{HugeInt, UHugeInt};
 pub use string::{BitValue, BlobValue, UncheckedString};

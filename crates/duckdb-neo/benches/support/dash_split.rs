@@ -131,18 +131,20 @@ impl TableFunctionCallbacks for DashSplit {
             match column_info.get_column_index(position)? {
                 0 => {
                     let mut vector = output.get_vector_at_mut::<i64>(position)?;
-                    vector.set_size(parts.len())?;
+                    // SAFETY: the loop below writes every row.
+                    unsafe { vector.set_size_uninit(parts.len())? };
                     let mut writer = vector.writer()?;
                     for row in 0..parts.len() {
-                        writer.set(row, Some((first_index + row) as i64))?;
+                        writer.set(row, &((first_index + row) as i64))?;
                     }
                 }
                 _ => {
                     let mut vector = output.get_vector_at_mut::<String>(position)?;
-                    vector.set_size(parts.len())?;
+                    // SAFETY: the loop below writes every row.
+                    unsafe { vector.set_size_uninit(parts.len())? };
                     let mut writer = vector.writer()?;
                     for (row, &(start, end)) in parts.iter().enumerate() {
-                        writer.set(row, Some(&input[start..end]))?;
+                        writer.set(row, &input[start..end])?;
                     }
                 }
             }

@@ -66,7 +66,7 @@ impl ScalarCallbacks for ScalarWithData {
         output.set_size(1)?;
         output.writer()?.set(
             0,
-            Some(self.base_data.iter().map(|x| x * in_data).sum::<i32>() + bind_data.iter().sum::<i32>() - *init_data),
+            &(self.base_data.iter().map(|x| x * in_data).sum::<i32>() + bind_data.iter().sum::<i32>() - *init_data),
         )?;
 
         Ok(())
@@ -90,7 +90,7 @@ impl ScalarCallbacks for BasicScalarFunction {
         let mut output: Vector<'_, i32> = output.cast::<i32>()?;
 
         output.set_size(1)?;
-        output.writer()?.set(0, Some(42))?;
+        output.writer()?.set(0, &42)?;
         Ok(())
     }
 }
@@ -298,7 +298,7 @@ impl ScalarCallbacks for FoldProbe {
         let mut output = output.cast::<i32>()?;
         output.set_size(input.len())?;
         for (i, value) in input.reader()?.iter().enumerate() {
-            output.writer()?.set(i, value.copied())?;
+            output.writer()?.set_option(i, value)?;
         }
         Ok(())
     }
@@ -361,7 +361,7 @@ impl ScalarCallbacks for Identity {
         let mut output = output.cast::<i32>()?;
         output.set_size(input.len())?;
         for (i, value) in input.reader()?.iter().enumerate() {
-            output.writer()?.set(i, value.copied())?;
+            output.writer()?.set_option(i, value)?;
         }
         Ok(())
     }
@@ -533,7 +533,7 @@ impl ScalarCallbacks for OptionalLifecycle {
         let mut output = output.cast::<i32>()?;
         output.set_size(input.row_count()?)?;
         for i in 0..input.row_count()? {
-            output.writer()?.set(i, Some(42))?;
+            output.writer()?.set(i, &42)?;
         }
         Ok(())
     }

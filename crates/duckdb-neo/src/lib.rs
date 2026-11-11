@@ -103,8 +103,137 @@ pub use types::{DuckDBType, FromValue, ToValue};
 
 #[doc(hidden)]
 pub mod __derive {
+    use std::ptr::NonNull;
+
     pub use crate::types::structs::derive_support::*;
     pub use crate::types::union::derive_support::*;
+    use crate::vector::{NativeElement, RowReader, Unknown, Vector, VectorWriter, WithReader, WithWriter};
+
+    /// Build a [`VectorWriter`] for a derived [`WithWriter`].
+    ///
+    /// # Safety
+    /// As for [`WithWriter::row_writer`].
+    pub unsafe fn vector_writer<'w, T: NativeElement>(
+        vector: NonNull<Vector<'w, T>>,
+    ) -> crate::Result<VectorWriter<'w, T>> {
+        // SAFETY: the caller upholds the borrow contract.
+        unsafe { VectorWriter::from_raw(vector) }
+    }
+
+    /// A derived reader's rows and field readers, kept together so safe code cannot pair them with
+    /// the readers of another vector.
+    #[derive(Debug, Clone, Copy)]
+    pub struct ReaderParts<R, F> {
+        rows: R,
+        fields: F,
+    }
+
+    impl<R, F> ReaderParts<R, F> {
+        /// # Safety
+        /// Every field reader must have a row for each row of `rows`.
+        #[inline]
+        pub unsafe fn new(rows: R, fields: F) -> Self {
+            Self { rows, fields }
+        }
+
+        /// The reader of the derived vector's own rows.
+        #[inline(always)]
+        pub fn rows(&self) -> &R {
+            &self.rows
+        }
+
+        /// The field readers, in field order.
+        #[inline(always)]
+        pub fn fields(&self) -> &F {
+            &self.fields
+        }
+    }
+
+    /// Prepare the reader of child `index` of `vector`.
+    ///
+    /// # Safety
+    /// `P::validate` must have checked child `index` as `T`.
+    pub unsafe fn child_reader<'a, P: NativeElement, T: WithReader>(
+        vector: &'a Vector<'a, P>,
+        index: usize,
+    ) -> crate::Result<T::Reader<'a>> {
+        let child = vector
+            .children()
+            .expect("validated vector has children")
+            .get_untyped_vector_at(index)?;
+        // SAFETY: the caller guarantees the child's type.
+        T::row_reader(unsafe { child.cast_ref_unchecked::<T>() })
+    }
+
+    /// The child vectors of `vector`, for derived writers.
+    ///
+    /// # Safety
+    /// As for [`WithWriter::row_writer`]; the pointers are valid while the writer borrows `vector`.
+    pub unsafe fn children<'w, P: NativeElement>(
+        mut vector: NonNull<Vector<'w, P>>,
+    ) -> crate::Result<Vec<NonNull<Vector<'w, Unknown>>>> {
+        // SAFETY: the caller guarantees an exclusive borrow.
+        let vector = unsafe { vector.as_mut() };
+        Ok(match vector.children_collection_mut() {
+            Some(children) => children
+                .cached_iter_mut()?
+                .map(|child| NonNull::from(child).cast::<Vector<'w, Unknown>>())
+                .collect(),
+            None => Vec::new(),
+        })
+    }
+
+    /// Prepare the writer of a child returned by [`children`].
+    ///
+    /// # Safety
+    /// As for [`WithWriter::row_writer`]; the child must have been validated as `T`.
+    pub unsafe fn child_writer<'w, T: WithWriter + 'w>(
+        child: NonNull<Vector<'w, Unknown>>,
+    ) -> crate::Result<T::Writer<'w>> {
+        // SAFETY: the caller upholds the borrow contract and the child's type.
+        unsafe { T::row_writer(child.cast()) }
+    }
+
+    /// Mark a row valid or NULL without touching its children.
+    ///
+    /// # Safety
+    /// A row marked valid must hold initialized children.
+    pub unsafe fn set_row_validity<T: NativeElement>(
+        writer: &mut VectorWriter<'_, T>,
+        row: usize,
+        valid: bool,
+    ) -> crate::Result<()> {
+        // SAFETY: the caller guarantees initialized children; `set_row_validity` checks bounds.
+        unsafe { writer.set_row_validity(row, valid) }
+    }
+
+    /// NULL `row` of every child, as DuckDB expects of a NULL STRUCT or UNION row.
+    pub fn null_children<T: NativeElement>(writer: &mut VectorWriter<'_, T>, row: usize) -> crate::Result<()> {
+        writer.null_children_row(row)
+    }
+
+    /// Resize the rows of a derived writer's own vector.
+    ///
+    /// # Safety
+    /// As for [`RowWriter::resize_rows`](crate::vector::RowWriter::resize_rows).
+    pub unsafe fn resize_rows<T: NativeElement>(writer: &mut VectorWriter<'_, T>, len: usize) -> crate::Result<()> {
+        writer.resize(len)
+    }
+
+    /// Reacquire a derived writer's own buffers after an ancestor changed its vector.
+    pub fn refresh<T: NativeElement>(writer: &mut VectorWriter<'_, T>) -> crate::Result<()> {
+        writer.refresh_all()
+    }
+
+    /// The row of one prepared reader, for derived readers.
+    ///
+    /// # Safety
+    /// `row` must be less than the reader's length.
+    #[inline(always)]
+    pub unsafe fn get_unchecked<R: RowReader>(reader: &R, row: usize) -> Option<R::Item<'_>> {
+        // SAFETY: the caller guarantees bounds.
+        unsafe { reader.get_unchecked(row) }
+    }
 }
 
 /// This result type is used extensively throughout the crate to represent the result of (FFI) operations that can fail.

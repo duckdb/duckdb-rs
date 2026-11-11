@@ -572,7 +572,7 @@ mod tests {
                 let (value, _) = context.config()?.get_value("threads")?;
                 let mut output = output.cast::<i64>()?;
                 output.set_size(1)?;
-                output.writer()?.set(0, i64::from_value(&value)?)
+                output.writer()?.set_option(0, i64::from_value(&value)?.as_ref())
             }
         }
 

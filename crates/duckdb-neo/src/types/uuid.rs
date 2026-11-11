@@ -11,21 +11,23 @@
 use super::{DuckDBType, FromValue, ToValue};
 use crate::ffi;
 use crate::types::HugeInt;
-use crate::vector::VectorElement;
+use crate::vector::{NativeElement, ReadableNativeElement};
 use crate::{
     Parameters, Result, check_api_call,
     connection::FFILink,
     logical_type::{LogicalType, LogicalTypeID},
     raw::RawExt,
     value::{Value, ValueInput},
-    vector::WritableVectorElement,
+    vector::WritableNativeElement,
 };
 
 /// DuckDB's internal signed 128-bit UUID representation.
 ///
 /// DuckDB stores a UUID as a signed integer with its most significant bit flipped, so
 /// sorting matches the UUID byte order. Enable the `uuid` feature to convert to and from `uuid::Uuid`.
-#[repr(transparent)]
+///
+/// Like DuckDB's `hugeint_t`, it is only 8-byte aligned, so its field can be copied but not borrowed.
+#[repr(C, packed(8))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UuidValueRaw(pub i128);
 
@@ -61,17 +63,21 @@ impl FromValue for UuidValueRaw {
 }
 
 // SAFETY: `UuidValueRaw` has the size and bit layout of DuckDB's UUID storage.
-unsafe impl VectorElement for UuidValueRaw {
+unsafe impl NativeElement for UuidValueRaw {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Uuid;
 
-    type Internal<'a> = HugeInt;
+    type Native<'a> = HugeInt;
+}
 
+// SAFETY: `get` reads the validated physical slot.
+unsafe impl ReadableNativeElement for UuidValueRaw {
     type Ref<'a>
         = &'a UuidValueRaw
     where
         Self: 'a;
 
-    unsafe fn get<'a, U: VectorElement>(
+    #[inline]
+    unsafe fn get<'a, U: NativeElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
         _logical: usize,
@@ -84,19 +90,18 @@ unsafe impl VectorElement for UuidValueRaw {
     }
 }
 
-crate::vector::owned_by_copy!(UuidValueRaw);
-
 // SAFETY: every `i128` is a valid UUID.
-unsafe impl WritableVectorElement for UuidValueRaw {
-    type Write<'a> = Self;
+unsafe impl WritableNativeElement for UuidValueRaw {
+    type Write = Self;
 
+    #[inline]
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<Self::Write<'_>>,
+        value: &Self::Write,
     ) -> Result<()> {
         // SAFETY: The caller guarantees a writable, flat, in-bounds row.
-        unsafe { vector.write_internal(index, value) }
+        unsafe { vector.write_internal(index, Some(*value)) }
     }
 }
 
@@ -138,7 +143,7 @@ mod external {
         logical_type::{LogicalType, LogicalTypeID},
         types::{DuckDBType, FromValue, ToValue},
         value::Value,
-        vector::{VectorElement, WritableVectorElement},
+        vector::{NativeElement, ReadableNativeElement, WritableNativeElement},
     };
     use ::uuid::Uuid;
 
@@ -173,14 +178,18 @@ mod external {
     }
 
     // SAFETY: same storage as `UuidValueRaw`.
-    unsafe impl VectorElement for Uuid {
+    unsafe impl NativeElement for Uuid {
         const TYPE_ID: LogicalTypeID = LogicalTypeID::Uuid;
 
-        type Internal<'a> = UuidValueRaw;
+        type Native<'a> = UuidValueRaw;
+    }
 
+    // SAFETY: `get` reads the validated physical slot.
+    unsafe impl ReadableNativeElement for Uuid {
         type Ref<'a> = Uuid;
 
-        unsafe fn get<'a, U: VectorElement>(
+        #[inline]
+        unsafe fn get<'a, U: NativeElement>(
             vector: &crate::vector::VectorReader<'a, U>,
             physical: usize,
             logical: usize,
@@ -193,19 +202,18 @@ mod external {
         }
     }
 
-    crate::vector::owned_by_copy!(Uuid);
-
     // SAFETY: every `Uuid` converts to a valid `UuidValueRaw`.
-    unsafe impl WritableVectorElement for Uuid {
-        type Write<'a> = Uuid;
+    unsafe impl WritableNativeElement for Uuid {
+        type Write = Uuid;
 
+        #[inline]
         unsafe fn write(
             vector: &mut crate::vector::VectorWriter<'_, Self>,
             index: usize,
-            value: Option<Self::Write<'_>>,
+            value: &Self::Write,
         ) -> Result<()> {
             // SAFETY: The caller guarantees a writable, flat, in-bounds row.
-            unsafe { vector.write_internal(index, value.map(UuidValueRaw::from)) }
+            unsafe { vector.write_internal(index, Some(UuidValueRaw::from(*value))) }
         }
     }
 
@@ -250,9 +258,9 @@ mod external {
             let mut values = chunk.get_vector_at_mut::<Uuid>(0)?;
             values.set_size(expected.len() + 1)?;
             for (index, uuid) in expected.into_iter().enumerate() {
-                values.writer()?.set(index, Some(uuid))?;
+                values.writer()?.set(index, &uuid)?;
             }
-            values.writer()?.set(expected.len(), None)?;
+            values.writer()?.set_null(expected.len())?;
             let mut all = expected.map(Some).to_vec();
             all.push(None);
             assert_eq!(values.reader()?.iter().collect::<Vec<_>>(), all);

@@ -109,7 +109,7 @@ impl Error {
                 && text.len > 0
             {
                 // SAFETY: the borrowed text stays valid until the handle is destroyed below.
-                let bytes = unsafe { std::slice::from_raw_parts(text.ptr as *const u8, text.len as usize) };
+                let bytes = unsafe { std::slice::from_raw_parts(text.ptr.cast::<u8>(), text.len as usize) };
                 message = String::from_utf8_lossy(bytes).into_owned();
             }
             // SAFETY: the caller transfers ownership of this live handle.

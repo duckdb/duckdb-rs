@@ -118,7 +118,7 @@ fn combined_iterator_handles_large_and_null_constants() -> Result<()> {
     {
         let mut writer = flat.writer()?;
         for index in 0..count {
-            writer.set(index, (index % 5 != 0).then_some(index as i64))?;
+            writer.set_option(index, (index % 5 != 0).then_some(&(index as i64)))?;
         }
     }
     let constant = constant.make_constant(42_i32.value(&conn)?, count)?;
@@ -129,11 +129,12 @@ fn combined_iterator_handles_large_and_null_constants() -> Result<()> {
     }
     drop(constant);
     drop(flat);
-    let [constant, flat] = chunk.get_vector_array_mut([0, 1])?;
-    let constant = constant
-        .cast::<i32>()?
+    // The constant column is not writable output, so make the NULL constant in a new chunk.
+    let mut nulls = DataChunk::create(&conn, &types[..1], true)?;
+    let constant = nulls
+        .get_vector_at_mut::<i32>(0)?
         .make_constant(Value::null(&conn, &types[0])?, count)?;
-    let flat = flat.cast::<i64>()?;
+    let flat = chunk.get_vector_at::<i64>(1)?;
     let flat = flat.reader()?;
     for (index, (constant, flat)) in CombinedVectorIterator::new((constant.reader()?, flat))?.enumerate() {
         assert_eq!(constant, None);
@@ -255,8 +256,8 @@ fn flat_and_mixed_folds_preserve_nulls_and_indices() -> Result<()> {
     first.set_size(3)?;
     second.set_size(3)?;
     for (index, value) in [Some(1), None, Some(3)].into_iter().enumerate() {
-        first.writer()?.set(index, value)?;
-        second.writer()?.set(index, Some(9))?;
+        first.writer()?.set_option(index, value.as_ref())?;
+        second.writer()?.set(index, &9)?;
     }
     let flat = CombinedVectorIterator::new((first.reader()?, second.reader()?))?;
     assert!(flat.all_flat);
@@ -316,7 +317,7 @@ fn combined_iterator_handles_native_dictionary_layouts() -> Result<()> {
             for (index, (first, constant, repeated)) in rows.enumerate() {
                 assert_eq!(constant, Some(&9));
                 assert_eq!(first, repeated);
-                writer.set(index, first.copied())?;
+                writer.set_option(index, first)?;
             }
             Ok(())
         },

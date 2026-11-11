@@ -38,16 +38,13 @@
 //! # }
 //! ```
 //!
-//! Element types plug in through the [`VectorElement`] trait. Each type defines its
-//! own borrowed row representation: scalars yield references, while nested
-//! values yield zero-copy handles into their child vectors.
+//! Element types plug in through [`NativeElement`]: a [`VectorReader`] and [`VectorWriter`]
+//! read and write a vector's own slots, e.g. scalar references or a `LIST` row's
+//! [`ListIndex`](crate::types::ListIndex). Nested rows are read and written through
+//! [`WithReader`] and [`WithWriter`], whose readers and writers, such as [`ListReader`] and
+//! [`ListWriter`], prepare their children once and compose for nested types.
 
-use std::{
-    cell::{Cell, OnceCell, RefCell},
-    collections::HashMap,
-    marker::PhantomData,
-    rc::Rc,
-};
+use std::{cell::OnceCell, marker::PhantomData};
 
 use crate::builder_helpers::ffi_enum_redeclaration;
 use crate::error::DuckDBError;
@@ -58,7 +55,7 @@ use crate::{
     data_chunk::{ChildrenMut, VectorCollection},
     error::Error,
     ffi,
-    logical_type::{LogicalType, LogicalTypeID},
+    logical_type::LogicalType,
     types::DecimalSignature,
     value::Value,
 };
@@ -66,31 +63,6 @@ use crate::{
 mod element;
 use duckdb_loadable_macros::AsRaw;
 pub use element::*;
-
-/// The next unwritten child element of every `LIST` and `MAP` vector in one wrapper tree.
-///
-/// The root wrapper (a chunk, a callback's inputs, or a standalone vector) owns the store, and
-/// every descendant shares it. Offsets are keyed by handle, which DuckDB keeps stable for a
-/// vector until its parent's storage is replaced, so they survive evicted and rebuilt wrappers.
-/// An offset starts at the child's size when first seen, so writes never replace elements that
-/// DuckDB or another wrapper tree wrote.
-#[derive(Debug, Default)]
-pub(crate) struct ChildOffsets(RefCell<HashMap<ffi::duckdb_v2_vector_handle, Rc<Cell<usize>>>>);
-
-impl ChildOffsets {
-    fn cell(&self, handle: ffi::duckdb_v2_vector_handle, child_len: usize) -> Rc<Cell<usize>> {
-        self.0
-            .borrow_mut()
-            .entry(handle)
-            .or_insert_with(|| Rc::new(Cell::new(child_len)))
-            .clone()
-    }
-
-    /// Restart every offset, e.g. after the chunk was cleared.
-    pub(crate) fn reset(&self) {
-        self.0.borrow().values().for_each(|offset| offset.set(0));
-    }
-}
 
 ffi_enum_redeclaration! {
     pub enum StorageKind <- ffi::DUCKDB_V2_VECTOR_TYPE {
@@ -107,17 +79,33 @@ ffi_enum_redeclaration! {
 
 pub use crate::{arena::Arena, bytes::DuckDBBytes};
 
+mod array_writer;
 mod child;
 mod combined;
+mod init;
+mod list_writer;
+mod map_writer;
+mod nested_reader;
 mod reader;
+mod rows;
+mod union_writer;
 mod writer;
 
+pub use array_writer::ArrayWriter;
 pub use child::ChildVector;
+pub use list_writer::ListWriter;
+pub use map_writer::MapWriter;
+pub use nested_reader::{ArrayReader, Elements, Entries, ListReader, MapReader};
+pub use union_writer::{
+    UnionMember, UnionMemberReader, UnionMemberWriter, UnionMembers, UnionReader, UnionReaders, UnionWriter,
+    UnionWriters,
+};
 
 #[doc(hidden)]
 pub use combined::VectorReaderTuple;
 pub use combined::{CombinedVectorIterator, EnumeratedCombinedVectorIterator};
-pub use reader::{Selection, VectorReader, VectorReaderIter};
+pub use reader::{EnumeratedVectorReaderIter, Selection, VectorReader, VectorReaderIter};
+pub use rows::{RowIter, RowReader, RowWriter, WithReader, WithWriter};
 pub use writer::VectorWriter;
 
 /// The length of DuckDB's shared constant-vector selection, `STANDARD_VECTOR_SIZE`.
@@ -132,6 +120,16 @@ pub(crate) enum Access {
     Exclusive,
     /// The only wrapper of writable output.
     Writable,
+}
+
+impl Access {
+    /// Downgrade writable access for storage other than flat, whose buffers cannot hold every row.
+    pub(crate) fn for_kind(self, kind: StorageKind) -> Self {
+        match (self, kind) {
+            (Self::Writable, StorageKind::Flat) | (Self::Shared | Self::Exclusive, _) => self,
+            (Self::Writable, _) => Self::Exclusive,
+        }
+    }
 }
 
 /// A typed view of a DuckDB vector borrowed from its owning data chunk.
@@ -157,40 +155,34 @@ pub(crate) enum Access {
 /// ```
 #[repr(C)]
 #[derive(Debug, AsRaw)]
-pub struct Vector<'a, T: VectorElement> {
+pub struct Vector<'a, T: NativeElement> {
     pub(crate) handle: ffi::duckdb_v2_vector_handle,
     pub(crate) access: Access,
 
     logical_type: LogicalType,
     kind: StorageKind,
     len: usize,
-    /// Storage pointers for readers, dropped by every operation that may replace them.
-    pub(crate) view: OnceCell<ffi::duckdb_v2_vector_view>,
+    /// Prepared read metadata, dropped by every operation that may replace storage.
+    view: OnceCell<reader::CachedReader>,
     heap: Option<Arena>,
     /// Child vectors of nested types; `None` for vectors without children.
     children: Option<VectorCollection>,
     decimal: OnceCell<DecimalSignature>,
-    /// The store of the wrapper tree, shared with children and rebuilt wrappers.
-    offsets: Rc<ChildOffsets>,
-    /// This vector's entry in `offsets`; `None` unless it is a `LIST` or `MAP`.
-    child_offset: Option<Rc<Cell<usize>>>,
+    enum_size: OnceCell<usize>,
     _chunk: PhantomData<&'a ()>,
     _type: PhantomData<T>,
 }
 
-impl<'a, T: VectorElement> Vector<'a, T> {
+impl<'a, T: NativeElement> Vector<'a, T> {
     /// The handle must remain valid for the lifetime of the owning chunk.
-    pub(crate) fn from_handle(
-        handle: &ffi::duckdb_v2_vector_handle,
-        access: Access,
-        offsets: &Rc<ChildOffsets>,
-    ) -> Result<Self> {
+    pub(crate) fn from_handle(handle: &ffi::duckdb_v2_vector_handle, access: Access) -> Result<Self> {
         let logical_type = check_api_call!(ffi::duckdb_v2_vector_get_logical_type, *handle, RET)
             .map(|handle| LogicalType { handle })?;
 
         let kind =
             check_api_call!(ffi::duckdb_v2_vector_get_vector_type, *handle, RET).map(StorageKind::try_from)??;
         let len = check_api_call!(ffi::duckdb_v2_vector_get_size, *handle, RET).map(|x| x as usize)?;
+        let access = access.for_kind(kind);
 
         let child_count = check_api_call!(ffi::duckdb_v2_vector_get_child_count, *handle, RET).map(|x| x as usize)?;
         let mut child_handles = Vec::with_capacity(child_count as usize);
@@ -203,12 +195,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             )?);
         }
 
-        let child_offset = match (logical_type.id()?, child_handles.first()) {
-            (LogicalTypeID::List | LogicalTypeID::Map, Some(child)) => Some(offsets.cell(*handle, vector_len(*child)?)),
-            _ => None,
-        };
-        let children =
-            (!child_handles.is_empty()).then(|| VectorCollection::children(child_handles, access, offsets.clone()));
+        let children = (!child_handles.is_empty()).then(|| VectorCollection::children(child_handles, access));
 
         let vector = Self {
             handle: *handle,
@@ -220,8 +207,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             heap: None,
             children,
             decimal: OnceCell::new(),
-            offsets: offsets.clone(),
-            child_offset,
+            enum_size: OnceCell::new(),
             _chunk: PhantomData,
             _type: PhantomData,
         };
@@ -232,13 +218,13 @@ impl<'a, T: VectorElement> Vector<'a, T> {
 
 impl<'a> Vector<'a, Unknown> {
     /// Validate and attach a logical element type.
-    pub fn cast<T: VectorElement>(self) -> Result<Vector<'a, T>> {
+    pub fn cast<T: NativeElement>(self) -> Result<Vector<'a, T>> {
         self.validate_as::<T>()?;
         Ok(self.cast_unchecked())
     }
 
     /// Validate and attach a logical element type to a borrowed vector.
-    pub fn cast_ref<T: VectorElement>(&self) -> Result<&Vector<'a, T>> {
+    pub fn cast_ref<T: NativeElement>(&self) -> Result<&Vector<'a, T>> {
         self.validate_as::<T>()?;
         // SAFETY: T was validated above.
         Ok(unsafe { self.cast_ref_unchecked() })
@@ -246,13 +232,13 @@ impl<'a> Vector<'a, Unknown> {
 
     /// # Safety
     /// This vector must have been validated as `T`.
-    pub(crate) unsafe fn cast_ref_unchecked<T: VectorElement>(&self) -> &Vector<'a, T> {
+    pub(crate) unsafe fn cast_ref_unchecked<T: NativeElement>(&self) -> &Vector<'a, T> {
         // SAFETY: Both repr(C) wrappers differ only in markers.
         unsafe { &*(self as *const Vector<'a, Unknown> as *const Vector<'a, T>) }
     }
 }
 
-impl<'a, T: VectorElement> Vector<'a, T> {
+impl<'a, T: NativeElement> Vector<'a, T> {
     /// Return the number of logical rows.
     pub fn len(&self) -> usize {
         self.len
@@ -278,17 +264,26 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         self.access == Access::Writable
     }
 
-    /// Drop the cached view, arena and child wrappers after a state change, e.g. set_size.
+    /// Drop the cached view and arena after a state change, e.g. set_size, and refresh the children in place.
+    ///
+    /// DuckDB keeps child vectors when it resizes or writes their parent, so child wrappers, and writers
+    /// pointing to them, stay valid; only their sizes and buffers change.
     fn refresh_buffers(&mut self) -> Result<()> {
         self.view.take();
         self.heap = None;
         if let Some(children) = &mut self.children {
-            children.evict_all();
+            children.refresh_cached()?;
         }
         Ok(())
     }
 
-    pub(crate) fn cast_unchecked<U: VectorElement>(self) -> Vector<'a, U> {
+    /// Re-read this child's size and drop its buffers after its parent changed.
+    pub(crate) fn refresh_from_handle(&mut self) -> Result<()> {
+        self.len = vector_len(self.handle)?;
+        self.refresh_buffers()
+    }
+
+    pub(crate) fn cast_unchecked<U: NativeElement>(self) -> Vector<'a, U> {
         Vector {
             handle: self.handle,
             logical_type: self.logical_type,
@@ -299,8 +294,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             heap: self.heap,
             children: self.children,
             decimal: self.decimal,
-            offsets: self.offsets,
-            child_offset: self.child_offset,
+            enum_size: self.enum_size,
             _chunk: self._chunk,
             _type: PhantomData,
         }
@@ -313,7 +307,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     /// # Safety
     /// The cast can leave this vector sharing storage with `source`, e.g. for same-type or
     /// reinterpreting casts. Neither may be written or resized, through any wrapper, while the other is read.
-    pub unsafe fn cast_rows<T2: VectorElement, C: HasFactory>(self, source: &Vector<'_, T2>, link: &C) -> Result<()> {
+    pub unsafe fn cast_rows<T2: NativeElement, C: HasFactory>(self, source: &Vector<'_, T2>, link: &C) -> Result<()> {
         if !self.is_writable() {
             return Err(not_writable());
         }
@@ -326,7 +320,6 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             RET,
             std::ptr::null_mut()
         );
-        self.sync_child_offsets()?;
         result.map(|_converted| ())
     }
 
@@ -337,7 +330,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     ///
     /// # Safety
     /// As for [`Self::cast_rows`].
-    pub unsafe fn try_cast_rows<T2: VectorElement, C: HasFactory>(
+    pub unsafe fn try_cast_rows<T2: NativeElement, C: HasFactory>(
         self,
         source: &Vector<'_, T2>,
         link: &C,
@@ -356,7 +349,6 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             RET,
             &mut cast_err
         );
-        self.sync_child_offsets()?;
         result?;
 
         if cast_err.is_null() {
@@ -376,86 +368,119 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         Ok(*self.decimal.get_or_init(|| signature))
     }
 
-    /// Return the storage pointers, fetched once per state; `OTHER` storage has none.
-    pub(crate) fn view(&self) -> Result<Option<ffi::duckdb_v2_vector_view>> {
+    /// Return the number of entries in an `ENUM` vector's dictionary, fetched once.
+    pub(crate) fn enum_size(&self) -> Result<usize> {
+        if let Some(size) = self.enum_size.get() {
+            return Ok(*size);
+        }
+        let size = self.logical_type.param_count()?;
+        Ok(*self.enum_size.get_or_init(|| size))
+    }
+
+    /// Return the prepared read metadata, fetched once per state; `OTHER` storage has none.
+    fn view(&self) -> Result<Option<&reader::CachedReader>> {
         if self.kind == StorageKind::Other {
             return Ok(None);
         }
         if let Some(view) = self.view.get() {
-            return Ok(Some(*view));
+            return Ok(Some(view));
         }
         let view = check_api_call!(ffi::duckdb_v2_vector_get_view, self.handle, RET)?;
-        Ok(Some(*self.view.get_or_init(|| view)))
+        // SAFETY: DuckDB returned a current view of this vector, including its constant validity slot.
+        Ok(Some(self.view.get_or_init(|| unsafe {
+            reader::CachedReader::new(view, self.kind, self.len)
+        })))
     }
 
-    /// Size the first child of a `LIST` or `MAP`, keeping appends at the current offset.
+    /// Return the size of the first child of a `LIST` or `MAP`.
+    pub(crate) fn list_child_len(&self) -> Result<usize> {
+        Ok(self
+            .children()
+            .expect("validated LIST and MAP vectors have a child")
+            .get_untyped_vector_at(0)?
+            .len())
+    }
+
+    /// Resize the first child of a `LIST` or `MAP`, refusing to cut the elements of a valid row.
+    pub(crate) fn resize_list_child(&mut self, len: usize) -> Result<()> {
+        self.check_list_child_shrink(len)?;
+        self.children_collection_mut()
+            .expect("validated LIST and MAP vectors have a child")
+            .get_untyped_vector_at_mut(0)?
+            .set_size(len)
+    }
+
+    /// As [`Self::resize_list_child`], leaving new child rows uninitialized.
     ///
     /// # Safety
-    /// Writes must initialize every child row below `size` before DuckDB reads the vector, and
-    /// written rows must not use child rows at or above `size`.
-    pub(crate) unsafe fn size_appended_child(&mut self, size: usize) -> Result<()> {
-        self.children_mut()
-            .expect("validated nested vector has a child")
-            .0
-            .get_untyped_vector_at_mut(0)?
-            .set_size(size)?;
-        let offset = self.child_offset_cell();
-        offset.set(offset.get().min(size));
+    /// As for [`Vector::set_size_uninit`], for the new rows of the child and their descendants.
+    pub(crate) unsafe fn resize_list_child_uninit(&mut self, len: usize) -> Result<()> {
+        self.check_list_child_shrink(len)?;
+        // SAFETY: the caller initializes the new child rows.
+        unsafe {
+            self.children_collection_mut()
+                .expect("validated LIST and MAP vectors have a child")
+                .get_untyped_vector_at_mut(0)?
+                .set_size_uninit(len)
+        }
+    }
+
+    /// Write `entries` into rows `offset..` of a `LIST` or `MAP`, checked once against the child's size.
+    pub(crate) fn write_list_entries(
+        writer: &mut VectorWriter<'_, T>,
+        offset: usize,
+        entries: &[crate::types::ListIndex],
+        what: &str,
+    ) -> Result<()> {
+        let end = offset
+            .checked_add(entries.len())
+            .filter(|end| *end <= writer.len())
+            .ok_or_else(|| out_of_bounds(offset.saturating_add(entries.len()).saturating_sub(1), writer.len()))?;
+        let child_len = writer.vector().list_child_len()? as u64;
+        if let Some(entry) = entries
+            .iter()
+            .find(|entry| entry.end().is_none_or(|end| end > child_len))
+        {
+            crate::types::list::check_entry(entry, child_len as usize, what)?;
+        }
+        // SAFETY: the rows are in bounds, LIST and MAP rows store list entries, and every entry
+        // covers initialized child rows.
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                entries.as_ptr(),
+                writer.as_mut_ptr().cast::<crate::types::ListIndex>().add(offset),
+                entries.len(),
+            );
+            writer.mark_valid_range(offset, end);
+        }
         Ok(())
     }
 
-    fn visit_child_offsets(&self, mut visit: impl FnMut(&Cell<usize>, usize) -> Result<()>) -> Result<()> {
-        fn walk(
-            offsets: &ChildOffsets,
-            handle: ffi::duckdb_v2_vector_handle,
-            visit: &mut dyn FnMut(&Cell<usize>, usize) -> Result<()>,
-        ) -> Result<()> {
-            let logical_type = check_api_call!(ffi::duckdb_v2_vector_get_logical_type, handle, RET)
-                .map(|handle| LogicalType { handle })?;
-            let appends = matches!(logical_type.id()?, LogicalTypeID::List | LogicalTypeID::Map);
-            let child_count = check_api_call!(ffi::duckdb_v2_vector_get_child_count, handle, RET)?;
-            for index in 0..child_count {
-                let child = check_api_call!(ffi::duckdb_v2_vector_get_child, handle, index, RET)?;
-                if appends && index == 0 {
-                    let len = vector_len(child)?;
-                    visit(&offsets.cell(handle, len), len)?;
+    fn check_list_child_shrink(&mut self, len: usize) -> Result<()> {
+        if !self.is_writable() {
+            return Err(not_writable());
+        }
+        if len < self.list_child_len()? {
+            let reader = VectorReader::<Unknown>::new(
+                // SAFETY: both wrappers differ only in markers.
+                unsafe { &*(self as *const Self).cast::<Vector<'_, Unknown>>() },
+            )?;
+            for row in 0..reader.len() {
+                // SAFETY: the row is in bounds, and LIST and MAP rows store list entries.
+                let entry = unsafe { reader.list_entry_unchecked(row) };
+                if let Some(entry) = entry.filter(|entry| entry.end().is_none_or(|end| end > len as u64)) {
+                    return Err(Error::invalid_input(format!(
+                        "row {row} uses child rows {}..+{}, past the new {len}",
+                        entry.offset(),
+                        entry.length()
+                    )));
                 }
-                walk(offsets, child, visit)?;
             }
-            Ok(())
         }
-        walk(&self.offsets, self.handle, &mut visit)
-    }
-
-    fn sync_child_offsets(&self) -> Result<()> {
-        self.visit_child_offsets(|offset, len| {
-            offset.set(len);
-            Ok(())
-        })
-    }
-
-    pub(crate) fn move_appended_child_offset(&mut self, offset: usize) -> Result<()> {
-        let size = self
-            .children()
-            .expect("validated nested vector has a child")
-            .get_untyped_vector_at(0)?
-            .len();
-        if offset > size {
-            return Err(Error::invalid_parameter(format!(
-                "child offset {offset} is past its {size} rows"
-            )));
-        }
-        self.child_offset_cell().set(offset);
         Ok(())
     }
 
-    pub(crate) fn child_offset_cell(&self) -> &Cell<usize> {
-        self.child_offset
-            .as_deref()
-            .expect("LIST and MAP vectors track their child offset")
-    }
-
-    pub(crate) fn validate_as<U: VectorElement>(&self) -> Result<()> {
+    pub(crate) fn validate_as<U: NativeElement>(&self) -> Result<()> {
         match U::validate(self.logical_type(), self.children.as_ref()) {
             Ok(true) => Ok(()),
             Ok(false) => Err(Error::invalid_input(format!(
@@ -475,7 +500,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     /// # Safety
     /// Reference without copying; source storage must outlive destination reads and remain unchanged.
     /// Neither vector may be written or resized, through any wrapper, while the other is read.
-    pub unsafe fn reference<T2: VectorElement>(self, source: &Vector<'_, T2>) -> Result<Vector<'a, T2>> {
+    pub unsafe fn reference<T2: NativeElement>(self, source: &Vector<'_, T2>) -> Result<Vector<'a, T2>> {
         if self.access == Access::Shared {
             return Err(not_exclusive());
         }
@@ -483,7 +508,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
 
         // The reference replaces the storage kind, size and child vectors, so rebuild from the handle.
         // A write or resize would change storage the source wrapper still reads, so never stay writable.
-        Vector::from_handle(&self.handle, Access::Exclusive, &self.offsets)
+        Vector::from_handle(&self.handle, Access::Exclusive)
     }
 
     /// Return the vector's child vectors, or `None` if it has no children.
@@ -517,13 +542,6 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         self.children.as_mut()
     }
 
-    fn cache_children(&self) -> Result<()> {
-        match &self.children {
-            Some(children) => children.cache_all(),
-            None => Ok(()),
-        }
-    }
-
     /// Explicitly materialize the vector as flat storage.
     ///
     /// The vector must be borrowed mutably, e.g. through
@@ -539,7 +557,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         check_api_call!(ffi::duckdb_v2_vector_flatten, self.handle)?;
 
         // Flattening replaces the buffer and child vectors, so rebuild from the handle.
-        *self = Self::from_handle(&self.handle, self.access, &self.offsets)?;
+        *self = Self::from_handle(&self.handle, self.access)?;
         Ok(())
     }
 
@@ -553,7 +571,23 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     }
 
     /// Set the number of logical rows on writable output.
+    ///
+    /// New rows, including those of nested children, read as zeroed values such as `0`, `''`
+    /// and `[]`, or as `NULL` for types where zeroed storage is not a valid value.
     pub fn set_size(&mut self, len: usize) -> Result<()> {
+        let old = self.len;
+        // SAFETY: the rows the resize exposes are initialized before the result is returned.
+        let result = unsafe { self.set_size_uninit(len) };
+        self.init_rows(old, self.len)?;
+        result
+    }
+
+    /// Set the number of logical rows on writable output, leaving new rows uninitialized.
+    ///
+    /// # Safety
+    /// Every row the resize exposes, and the matching rows of nested children, must be written
+    /// or marked `NULL` before anything reads this vector.
+    pub unsafe fn set_size_uninit(&mut self, len: usize) -> Result<()> {
         if !self.is_writable() {
             return Err(not_writable());
         }
@@ -588,7 +622,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         check_api_call!(ffi::duckdb_v2_vector_constant_set_valid, self.handle, !value.is_null()?)?;
 
         // The constant brings its own buffer and child vectors, so rebuild from the handle.
-        let mut vector = Self::from_handle(&self.handle, Access::Exclusive, &self.offsets)?;
+        let mut vector = Self::from_handle(&self.handle, Access::Exclusive)?;
         vector.len = count;
         Ok(vector)
     }
@@ -619,7 +653,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     }
 }
 
-impl<T: VectorElement> Vector<'_, T> {
+impl<T: NativeElement> Vector<'_, T> {
     /// Prepare exclusive write access and allocate a writable validity mask.
     ///
     /// Fails unless this is writable output with flat storage. Resize the vector
@@ -628,22 +662,14 @@ impl<T: VectorElement> Vector<'_, T> {
         VectorWriter::new(self)
     }
 
-    /// Write one owned [`Value`] through DuckDB's generic value API.
+    /// Write a borrowed [`Value`] through DuckDB's generic value API.
     ///
     /// This is the slow path; prefer [`VectorWriter::set`] for typed vector access.
-    pub fn write_value_slow(&mut self, index: usize, value: Value) -> Result<()> {
+    pub fn write_value_slow(&mut self, index: usize, value: &Value) -> Result<()> {
         if !self.is_writable() {
             return Err(not_writable());
         }
-        // DuckDB appends nested elements after each child's end, which would skip reserved elements.
-        self.visit_child_offsets(|offset, len| match len.checked_sub(offset.get()) {
-            Some(unwritten @ 1..) => Err(Error::invalid_input(format!(
-                "write_value_slow would append after {unwritten} unwritten LIST or MAP child elements; write them or trim the child with set_child_size first"
-            ))),
-            _ => Ok(()),
-        })?;
         let result = check_api_call!(ffi::duckdb_v2_vector_set_value, self.handle, index as u64, value.handle,);
-        self.sync_child_offsets()?;
         // DuckDB may allocate a validity mask or write nested values into the children.
         self.refresh_buffers()?;
         result
@@ -662,7 +688,7 @@ impl<T: VectorElement> Vector<'_, T> {
     }
 }
 
-impl<T: VectorElement> Vector<'_, T> {
+impl<T: NativeElement> Vector<'_, T> {
     /// Prepare a storage-specific reader, along with readers for every descendant.
     ///
     /// Returns an error for [`StorageKind::Other`]; flatten the vector explicitly first.

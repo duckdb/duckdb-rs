@@ -195,7 +195,7 @@ pub fn derive_drop_handle(input: TokenStream) -> TokenStream {
 #[cfg(feature = "neo")]
 #[proc_macro_derive(AsDuckDBType, attributes(duckdb))]
 pub fn as_duckdb_type(input: TokenStream) -> TokenStream {
-    expand_neo_derive(input, neo::as_duckdb_type)
+    expand_neo_derive(input, neo::derive_duckdb_type)
 }
 
 /// Derive `ToValue` for a struct with named fields.
@@ -204,7 +204,7 @@ pub fn as_duckdb_type(input: TokenStream) -> TokenStream {
 #[cfg(feature = "neo")]
 #[proc_macro_derive(AsToValue, attributes(duckdb))]
 pub fn as_to_value(input: TokenStream) -> TokenStream {
-    expand_neo_derive(input, neo::as_to_value)
+    expand_neo_derive(input, neo::derive_to_value)
 }
 
 /// Derive `FromValue` for a struct with named fields.
@@ -214,55 +214,52 @@ pub fn as_to_value(input: TokenStream) -> TokenStream {
 #[cfg(feature = "neo")]
 #[proc_macro_derive(AsFromValue, attributes(duckdb))]
 pub fn as_from_value(input: TokenStream) -> TokenStream {
-    expand_neo_derive(input, neo::as_from_value)
+    expand_neo_derive(input, neo::derive_from_value)
 }
 
-/// Derive `VectorElement` and a borrowed `NameRef<'a>` for a named struct `Name`.
+/// Derive the native element traits for a named struct, and opt-in row readers and writers.
 ///
-/// Fields may be `T` or `Option<T>`, with `T: VectorElement`. The generated reference
-/// has the same field visibility and nullable `Option<T::Ref<'a>>` fields. Unlike `AsFromValue`,
-/// STRUCT fields are matched by position: names (case-insensitive), order, and child types must
-/// match. Whole-row NULLs remain separate. `NameRef` implements `Debug`, `Clone`, `Copy`,
-/// `PartialEq`, `Eq`, and `Hash` whenever every field's borrowed form does.
+/// Fields may be `T` or `Option<T>`, with `T: NativeElement`. Unlike `AsFromValue`, STRUCT fields
+/// are matched by position: names (case-insensitive), order, and child types must match. A STRUCT
+/// row natively reads and writes only its validity; `set_null` nulls every field.
+///
+/// `#[duckdb(reader)]` generates `NameReader<'a>`, the `WithReader` reader, whose rows are
+/// `NameRef<..>` with one nullable `Option<_>` per field, holding each field reader's item; a method
+/// per field borrows its reader for columnar reads. `#[duckdb(writer)]` generates `NameWriter<'w>`,
+/// the `WithWriter` writer, which writes a whole `Name` row and exposes each field's writer as a
+/// field, with the field's visibility, for columnar writes. Field readers and writers are prepared
+/// once, so nested fields such as `List<T>` and other derived structs compose.
 #[cfg(feature = "neo")]
-#[proc_macro_derive(AsVectorElement, attributes(duckdb))]
-pub fn as_vector_element(input: TokenStream) -> TokenStream {
-    expand_neo_derive(input, neo::as_vector_element)
+#[proc_macro_derive(AsNativeElement, attributes(duckdb))]
+pub fn as_native_element(input: TokenStream) -> TokenStream {
+    expand_neo_derive(input, neo::as_native_element)
 }
 
-/// Derive `WritableVectorElement` and `OwnedVectorElement` for a named struct.
+/// Derive `DuckDBType`, `ToValue`, `FromValue`, and the native element traits together.
 ///
-/// `set` takes the struct by value and `set_ref` borrows it; both write each field by reference.
-/// Requires `VectorElement` and `T` or `Option<T>` fields with `T: OwnedVectorElement`.
-/// Plain fields write non-NULL values; optional fields preserve NULL. Passing `None` as the
-/// entire input nulls every child without requiring `Default` or a separate write struct.
-/// A custom unsafe `VectorElement` implementation must validate the complete named field layout;
-/// derive `AsVectorElement` to generate that validation. Writes do not revalidate the schema.
-#[cfg(feature = "neo")]
-#[proc_macro_derive(AsWritableVectorElement, attributes(duckdb))]
-pub fn as_writable_vector_element(input: TokenStream) -> TokenStream {
-    expand_neo_derive(input, neo::as_writable_vector_element)
-}
-
-/// Derive `DuckDBType`, `ToValue`, `FromValue`, and the vector element traits together.
-///
-/// Requires a named struct whose fields support the corresponding value and vector traits.
-/// Generates `NameRef<'a>` for borrowed reads; writes take `Name` or `&Name`. Plain and
-/// optional fields, owned strings, `List<T>` and `Array<T, N>` fields, and nested structs are supported.
+/// Requires a named struct whose fields support the corresponding value and vector traits;
+/// `#[duckdb(reader, writer)]` adds the row reader and writer of `AsNativeElement`.
 #[cfg(feature = "neo")]
 #[proc_macro_derive(AsDuckDB, attributes(duckdb))]
 pub fn as_duckdb(input: TokenStream) -> TokenStream {
     expand_neo_derive(input, neo::as_duckdb)
 }
 
-/// Derive `DuckDBType`, `ToValue`, `FromValue`, and the vector element traits for an enum as a SQL `UNION`.
+/// Derive `DuckDBType`, `ToValue`, `FromValue`, and the native element traits for an enum as a SQL `UNION`.
 ///
 /// Every variant must hold exactly one unnamed `T` or `Option<T>`; variant names and order define the
 /// members and their tags; `#[duckdb(rename = "name")]` on a variant sets its member name. Raw
-/// identifiers drop their `r#` prefix, and names that differ only in case are rejected. `Option<T>` members preserve a NULL member value inside a non-NULL union.
-/// `FromValue` matches members by name in any order, preferring exact over case-insensitive matches.
-/// Vectors are matched by position like `AsVectorElement`, and reads return a generated `NameRef<'a>`
-/// enum whose variants hold `Option<T::Ref<'a>>`. Writes take `Name` or `&Name`.
+/// identifiers drop their `r#` prefix, and names that differ only in case are rejected. `Option<T>`
+/// members preserve a NULL member value inside a non-NULL union. `FromValue` matches members by name
+/// in any order, preferring exact over case-insensitive matches. Vectors are matched by position like
+/// `AsNativeElement`; a UNION row natively reads and writes only its validity.
+///
+/// With at most 16 variants, `#[duckdb(reader)]` generates `NameReader<'a>`, the `WithReader` reader,
+/// whose rows are a `NameRef<..>` enum with one nullable `Option<_>` per variant, holding the member
+/// reader's item; `members()` borrows the underlying `UnionReader`. `#[duckdb(writer)]` generates
+/// `NameWriter<'w>`, the `WithWriter` writer, which writes a whole `Name` row and has a snake_case
+/// method per variant that makes it a row's active member and borrows the member's writer;
+/// `members()` borrows the underlying `UnionWriter`.
 #[cfg(feature = "neo")]
 #[proc_macro_derive(AsDuckDBUnion, attributes(duckdb))]
 pub fn as_duckdb_union(input: TokenStream) -> TokenStream {

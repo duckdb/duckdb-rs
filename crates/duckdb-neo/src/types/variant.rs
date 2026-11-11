@@ -6,7 +6,7 @@ use crate::{
     connection::FFILink,
     logical_type::{LogicalType, LogicalTypeID},
     value::Value,
-    vector::{VectorElement, WritableVectorElement},
+    vector::{NativeElement, ReadableNativeElement, WritableNativeElement},
 };
 
 /// [`VectorReader::get`](crate::vector::VectorReader::get) reads each row through an owned [`Value`].
@@ -15,15 +15,19 @@ use crate::{
 pub struct Variant;
 
 // SAFETY: rows are read only through DuckDB's value API.
-unsafe impl VectorElement for Variant {
+unsafe impl NativeElement for Variant {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Variant;
 
     /// VARIANT has no fixed physical layout; rows use the per-cell value API.
-    type Internal<'a> = ();
+    type Native<'a> = ();
+}
 
+// SAFETY: `get` reads the validated physical slot.
+unsafe impl ReadableNativeElement for Variant {
     type Ref<'a> = Value;
 
-    unsafe fn get<'a, U: VectorElement>(
+    #[inline]
+    unsafe fn get<'a, U: NativeElement>(
         reader: &crate::vector::VectorReader<'a, U>,
         _physical: usize,
         logical: usize,
@@ -36,18 +40,21 @@ unsafe impl VectorElement for Variant {
 }
 
 // SAFETY: rows are written only through DuckDB's value API.
-unsafe impl WritableVectorElement for Variant {
-    type Write<'a> = Value;
+unsafe impl WritableNativeElement for Variant {
+    type Write = Value;
 
+    #[inline]
     unsafe fn write(
         writer: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<Self::Write<'_>>,
+        value: &Self::Write,
     ) -> Result<()> {
-        match value {
-            Some(value) => writer.write_value_slow(index, value),
-            None => writer.set_null_slow(index),
-        }
+        writer.write_value_slow(index, value)
+    }
+
+    #[inline]
+    unsafe fn write_null(writer: &mut crate::vector::VectorWriter<'_, Self>, index: usize) -> Result<()> {
+        writer.set_null_slow(index)
     }
 }
 

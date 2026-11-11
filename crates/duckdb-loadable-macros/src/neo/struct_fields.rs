@@ -6,7 +6,6 @@ pub(super) struct StructFields<'a> {
     pub idents: Vec<&'a syn::Ident>,
     pub types: Vec<&'a syn::Type>,
     pub names: Vec<String>,
-    pub rust_names: Vec<String>,
 }
 
 impl<'a> StructFields<'a> {
@@ -23,7 +22,7 @@ impl<'a> StructFields<'a> {
                 ));
             }
         };
-        reject_container_attributes(input, derive)?;
+        container_attributes(input, derive)?;
         let idents = fields
             .iter()
             .map(|field| field.ident.as_ref().unwrap())
@@ -53,7 +52,6 @@ impl<'a> StructFields<'a> {
             idents,
             types,
             names,
-            rust_names,
         })
     }
 }
@@ -85,14 +83,46 @@ pub(super) fn sql_name(attrs: &[syn::Attribute], name: &str, derive: &str) -> sy
     Ok(rename.map_or_else(|| name.to_owned(), |rename| rename.value()))
 }
 
-pub(super) fn reject_container_attributes(input: &syn::DeriveInput, derive: &str) -> syn::Result<()> {
-    match input.attrs.iter().find(|attr| attr.path().is_ident("duckdb")) {
-        Some(attr) => Err(syn::Error::new_spanned(
-            attr,
-            format!("{derive} supports #[duckdb(...)] only on fields and variants"),
-        )),
-        None => Ok(()),
+/// Which row reader and writer types a derive generates, from `#[duckdb(reader, writer)]`.
+#[derive(Clone, Copy, Default)]
+pub(super) struct ContainerAttributes {
+    pub reader: bool,
+    pub writer: bool,
+}
+
+pub(super) fn container_attributes(input: &syn::DeriveInput, derive: &str) -> syn::Result<ContainerAttributes> {
+    let mut attributes = ContainerAttributes::default();
+    for attr in input.attrs.iter().filter(|attr| attr.path().is_ident("duckdb")) {
+        attr.parse_nested_meta(|meta| {
+            let flag = if meta.path.is_ident("reader") {
+                &mut attributes.reader
+            } else if meta.path.is_ident("writer") {
+                &mut attributes.writer
+            } else {
+                return Err(meta.error(format!(
+                    "unsupported {derive} container attribute, expected `reader` or `writer`"
+                )));
+            };
+            if std::mem::replace(flag, true) {
+                return Err(meta.error(format!("{derive}: duplicate container attribute")));
+            }
+            Ok(())
+        })?;
     }
+    Ok(attributes)
+}
+
+/// Reject `#[duckdb(reader, writer)]` on derives that generate no rows.
+pub(super) fn reject_row_attributes(input: &syn::DeriveInput, derive: &str) -> syn::Result<()> {
+    let attributes = container_attributes(input, derive)?;
+    if attributes.reader || attributes.writer {
+        let attr = input.attrs.iter().find(|attr| attr.path().is_ident("duckdb"));
+        return Err(syn::Error::new_spanned(
+            attr,
+            format!("{derive} generates no row reader or writer; derive AsDuckDB or AsNativeElement instead"),
+        ));
+    }
+    Ok(())
 }
 
 pub(super) fn bounded_generics(input: &syn::DeriveInput, types: &[&syn::Type], bound: &syn::Path) -> syn::Generics {
@@ -125,10 +155,19 @@ pub(super) fn option_inner_type(ty: &syn::Type) -> Option<&syn::Type> {
     if path.qself.is_some() {
         return None;
     }
-    let segment = path.path.segments.last()?;
-    if segment.ident != "Option" {
+    let segments = path
+        .path
+        .segments
+        .iter()
+        .map(|segment| segment.ident.to_string())
+        .collect::<Vec<_>>();
+    let prelude = matches!(segments.as_slice(), [name] if name == "Option") && path.path.leading_colon.is_none();
+    let qualified = matches!(segments.as_slice(), [krate, module, name]
+        if (krate == "std" || krate == "core") && module == "option" && name == "Option");
+    if !prelude && !qualified {
         return None;
     }
+    let segment = path.path.segments.last()?;
     match &segment.arguments {
         syn::PathArguments::AngleBracketed(arguments) if arguments.args.len() == 1 => match arguments.args.first()? {
             syn::GenericArgument::Type(ty) => Some(ty),
@@ -141,9 +180,7 @@ pub(super) fn option_inner_type(ty: &syn::Type) -> Option<&syn::Type> {
 #[cfg(test)]
 mod tests {
     use super::StructFields;
-    use crate::neo::{
-        as_duckdb, as_duckdb_type, as_from_value, as_to_value, as_vector_element, as_writable_vector_element,
-    };
+    use crate::neo::{as_duckdb, as_duckdb_type, as_from_value, as_native_element, as_to_value};
 
     #[test]
     fn raw_identifiers_use_unescaped_field_names() {
@@ -160,13 +197,12 @@ mod tests {
     }
 
     type Derive = fn(&syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream>;
-    const DERIVES: [(&str, Derive); 6] = [
+    const DERIVES: [(&str, Derive); 5] = [
         ("AsDuckDB", as_duckdb),
         ("AsDuckDBType", as_duckdb_type),
         ("AsFromValue", as_from_value),
         ("AsToValue", as_to_value),
-        ("AsVectorElement", as_vector_element),
-        ("AsWritableVectorElement", as_writable_vector_element),
+        ("AsNativeElement", as_native_element),
     ];
 
     #[test]
@@ -182,7 +218,6 @@ mod tests {
         };
         let fields = StructFields::new(&input, "AsDuckDB").unwrap();
         assert_eq!(fields.names, ["Kind", "with space", "plain"]);
-        assert_eq!(fields.rust_names, ["type", "value", "plain"]);
         for (_, derive) in DERIVES {
             derive(&input).unwrap();
         }
@@ -217,7 +252,11 @@ mod tests {
             ),
             (
                 syn::parse_quote! { #[duckdb(rename = "a")] struct Record { value: i32 } },
-                "{} supports #[duckdb(...)] only on fields and variants",
+                "unsupported {} container attribute, expected `reader` or `writer`",
+            ),
+            (
+                syn::parse_quote! { #[duckdb(reader, reader)] struct Record { value: i32 } },
+                "{}: duplicate container attribute",
             ),
         ] {
             for (name, derive) in DERIVES {
@@ -268,5 +307,47 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn option_fields_need_the_std_option() {
+        use super::option_inner_type;
+        for ty in [
+            syn::parse_quote!(Option<i32>),
+            syn::parse_quote!(std::option::Option<i32>),
+            syn::parse_quote!(::core::option::Option<i32>),
+        ] {
+            assert!(option_inner_type(&ty).is_some(), "{}", quote::quote!(#ty));
+        }
+        for ty in [
+            syn::parse_quote!(my::Option<i32>),
+            syn::parse_quote!(::Option<i32>),
+            syn::parse_quote!(std::Option<i32>),
+        ] {
+            assert!(option_inner_type(&ty).is_none(), "{}", quote::quote!(#ty));
+        }
+    }
+
+    #[test]
+    fn value_derives_reject_row_attributes() {
+        use crate::neo::{derive_duckdb_type, derive_from_value, derive_to_value};
+        let input = syn::parse_quote! {
+            #[duckdb(reader)]
+            struct Record {
+                value: i32,
+            }
+        };
+        for (derive, expand) in [
+            ("AsDuckDBType", derive_duckdb_type as Derive),
+            ("AsToValue", derive_to_value),
+            ("AsFromValue", derive_from_value),
+        ] {
+            let error = expand(&input).unwrap_err().to_string();
+            assert!(
+                error.starts_with(&format!("{derive} generates no row reader or writer")),
+                "{error}"
+            );
+        }
+        assert!(as_duckdb(&input).is_ok());
     }
 }

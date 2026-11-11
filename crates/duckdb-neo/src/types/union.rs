@@ -1,24 +1,28 @@
 //! The `UNION` logical type.
 //!
 //! Rust enums of single-field variants map to `UNION` through `#[derive(AsDuckDBUnion)]`, which
-//! generates typed values, borrowed vector rows, and vector writes. [`Union`] is the untyped fallback.
+//! generates typed values and, with `#[duckdb(reader, writer)]`, row readers and writers.
+//! [`Union`] is the untyped fallback; [`UnionReader`](crate::vector::UnionReader) and
+//! [`UnionWriter`](crate::vector::UnionWriter) type its members by tuple.
 
 use crate::{
     Result,
     enums::LogicalTypeID,
-    vector::{HasChildren, VectorElement, VectorWriter},
+    vector::{NativeElement, ReadableNativeElement, VectorReader, VectorWriter, WritableNativeElement},
 };
 
 /// Accepts any `UNION` vector without checking its members.
 ///
-/// Rows only report NULLs. Derive `AsDuckDBUnion` for typed members, or use
+/// Rows only report NULLs. Derive `AsDuckDBUnion` for typed members, use a
+/// [`UnionReader`](crate::vector::UnionReader) or [`UnionWriter`](crate::vector::UnionWriter), or use
 /// [`Vector::get_value_slow`](crate::vector::Vector::get_value_slow) and
 /// [`Vector::write_value_slow`](crate::vector::Vector::write_value_slow) when the schema is only known at runtime.
 ///
 /// ```
-/// use duckdb_neo::{AsDuckDBUnion, Result, vector::Vector};
+/// use duckdb_neo::{AsDuckDBUnion, Result, vector::{RowReader, RowWriter, Vector}};
 ///
 /// #[derive(AsDuckDBUnion)]
+/// #[duckdb(reader, writer)]
 /// enum Input {
 ///     #[duckdb(rename = "num")]
 ///     Num(i16),
@@ -27,7 +31,7 @@ use crate::{
 /// }
 ///
 /// fn describe(vector: &Vector<'_, Input>) -> Result<String> {
-///     Ok(match vector.reader()?.get(0)? {
+///     Ok(match vector.row_reader()?.get(0)? {
 ///         Some(InputRef::Num(num)) => format!("{num:?}"),
 ///         Some(InputRef::Str(text)) => format!("{text:?}"),
 ///         None => "NULL".to_owned(),
@@ -35,36 +39,47 @@ use crate::{
 /// }
 ///
 /// fn write(vector: &mut Vector<'_, Input>) -> Result<()> {
-///     vector.writer()?.set(0, Some(Input::Str(Some("duck".to_owned()))))
+///     let mut writer = vector.row_writer()?;
+///     writer.set(0, &Input::Str(Some("duck".to_owned())))?;
+///     writer.num(1)?.set(1, &7)
 /// }
 /// ```
 #[derive(Debug)]
 pub struct Union;
 
-// SAFETY: there is no physical row data, and `get` reads nothing.
-unsafe impl VectorElement for Union {
+// SAFETY: there is no physical row data.
+unsafe impl NativeElement for Union {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Union;
+    type Native<'a> = ();
+}
+
+// SAFETY: `get` reads nothing.
+unsafe impl ReadableNativeElement for Union {
     type Ref<'a>
         = ()
     where
         Self: 'a;
-    type Internal<'a> = ();
 
-    unsafe fn get<'a, U: VectorElement>(
-        _reader: &crate::vector::VectorReader<'a, U>,
-        _physical: usize,
-        _logical: usize,
-    ) -> Self::Ref<'a>
+    #[inline]
+    unsafe fn get<'a, U: NativeElement>(_reader: &VectorReader<'a, U>, _physical: usize, _logical: usize)
     where
         Self: 'a,
     {
     }
 }
 
-// SAFETY: the tag and every member have one row per parent row.
-unsafe impl HasChildren for Union {
-    fn child_len(writer: &VectorWriter<'_, Self>) -> Result<usize> {
-        Ok(writer.len())
+// SAFETY: the tag and members are always initialized, so a valid row needs no data of its own.
+unsafe impl WritableNativeElement for Union {
+    type Write = ();
+
+    #[inline]
+    unsafe fn write(_writer: &mut VectorWriter<'_, Self>, _index: usize, _value: &()) -> Result<()> {
+        Ok(())
+    }
+
+    #[inline]
+    unsafe fn write_null(writer: &mut VectorWriter<'_, Self>, index: usize) -> Result<()> {
+        writer.null_children_row(index)
     }
 }
 
@@ -77,7 +92,7 @@ pub mod derive_support {
         logical_type::LogicalType,
         logical_type::LogicalTypeID,
         value::{Value, ValueInput},
-        vector::VectorElement,
+        vector::NativeElement,
     };
 
     /// Build a `union_type` value whose member `tag` holds `member`.
@@ -161,7 +176,7 @@ pub mod derive_support {
     }
 
     /// Check the name (case-insensitively) and child vector of the member at `index`.
-    pub fn validate_union_member<T: VectorElement>(
+    pub fn validate_union_member<T: NativeElement>(
         other: &LogicalType,
         children: Option<&VectorCollection>,
         index: usize,
@@ -179,7 +194,7 @@ pub mod derive_support {
 
     /// Report a valid row whose tag names no member, which DuckDB never produces.
     #[cold]
-    pub fn invalid_union_tag(tag: Option<u8>, count: usize) -> ! {
+    pub fn invalid_union_tag(tag: Option<&u8>, count: usize) -> ! {
         panic!("UNION row has tag {tag:?}, but the union has {count} members")
     }
 }
@@ -193,10 +208,11 @@ mod tests {
         DuckDBType, Parameters, ToValue,
         data_chunk::DataChunk,
         environment::{Environment, StorageLocation},
-        vector::Unknown,
+        vector::{RowReader, Unknown},
     };
 
     #[derive(Debug, PartialEq, AsDuckDBUnion)]
+    #[duckdb(reader)]
     enum NumOrText {
         #[duckdb(rename = "num")]
         Num(i32),
@@ -242,11 +258,11 @@ mod tests {
         {
             let mut vector = chunk.get_vector_at_mut::<Union>(0)?;
             vector.set_size(2)?;
-            vector.write_value_slow(0, NumOrText::Num(7).value(&conn)?)?;
+            vector.write_value_slow(0, &NumOrText::Num(7).value(&conn)?)?;
             vector.set_null_slow(1)?;
         }
         let vector = chunk.get_vector_at::<NumOrText>(0)?;
-        let reader = vector.reader()?;
+        let reader = vector.row_reader()?;
         assert_eq!(reader.get(0)?, Some(NumOrTextRef::Num(Some(&7))));
         assert!(reader.get(1)?.is_none());
         Ok(())
@@ -268,13 +284,13 @@ mod tests {
         {
             let mut vector = chunk.get_vector_at_mut::<Union>(0)?;
             vector.set_size(2)?;
-            vector.write_value_slow(0, value)?;
+            vector.write_value_slow(0, &value)?;
             vector.set_null_slow(1)?;
         }
         assert!(chunk.get_vector_at_mut::<Swapped>(0).is_err());
         assert!(chunk.get_vector_at_mut::<Unknown>(0)?.cast::<Swapped>().is_err());
         let vector = chunk.get_vector_at::<NumOrText>(0)?;
-        let reader = vector.reader()?;
+        let reader = vector.row_reader()?;
         assert_eq!(reader.get(0)?, Some(NumOrTextRef::Text(Some("duck"))));
         assert!(reader.get(1)?.is_none());
         Ok(())

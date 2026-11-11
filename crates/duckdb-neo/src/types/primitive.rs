@@ -12,7 +12,7 @@ use crate::{
     logical_type::{LogicalType, LogicalTypeID},
     raw::RawExt,
     value::{Value, ValueInput},
-    vector::WritableVectorElement,
+    vector::WritableNativeElement,
 };
 
 /// The bind-time `ANY` logical type used in function signatures.
@@ -100,21 +100,25 @@ declare_primitive_type!(UHugeInt, UHugeInt, UHugeInt);
 declare_primitive_type!(i128, HugeInt, HugeInt, crate::value::hugeint);
 declare_primitive_type!(u128, UHugeInt, UHugeInt, crate::value::uhugeint);
 
-/// Implements [`crate::vector::VectorElement`] for a type whose vector storage is itself.
+/// Implements [`crate::vector::NativeElement`] for a type whose vector storage is itself.
 ///
 /// Shared with the temporal family, whose storage-wrapper types follow the
 /// same direct pointer-cast access pattern as the primitives below.
 macro_rules! declare_vector_element {
     ($type:ty, $type_id:ident) => {
         // SAFETY: `$type` is DuckDB's physical storage for `$type_id`.
-        unsafe impl $crate::vector::VectorElement for $type {
+        unsafe impl $crate::vector::NativeElement for $type {
             const TYPE_ID: $crate::logical_type::LogicalTypeID = $crate::logical_type::LogicalTypeID::$type_id;
 
-            type Internal<'a> = $type;
+            type Native<'a> = $type;
+        }
 
+        // SAFETY: `get` reads the validated physical slot.
+        unsafe impl $crate::vector::ReadableNativeElement for $type {
             type Ref<'a> = &'a $type;
 
-            unsafe fn get<'a, U: $crate::vector::VectorElement>(
+            #[inline]
+            unsafe fn get<'a, U: $crate::vector::NativeElement>(
                 vector: &$crate::vector::VectorReader<'a, U>,
                 physical: usize,
                 _logical: usize,
@@ -147,21 +151,19 @@ declare_vector_element!(UHugeInt, UHugeInt);
 macro_rules! declare_writable_vector_element {
     ($type:ty) => {
         // SAFETY: every `$type` value is valid for its logical type.
-        unsafe impl WritableVectorElement for $type {
-            type Write<'a> = $type;
+        unsafe impl WritableNativeElement for $type {
+            type Write = $type;
 
             #[inline(always)]
             unsafe fn write(
                 vector: &mut crate::vector::VectorWriter<'_, Self>,
                 index: usize,
-                value: Option<Self::Write<'_>>,
+                value: &Self::Write,
             ) -> Result<()> {
                 // SAFETY: The caller guarantees a writable, flat, in-bounds row.
-                unsafe { vector.write_internal(index, value) }
+                unsafe { vector.write_internal(index, Some(*value)) }
             }
         }
-
-        crate::vector::owned_by_copy!($type);
     };
 }
 

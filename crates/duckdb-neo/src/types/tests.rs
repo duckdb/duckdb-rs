@@ -383,16 +383,8 @@ fn test_nested_value_getters() -> crate::Result<()> {
     assert!(array.value(&conn)?.get::<Array<i32, 2>>().is_err());
     assert_eq!(array.value(&conn)?.get::<Array<i32, 3>>()?, Some(array));
 
-    let map = MapValue {
-        entries: vec![("a".to_string(), Some(1_i32)), ("b".to_string(), None)],
-    };
-    assert_eq!(
-        map.value(&conn)?
-            .get::<MapValue<String, Option<i32>>>()?
-            .unwrap()
-            .entries,
-        map.entries
-    );
+    let map = Map(vec![("a".to_string(), Some(1_i32)), ("b".to_string(), None)]);
+    assert_eq!(map.value(&conn)?.get::<Map<String, i32>>()?, Some(map));
 
     let tuple = (42_i32, "duck".to_string(), Some(true));
     assert_eq!(
@@ -427,10 +419,7 @@ fn test_complex_values() -> crate::Result<()> {
     .value(&conn)?;
     assert_eq!(bignum.dbg_string()?, "-16909060");
 
-    let map = MapValue {
-        entries: vec![("a".to_string(), 1_i32), ("b".to_string(), 2_i32)],
-    }
-    .value(&conn)?;
+    let map = Map(vec![("a".to_string(), Some(1_i32)), ("b".to_string(), Some(2_i32))]).value(&conn)?;
     assert_eq!(map.dbg_string()?, "{a=1, b=2}");
 
     let struct_value = TestStruct {

@@ -282,6 +282,7 @@ pub(crate) fn create(factory: &Factory, input: ValueInput<'_>) -> Result<Value> 
 
 impl Value {
     /// Read this value as a Rust type, returning `None` for SQL `NULL`.
+    #[inline]
     pub fn get<T: FromValue>(&self) -> Result<Option<T>> {
         T::from_value(self)
     }
@@ -476,7 +477,7 @@ mod tests {
                 .return_type(i32::logical_type(&conn)?),
             |ctx, _input, mut output: Vector<'_, i32>| {
                 assert_length_mismatches_rejected(ctx)?;
-                output.writer()?.set(0, Some(1))
+                output.writer()?.set(0, &1)
             },
         )
         .register(&conn)?;

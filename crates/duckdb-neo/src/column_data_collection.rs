@@ -158,8 +158,8 @@ impl<S: Into<String> + Clone, const N: usize> From<&[(LogicalType, S); N]> for C
 /// let mut chunk = DataChunk::create(&conn, &types, true)?;
 /// let mut values = chunk.get_vector_at_mut::<i32>(0)?;
 /// values.set_size(2)?;
-/// values.writer()?.set(0, Some(10))?;
-/// values.writer()?.set(1, Some(20))?;
+/// values.writer()?.set(0, &10)?;
+/// values.writer()?.set(1, &20)?;
 ///
 /// let mut appender = collection.to_append()?;
 /// appender.append(&mut chunk)?;
@@ -508,7 +508,7 @@ mod test {
             SignatureBuilder::new().return_type(bool::logical_type(&conn)?),
             |context, _input, mut output: Vector<'_, bool>| {
                 let collection = ColumnDataCollection::new(context, [i32::logical_type(context)?])?;
-                output.writer()?.set(0, Some(collection.is_empty()?))
+                output.writer()?.set(0, &collection.is_empty()?)
             },
         )
         .register(&conn)?;
@@ -561,8 +561,8 @@ mod test {
         id.set_size(2)?;
         is_active.set_size(2)?;
 
-        id.writer()?.set(0, Some(10))?;
-        id.writer()?.set(1, None)?;
+        id.writer()?.set(0, &10)?;
+        id.writer()?.set_null(1)?;
 
         let mut collection = collection.to_append()?;
 
@@ -576,10 +576,10 @@ mod test {
 
         let [id, is_active] = chunk.get_vector_array_mut([0, 1])?;
         let (mut id, mut is_active) = (id.cast::<i32>()?, is_active.cast::<bool>()?);
-        id.writer()?.set(0, Some(10))?;
-        id.writer()?.set(1, Some(12))?;
-        is_active.writer()?.set(0, Some(false))?;
-        is_active.writer()?.set(1, None)?;
+        id.writer()?.set(0, &10)?;
+        id.writer()?.set(1, &12)?;
+        is_active.writer()?.set(0, &false)?;
+        is_active.writer()?.set_null(1)?;
 
         let mut collection = collection.to_append()?;
 
@@ -594,8 +594,8 @@ mod test {
         id.set_size(1)?;
         is_active.set_size(1)?;
 
-        id.writer()?.set(0, Some(14))?;
-        is_active.writer()?.set(0, Some(true))?;
+        id.writer()?.set(0, &14)?;
+        is_active.writer()?.set(0, &true)?;
 
         let mut collection_2 = ColumnDataCollection::new(&conn, &logical_types)?.to_append()?;
         collection_2.append(&mut chunk_2)?;
@@ -670,11 +670,11 @@ mod test {
         id.set_size(2)?;
         is_active.set_size(2)?;
 
-        id.writer()?.set(0, Some(10))?;
-        id.writer()?.set(1, None)?;
+        id.writer()?.set(0, &10)?;
+        id.writer()?.set_null(1)?;
 
-        is_active.writer()?.set(0, Some(false))?;
-        is_active.writer()?.set(1, None)?;
+        is_active.writer()?.set(0, &false)?;
+        is_active.writer()?.set_null(1)?;
 
         let mut collection = collection.to_append()?;
 
@@ -705,7 +705,7 @@ mod test {
         let mut chunk = DataChunk::create(&conn, &types, true)?;
         let mut values = chunk.get_vector_at_mut::<i32>(0)?;
         values.set_size(1)?;
-        values.writer()?.set(0, Some(42))?;
+        values.writer()?.set(0, &42)?;
         let mut appender = ColumnDataCollection::new(&conn, &types)?.to_append()?;
         appender.append(&mut chunk)?;
 
@@ -743,7 +743,7 @@ mod test {
             let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
             vector.set_size(values.len())?;
             for (row, value) in values.iter().enumerate() {
-                vector.writer()?.set(row, Some(*value))?;
+                vector.writer()?.set(row, value)?;
             }
             Ok(chunk)
         };

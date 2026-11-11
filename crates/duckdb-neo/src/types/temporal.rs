@@ -16,7 +16,7 @@ use crate::{
     logical_type::{LogicalType, LogicalTypeID},
     raw::RawExt,
     value::{Value, ValueInput},
-    vector::WritableVectorElement,
+    vector::WritableNativeElement,
 };
 
 macro_rules! declare_storage_value {
@@ -47,16 +47,15 @@ macro_rules! declare_storage_value {
         declare_vector_element!($name, $type_id);
 
         // SAFETY: every `$storage` value is valid for its logical type.
-        unsafe impl WritableVectorElement for $name {
-            type Write<'a> = Self;
+        unsafe impl WritableNativeElement for $name {
+            type Write = Self;
 
-            unsafe fn write(vector: &mut crate::vector::VectorWriter<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+            #[inline]
+            unsafe fn write(vector: &mut crate::vector::VectorWriter<'_, Self>, index: usize, value: &Self::Write,) -> Result<()> {
                 // SAFETY: The caller guarantees a writable, flat, in-bounds row.
-                unsafe { vector.write_internal(index, value) }
+                unsafe { vector.write_internal(index, Some(*value)) }
             }
         }
-
-        crate::vector::owned_by_copy!($name);
     };
 }
 
@@ -231,19 +230,19 @@ impl FromValue for IntervalValue {
 }
 
 declare_vector_element!(IntervalValue, Interval);
-crate::vector::owned_by_copy!(IntervalValue);
 
 // SAFETY: every field combination is a valid `INTERVAL`.
-unsafe impl WritableVectorElement for IntervalValue {
-    type Write<'a> = Self;
+unsafe impl WritableNativeElement for IntervalValue {
+    type Write = Self;
 
+    #[inline]
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<Self::Write<'_>>,
+        value: &Self::Write,
     ) -> Result<()> {
         // SAFETY: The caller guarantees a writable, flat, in-bounds row.
-        unsafe { vector.write_internal(index, value) }
+        unsafe { vector.write_internal(index, Some(*value)) }
     }
 }
 

@@ -90,6 +90,24 @@ pub(crate) fn as_from_value(input: &syn::DeriveInput) -> syn::Result<TokenStream
     })
 }
 
+/// `AsDuckDBType` on its own.
+pub(crate) fn derive_duckdb_type(input: &syn::DeriveInput) -> syn::Result<TokenStream> {
+    super::struct_fields::reject_row_attributes(input, "AsDuckDBType")?;
+    as_duckdb_type(input)
+}
+
+/// `AsToValue` on its own.
+pub(crate) fn derive_to_value(input: &syn::DeriveInput) -> syn::Result<TokenStream> {
+    super::struct_fields::reject_row_attributes(input, "AsToValue")?;
+    as_to_value(input)
+}
+
+/// `AsFromValue` on its own.
+pub(crate) fn derive_from_value(input: &syn::DeriveInput) -> syn::Result<TokenStream> {
+    super::struct_fields::reject_row_attributes(input, "AsFromValue")?;
+    as_from_value(input)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{as_duckdb_type, as_from_value, as_to_value};

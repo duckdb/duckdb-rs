@@ -1,7 +1,5 @@
 //! User-defined casts between logical types.
 
-use std::rc::Rc;
-
 use crate::ffi;
 
 use crate::{
@@ -12,7 +10,7 @@ use crate::{
     handles::{CastFunctionHandle, CastFunctionLink},
     logical_type::{LogicalType, LogicalTypeID},
     raw::{FromRaw, RawExt},
-    vector::{Access, Vector, VectorElement},
+    vector::{Access, NativeElement, Vector},
 };
 
 ffi_enum_redeclaration! {
@@ -37,14 +35,12 @@ unsafe extern "C" fn exec_callback<T: CastFunctionCallbacks>(
             let input = Vector::<T::InputType>::from_handle(
                 &check_api_call!(ffi::duckdb_v2_cast_function_exec_get_input, info, RET)?,
                 Access::Exclusive,
-                &Rc::default(),
             )?;
 
             let mode = check_api_call!(ffi::duckdb_v2_cast_function_exec_get_mode, info, RET)?;
             let output = Vector::<T::OutputType>::from_handle(
                 &check_api_call!(ffi::duckdb_v2_cast_function_exec_get_output, info, RET)?,
                 Access::Writable,
-                &Rc::default(),
             )?;
 
             T::exec(
@@ -59,7 +55,7 @@ unsafe extern "C" fn exec_callback<T: CastFunctionCallbacks>(
     );
 }
 
-fn validate_cast_type<T: VectorElement>(logical_type: &LogicalType) -> Result<()> {
+fn validate_cast_type<T: NativeElement>(logical_type: &LogicalType) -> Result<()> {
     // Nested layouts need child vectors, which are only available during execution.
     if !matches!(
         T::TYPE_ID,
@@ -157,9 +153,9 @@ impl<T: CastFunctionCallbacks> CastFunctionBuilder<T> {
 /// Execution callback for a user-defined cast.
 pub trait CastFunctionCallbacks: Send + Sync + 'static {
     /// The typed input-vector element.
-    type InputType: VectorElement;
+    type InputType: NativeElement;
     /// The typed output-vector element.
-    type OutputType: VectorElement;
+    type OutputType: NativeElement;
 
     /// **Execute:** convert an input batch into the output vector.
     ///
@@ -213,13 +209,13 @@ mod tests {
             for i in 0..reader.len() {
                 let input_value = reader.get(i)?;
                 if input_value.is_none() {
-                    writer.set(i, None)?;
+                    writer.set_null(i)?;
                     continue;
                 }
                 let input_value = input_value.unwrap();
                 let output_value = input_value.parse::<f32>().unwrap() + self.offset as f32;
 
-                writer.set(i, Some(output_value))?;
+                writer.set(i, &output_value)?;
             }
             Ok(())
         }
@@ -228,6 +224,7 @@ mod tests {
     #[test]
     fn test_cast_accepts_derived_struct_layout() -> crate::Result<()> {
         #[derive(Debug, crate::AsDuckDB)]
+        #[duckdb(reader)]
         struct Derived {
             value: Option<i32>,
         }
@@ -240,7 +237,9 @@ mod tests {
             .next_chunk()?
             .unwrap();
         assert_eq!(
-            chunk.get_vector_at::<Derived>(0)?.reader()?.get(0)?.unwrap().value,
+            crate::vector::RowReader::get(&chunk.get_vector_at::<Derived>(0)?.row_reader()?, 0)?
+                .unwrap()
+                .value,
             Some(&42)
         );
         let chunk = conn

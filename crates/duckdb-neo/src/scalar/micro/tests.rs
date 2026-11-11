@@ -22,7 +22,7 @@ fn inferred_signature_and_sized_batches() -> Result<()> {
             assert_eq!(output.len(), input.len());
             let mut writer = output.writer()?;
             for (row, value) in input.reader()?.iter().enumerate() {
-                writer.set(row, value.map(|value| i64::from(*value) + *offset))?;
+                writer.set_option(row, value.map(|value| i64::from(*value) + *offset).as_ref())?;
             }
             Ok(())
         },
@@ -68,8 +68,8 @@ fn nested_input_and_string_output() -> Result<()> {
         |_ctx, input: Vector<'_, List<i32>>, mut output: Vector<'_, String>| {
             let mut writer = output.writer()?;
             for (row, value) in input.reader()?.iter().enumerate() {
-                let text = value.map(|list| format!("length: {}", list.iter().count()));
-                writer.set(row, text.as_deref())?;
+                let text = value.map(|list| format!("length: {}", list.length()));
+                writer.set_option(row, text.as_deref())?;
             }
             Ok(())
         },
@@ -99,7 +99,7 @@ fn properties_control_null_handling() -> Result<()> {
         MicroScalar::create(name, |_ctx, input: Vector<'_, i32>, mut output: Vector<'_, i32>| {
             let mut writer = output.writer()?;
             for (row, value) in input.reader()?.iter().enumerate() {
-                writer.set(row, Some(value.copied().unwrap_or(42)))?;
+                writer.set(row, &value.copied().unwrap_or(42))?;
             }
             Ok(())
         })
@@ -182,7 +182,7 @@ fn explicit_signature_sizes_variadic_batches() -> Result<()> {
             }
             let mut writer = output.writer()?;
             for (row, sum) in sums.into_iter().enumerate() {
-                writer.set(row, Some(sum))?;
+                writer.set(row, &sum)?;
             }
             Ok(())
         },
@@ -244,7 +244,7 @@ fn captures_are_dropped_without_registration() -> Result<()> {
         let function = MicroScalar::create("", move |_ctx, input: Vector<'_, i32>, mut output: Vector<'_, i32>| {
             let mut writer = output.writer()?;
             for row in 0..input.len() {
-                writer.set(row, Some(*captured))?;
+                writer.set(row, &*captured)?;
             }
             Ok(())
         });

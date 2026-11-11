@@ -147,7 +147,7 @@ fn test_table_function() -> Result<()> {
                 if threshold.is_some_and(|threshold| item <= threshold) {
                     continue;
                 }
-                output_vector.writer()?.set(written, Some(item))?;
+                output_vector.writer()?.set(written, &item)?;
                 written += 1;
             }
             output_vector.set_size(written)?;
@@ -333,8 +333,8 @@ fn test_table_function_partitioning() -> Result<()> {
             values.set_size(ROWS_PER_BATCH)?;
 
             for row in 0..ROWS_PER_BATCH {
-                parts.writer()?.set(row, Some(part))?;
-                values.writer()?.set(row, Some(row as i32))?;
+                parts.writer()?.set(row, &part)?;
+                values.writer()?.set(row, &(row as i32))?;
             }
 
             // `partition_data` runs on this thread, right after this batch.
@@ -604,9 +604,7 @@ impl TableFunctionCallbacks for ProjectionScan {
             let mut vector = output.get_vector_at_mut::<i32>(position)?;
             vector.set_size(size)?;
             for row in 0..size {
-                vector
-                    .writer()?
-                    .set(row, Some((start + row + declared * 10_000) as i32))?;
+                vector.writer()?.set(row, &((start + row + declared * 10_000) as i32))?;
             }
         }
         assert!(columns.get_column_index(columns.count()?).is_err());
@@ -761,7 +759,7 @@ impl TableFunctionCallbacks for BatchedRange {
         let mut vector = output.get_vector_at_mut::<i64>(0)?;
         vector.set_size(batch.len())?;
         for (row, value) in batch.enumerate() {
-            vector.writer()?.set(row, Some(value as i64))?;
+            vector.writer()?.set(row, &(value as i64))?;
         }
         Ok(())
     }
@@ -875,15 +873,14 @@ fn test_table_function_list_output_child_starts_empty() -> Result<()> {
             let call = global_state.unwrap().fetch_add(1, Ordering::SeqCst);
             let mut vector = output.get_vector_at_mut::<List<i32>>(0)?;
             let child_len = vector.children().unwrap().get_untyped_vector_at(0)?.len();
-            self.0.lock().unwrap().push((child_len, vector.child_offset()));
             let rows = if call < 3 { 2048 } else { 0 };
             vector.set_size(rows)?;
-            // SAFETY: every row writes two elements.
-            unsafe { vector.set_child_size(2 * rows)? };
-            let mut writer = vector.writer()?;
+            vector.set_child_size(2 * rows)?;
+            let mut writer = vector.list_writer()?;
+            self.0.lock().unwrap().push((child_len, writer.child_offset()));
             for row in 0..rows {
                 let value = (call * 2048 + row) as i32;
-                writer.set(row, Some(List(vec![Some(value), Some(value)])))?;
+                writer.set_elements(row, [Some(&value), Some(&value)])?;
             }
             Ok(())
         }

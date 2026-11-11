@@ -9,6 +9,7 @@
 pub mod base56;
 pub mod dash_split;
 pub mod merge_struct;
+pub mod nulls;
 pub mod row_hash;
 
 use duckdb_neo::{
@@ -17,7 +18,7 @@ use duckdb_neo::{
     environment::{Environment, StorageLocation},
     instance::{AttachBuilder, Instance, InstanceBuilder},
     types::UncheckedString,
-    vector::{StorageKind, Unknown, Vector, VectorElement},
+    vector::{NativeElement, StorageKind, Unknown, Vector},
 };
 
 /// Row counts benchmarked when `NEO_BENCH_ROWS` is unset.
@@ -82,7 +83,7 @@ impl Fixture {
 }
 
 /// Narrow an argument vector, flattening storage that readers cannot read directly.
-pub fn readable<T: VectorElement>(vector: Vector<'_, Unknown>) -> Result<Vector<'_, T>> {
+pub fn readable<T: NativeElement>(vector: Vector<'_, Unknown>) -> Result<Vector<'_, T>> {
     let mut vector = vector.cast::<T>()?;
     if vector.storage_kind() == StorageKind::Other {
         vector.flatten()?;

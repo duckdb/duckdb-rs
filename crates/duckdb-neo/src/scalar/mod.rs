@@ -9,7 +9,6 @@
 
 use std::any::Any;
 use std::collections::HashMap;
-use std::rc::Rc;
 
 use crate::ffi;
 
@@ -118,7 +117,7 @@ unsafe extern "C" fn exec_callback<T: ScalarCallbacks>(
             let init_data = unsafe { get_opaque_data_ref_mut::<T::InitData>(init_data) };
 
             let result_handle = check_api_call!(ffi::duckdb_v2_scalar_function_exec_get_result, info, RET)?;
-            let result_vec = Vector::from_handle(&result_handle, Access::Writable, &Rc::default())?;
+            let result_vec = Vector::from_handle(&result_handle, Access::Writable)?;
 
             let arg_count = ArgCount::from_func(|pf, pv, nf, nv| {
                 check_api_call!(ffi::duckdb_v2_scalar_function_exec_get_arg_count, info, pf, pv, nf, nv)

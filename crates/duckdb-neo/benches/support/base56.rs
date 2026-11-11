@@ -28,7 +28,7 @@ use duckdb_neo::{
     file::{File, FileBuilder, FileSystem},
     logical_type::{LogicalType, LogicalTypeID},
     types::UncheckedString,
-    vector::{VectorElement, VectorReader, WritableVectorElement},
+    vector::{NativeElement, VectorReader, WritableNativeElement},
 };
 
 /// Digits and letters without the look-alikes `0`, `1`, `I`, `O`, `l` and `o`.
@@ -38,6 +38,10 @@ const NULL_FIELD: u8 = b'~';
 const FIELD_SEPARATOR: u8 = b',';
 const ROW_SEPARATOR: u8 = b'\n';
 const HEADER_PREFIX: &str = "#base56 ";
+
+#[cfg(test)]
+#[path = "delimiter_checks.rs"]
+mod delimiter_checks;
 
 /// Encoded digits for a tail of 0 to 3 bytes.
 const TAIL_DIGITS: [usize; 4] = [0, 2, 3, 5];
@@ -85,10 +89,15 @@ pub fn decode_into(digits: &[u8], out: &mut Vec<u8>) -> Result<()> {
 
 fn push_digits(mut value: u64, count: usize, out: &mut Vec<u8>) {
     let start = out.len();
-    out.resize(start + count, 0);
-    for digit in out[start..].iter_mut().rev() {
-        *digit = ALPHABET[(value % 56) as usize];
-        value /= 56;
+    out.reserve(count);
+    // SAFETY: capacity covers all `count` slots; the length changes only after they are initialized.
+    unsafe {
+        let data = out.as_mut_ptr().add(start);
+        for index in (0..count).rev() {
+            data.add(index).write(ALPHABET[(value % 56) as usize]);
+            value /= 56;
+        }
+        out.set_len(start + count);
     }
 }
 
@@ -372,6 +381,11 @@ impl CopyFromFunctionCallbacks for Base56 {
     }
 }
 
+#[inline]
+fn find_byte(data: &[u8], byte: u8) -> Option<usize> {
+    memchr::memchr(byte, data)
+}
+
 fn claim_rows(reader: &Base56Reader, capacity: usize, columns: usize, fields: &mut Vec<Range<usize>>) -> Result<usize> {
     fields.clear();
     let data = &reader.data;
@@ -379,7 +393,7 @@ fn claim_rows(reader: &Base56Reader, capacity: usize, columns: usize, fields: &m
     loop {
         let (mut end, mut rows) = (start, 0);
         while rows < capacity && end < data.len() {
-            let line_end = data[end..].iter().position(|&byte| byte == ROW_SEPARATOR);
+            let line_end = find_byte(&data[end..], ROW_SEPARATOR);
             end = line_end.map_or(data.len(), |offset| end + offset + 1);
             rows += 1;
         }
@@ -396,21 +410,27 @@ fn claim_rows(reader: &Base56Reader, capacity: usize, columns: usize, fields: &m
 
 fn split_fields(data: &[u8], rows: Range<usize>, columns: usize, fields: &mut Vec<Range<usize>>) -> Result<()> {
     let mut line_start = rows.start;
-    for line in data[rows].split_inclusive(|&byte| byte == ROW_SEPARATOR) {
-        let content = line.strip_suffix(&[ROW_SEPARATOR]).unwrap_or(line);
+    while line_start < rows.end {
+        let line_end =
+            find_byte(&data[line_start..rows.end], ROW_SEPARATOR).map_or(rows.end, |offset| line_start + offset);
         let mut field_start = line_start;
         let mut count = 0;
-        for field in content.split(|&byte| byte == FIELD_SEPARATOR) {
-            fields.push(field_start..field_start + field.len());
-            field_start += field.len() + 1;
+        loop {
+            let field_end = find_byte(&data[field_start..line_end], FIELD_SEPARATOR)
+                .map_or(line_end, |offset| field_start + offset);
+            fields.push(field_start..field_end);
             count += 1;
+            if field_end == line_end {
+                break;
+            }
+            field_start = field_end + 1;
         }
         if count != columns {
             return Err(Error::invalid_input(format!(
                 "base56 row has {count} fields, expected {columns}"
             )));
         }
-        line_start += line.len();
+        line_start = line_end + 1;
     }
     Ok(())
 }
@@ -451,10 +471,11 @@ fn decode_column<'f, T>(
     bytes: &mut Vec<u8>,
 ) -> Result<()>
 where
-    T: FixedWidth + VectorElement + for<'w> WritableVectorElement<Write<'w> = T>,
+    T: FixedWidth + NativeElement + WritableNativeElement<Write = T>,
 {
     let mut vector = output.get_vector_at_mut::<T>(index)?;
-    vector.set_size(rows)?;
+    // SAFETY: `split_fields` gives every row one field per column, and the loop writes each.
+    unsafe { vector.set_size_uninit(rows)? };
     let mut writer = vector.writer()?;
     for (row, field) in fields.enumerate() {
         let value = match field {
@@ -465,7 +486,7 @@ where
                 Some(T::from_le_bytes(bytes)?)
             }
         };
-        writer.set(row, value)?;
+        writer.set_option(row, value.as_ref())?;
     }
     Ok(())
 }
@@ -478,32 +499,38 @@ fn decode_strings<'f>(
     bytes: &mut Vec<u8>,
 ) -> Result<()> {
     let mut vector = output.get_vector_at_mut::<String>(index)?;
-    vector.set_size(rows)?;
+    // SAFETY: `split_fields` gives every row one field per column, and the loop writes each.
+    unsafe { vector.set_size_uninit(rows)? };
     let mut writer = vector.writer()?;
     for (row, field) in fields.enumerate() {
         if field == [NULL_FIELD] {
-            writer.set(row, None)?;
+            writer.set_null(row)?;
             continue;
         }
         bytes.clear();
         decode_into(field, bytes)?;
         let text = std::str::from_utf8(bytes).map_err(|error| Error::invalid_input(error.to_string()))?;
-        writer.set(row, Some(text))?;
+        writer.set(row, text)?;
     }
     Ok(())
 }
 
-/// Create `copy_input` with `rows` rows of every supported type, about 1% of them NULL.
+/// Create `copy_input` with the configured NULL percentage for every supported type.
 pub fn create_input(conn: &Connection, rows: usize) -> Result<()> {
+    create_input_with_nulls(conn, rows, super::nulls::Nulls::from_env()?)
+}
+
+pub fn create_input_with_nulls(conn: &Connection, rows: usize, nulls: super::nulls::Nulls) -> Result<()> {
     conn.execute(
         format!(
             "CREATE OR REPLACE TABLE copy_input AS
-             SELECT i::BIGINT AS id,
-                    CASE WHEN i % 89 = 0 THEN NULL ELSE i * 1.5 END::DOUBLE AS x,
-                    CASE WHEN i % 97 = 0 THEN NULL ELSE 'name_' || i END AS name,
-                    CASE WHEN i % 101 = 0 THEN NULL ELSE i % 2 = 0 END AS flag,
-                    (i % 1000)::INTEGER AS bucket
-             FROM range({rows}) t(i)"
+             SELECT {} AS id, {}::DOUBLE AS x, {} AS name, {} AS flag, {} AS bucket
+             FROM range({rows}) t(i)",
+            nulls.expression("i::BIGINT", 20),
+            nulls.expression("i * 1.5", 21),
+            nulls.expression("'name_' || i", 22),
+            nulls.expression("i % 2 = 0", 23),
+            nulls.expression("(i % 1000)::INTEGER", 24),
         )
         .as_str(),
         Parameters::None,
