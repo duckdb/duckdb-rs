@@ -10,7 +10,9 @@ mod struct_vector;
 mod union;
 
 pub use entrypoint::parse;
-pub(crate) use struct_value::{as_duckdb_type, as_from_value, as_to_value};
+pub(crate) use struct_value::{
+    as_duckdb_type, as_from_value, as_to_value, derive_duckdb_type, derive_from_value, derive_to_value,
+};
 pub(crate) use struct_vector::as_native_element;
 pub(crate) use union::as_duckdb_union;
 

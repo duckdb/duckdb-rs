@@ -195,7 +195,7 @@ pub fn derive_drop_handle(input: TokenStream) -> TokenStream {
 #[cfg(feature = "neo")]
 #[proc_macro_derive(AsDuckDBType, attributes(duckdb))]
 pub fn as_duckdb_type(input: TokenStream) -> TokenStream {
-    expand_neo_derive(input, neo::as_duckdb_type)
+    expand_neo_derive(input, neo::derive_duckdb_type)
 }
 
 /// Derive `ToValue` for a struct with named fields.
@@ -204,7 +204,7 @@ pub fn as_duckdb_type(input: TokenStream) -> TokenStream {
 #[cfg(feature = "neo")]
 #[proc_macro_derive(AsToValue, attributes(duckdb))]
 pub fn as_to_value(input: TokenStream) -> TokenStream {
-    expand_neo_derive(input, neo::as_to_value)
+    expand_neo_derive(input, neo::derive_to_value)
 }
 
 /// Derive `FromValue` for a struct with named fields.
@@ -214,7 +214,7 @@ pub fn as_to_value(input: TokenStream) -> TokenStream {
 #[cfg(feature = "neo")]
 #[proc_macro_derive(AsFromValue, attributes(duckdb))]
 pub fn as_from_value(input: TokenStream) -> TokenStream {
-    expand_neo_derive(input, neo::as_from_value)
+    expand_neo_derive(input, neo::derive_from_value)
 }
 
 /// Derive the native element traits for a named struct, and opt-in row readers and writers.

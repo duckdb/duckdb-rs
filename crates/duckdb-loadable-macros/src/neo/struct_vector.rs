@@ -275,7 +275,7 @@ fn struct_rows(
     if attributes.writer {
         let writer_ident = format_ident!("{ident}Writer");
         let writer_doc = format!(
-            "Writes [`{ident}`] rows, with every field writer prepared once; fields are public for columnar writes."
+            "Writes [`{ident}`] rows, with every field writer prepared once; the field writers allow columnar writes."
         );
         let lifetime = fresh_lifetime(input, "__duckdb_writer");
         let bound: syn::Path = syn::parse_quote!(::duckdb_neo::vector::WithWriter);
