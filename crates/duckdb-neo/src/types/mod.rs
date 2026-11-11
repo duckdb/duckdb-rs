@@ -40,6 +40,7 @@ use crate::{Result, connection::FFILink, logical_type::LogicalType, value::Value
 
 mod bignum;
 mod decimal;
+mod enums;
 mod primitive;
 mod string;
 mod temporal;
@@ -61,6 +62,7 @@ pub use decimal::{
     Decimal, DecimalContainer, DecimalSignature, DecimalValue, DecimalWidth, HugeDecimal, LongDecimal,
     MAX_DECIMAL_WIDTH, ShortDecimal, Width, WordDecimal,
 };
+pub use enums::{EnumIndex, EnumStorage};
 pub use list::{List, ListIndex};
 pub use map::Map;
 pub use primitive::Any;

@@ -158,6 +158,7 @@ pub struct Vector<'a, T: NativeElement> {
     /// Child vectors of nested types; `None` for vectors without children.
     children: Option<VectorCollection>,
     decimal: OnceCell<DecimalSignature>,
+    enum_size: OnceCell<usize>,
     _chunk: PhantomData<&'a ()>,
     _type: PhantomData<T>,
 }
@@ -195,6 +196,7 @@ impl<'a, T: NativeElement> Vector<'a, T> {
             heap: None,
             children,
             decimal: OnceCell::new(),
+            enum_size: OnceCell::new(),
             _chunk: PhantomData,
             _type: PhantomData,
         };
@@ -281,6 +283,7 @@ impl<'a, T: NativeElement> Vector<'a, T> {
             heap: self.heap,
             children: self.children,
             decimal: self.decimal,
+            enum_size: self.enum_size,
             _chunk: self._chunk,
             _type: PhantomData,
         }
@@ -352,6 +355,15 @@ impl<'a, T: NativeElement> Vector<'a, T> {
         }
         let signature = DecimalSignature::from_logical_type(&self.logical_type)?;
         Ok(*self.decimal.get_or_init(|| signature))
+    }
+
+    /// Return the number of entries in an `ENUM` vector's dictionary, fetched once.
+    pub(crate) fn enum_size(&self) -> Result<usize> {
+        if let Some(size) = self.enum_size.get() {
+            return Ok(*size);
+        }
+        let size = self.logical_type.param_count()?;
+        Ok(*self.enum_size.get_or_init(|| size))
     }
 
     /// Return the prepared read metadata, fetched once per state; `OTHER` storage has none.

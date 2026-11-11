@@ -34,11 +34,12 @@ fn fill(logical_type: &LogicalType) -> Result<Fill> {
             10..=18 => 8,
             _ => 16,
         }),
-        Enum => Fill::Zero(match logical_type.param_count()? {
-            ..=0xFF => 1,
-            0x100..=0xFFFF => 2,
-            _ => 4,
-        }),
+        Enum => match logical_type.param_count()? {
+            0 => Fill::Null,
+            1..=0xFF => Fill::Zero(1),
+            0x100..=0xFFFF => Fill::Zero(2),
+            _ => Fill::Zero(4),
+        },
         Struct | Tuple => Fill::Children(1),
         Union => Fill::Union,
         Array => Fill::Children(array_size(logical_type)?),

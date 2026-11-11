@@ -435,6 +435,25 @@ impl<T: NativeElement> VectorWriter<'_, T> {
     }
 }
 
+impl<T: NativeElement> VectorWriter<'_, T> {
+    /// Copy `values` into rows `offset..offset + values.len()` and mark those rows valid.
+    ///
+    /// # Safety
+    /// `T` must be the physical slot type, and every value must be a valid row.
+    pub(crate) unsafe fn write_slice_unchecked(&mut self, offset: usize, values: &[T]) -> Result<()> {
+        let end = offset
+            .checked_add(values.len())
+            .filter(|end| *end <= self.len())
+            .ok_or_else(|| out_of_bounds(offset.saturating_add(values.len()).saturating_sub(1), self.len()))?;
+        // SAFETY: the rows are in bounds, and the caller guarantees `T` and the values are valid rows.
+        unsafe {
+            std::ptr::copy_nonoverlapping(values.as_ptr(), self.data.cast::<T>().add(offset), values.len());
+            self.mark_valid_range(offset, end);
+        }
+        Ok(())
+    }
+}
+
 impl<T: PlainNative> VectorWriter<'_, T> {
     /// Copy `values` into rows `offset..offset + values.len()` and mark those rows valid.
     ///
@@ -454,16 +473,8 @@ impl<T: PlainNative> VectorWriter<'_, T> {
     /// # }
     /// ```
     pub fn write_slice(&mut self, offset: usize, values: &[T]) -> Result<()> {
-        let end = offset
-            .checked_add(values.len())
-            .filter(|end| *end <= self.len())
-            .ok_or_else(|| out_of_bounds(offset.saturating_add(values.len()).saturating_sub(1), self.len()))?;
-        // SAFETY: the rows are in bounds, and `T` is the physical slot type.
-        unsafe {
-            std::ptr::copy_nonoverlapping(values.as_ptr(), self.data.cast::<T>().add(offset), values.len());
-            self.mark_valid_range(offset, end);
-        }
-        Ok(())
+        // SAFETY: every value of a `PlainNative` type is a valid row.
+        unsafe { self.write_slice_unchecked(offset, values) }
     }
 
     /// Copy every row of `source`, values and NULLs, into the first rows of this vector.
