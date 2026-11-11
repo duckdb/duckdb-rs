@@ -107,24 +107,30 @@ ffi_enum_redeclaration! {
 
 pub use crate::{arena::Arena, bytes::DuckDBBytes};
 
+mod array_writer;
 mod child;
 mod combined;
 mod init;
 mod list_writer;
 mod map_writer;
+mod nested_reader;
 mod reader;
+mod rows;
 mod union_writer;
 mod writer;
 
+pub use array_writer::ArrayWriter;
 pub use child::ChildVector;
-pub use list_writer::{Elements, ListWriter};
+pub use list_writer::ListWriter;
 pub use map_writer::MapWriter;
+pub use nested_reader::{ArrayReader, Elements, Entries, ListReader, MapReader};
 pub use union_writer::{UnionMember, UnionMembers, UnionWriter};
 
 #[doc(hidden)]
 pub use combined::VectorReaderTuple;
 pub use combined::{CombinedVectorIterator, EnumeratedCombinedVectorIterator};
 pub use reader::{EnumeratedVectorReaderIter, Selection, VectorReader, VectorReaderIter};
+pub use rows::{RowReader, RowWriter, WithReader, WithWriter};
 pub use writer::VectorWriter;
 
 /// The length of DuckDB's shared constant-vector selection, `STANDARD_VECTOR_SIZE`.

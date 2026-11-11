@@ -1,6 +1,8 @@
 use std::ops::Deref;
 
-use super::{ListWriter, MapWriter, UnionMembers, UnionWriter, Unknown, Vector, VectorElement, VectorWriter};
+use super::{
+    ListWriter, MapWriter, UnionMembers, UnionWriter, Unknown, Vector, VectorElement, VectorWriter, WithWriter,
+};
 use crate::{
     Result,
     data_chunk::ChildrenMut,
@@ -108,7 +110,9 @@ impl<T: VectorElement> ChildVector<'_, List<T>> {
     pub fn set_child_offset(&mut self, offset: usize) -> Result<()> {
         self.0.set_child_offset(offset)
     }
+}
 
+impl<T: WithWriter> ChildVector<'_, List<T>> {
     /// See [`Vector::list_writer`].
     pub fn list_writer(&mut self) -> Result<ListWriter<'_, T>> {
         self.0.list_writer()
@@ -129,9 +133,25 @@ impl<K: VectorElement, V: VectorElement> ChildVector<'_, Map<K, V>> {
     pub fn set_child_offset(&mut self, offset: usize) -> Result<()> {
         self.0.set_child_offset(offset)
     }
+}
 
+impl<K: WithWriter, V: WithWriter> ChildVector<'_, Map<K, V>> {
     /// See [`Vector::map_writer`].
     pub fn map_writer(&mut self) -> Result<MapWriter<'_, K, V>> {
         self.0.map_writer()
+    }
+}
+
+impl<T: WithWriter> ChildVector<'_, T> {
+    /// See [`Vector::row_writer`].
+    pub fn row_writer(&mut self) -> Result<T::Writer<'_>> {
+        self.0.row_writer()
+    }
+}
+
+impl<T: super::WithReader> ChildVector<'_, T> {
+    /// See [`Vector::row_reader`].
+    pub fn row_reader(&self) -> Result<T::Reader<'_>> {
+        self.0.row_reader()
     }
 }

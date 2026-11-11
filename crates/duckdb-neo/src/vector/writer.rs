@@ -252,6 +252,13 @@ impl<'writer, T: VectorElement> VectorWriter<'writer, T> {
         Ok(())
     }
 
+    /// Reacquire the buffers and size after an ancestor resized or rewrote this vector.
+    pub(crate) fn refresh_all(&mut self) -> Result<()> {
+        self.child_writers = None;
+        self.len = self.vector().len();
+        self.refresh_buffers()
+    }
+
     /// Resize the vector like [`Vector::set_size`] and reacquire its buffers.
     pub(super) fn resize(&mut self, len: usize) -> Result<()> {
         let result = self.vector_mut().set_size(len);

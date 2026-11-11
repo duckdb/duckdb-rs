@@ -311,6 +311,25 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
         }))
     }
 
+    /// # Safety
+    /// `index` must be a logical row of this reader.
+    #[inline(always)]
+    pub(crate) unsafe fn physical_index_unchecked(&self, index: usize) -> Option<usize> {
+        // SAFETY: the caller guarantees bounds.
+        unsafe { self.cached().storage.physical_index_unchecked(self.view(), index) }
+    }
+
+    /// # Safety
+    /// `index` must be a logical row, and the physical storage must hold DuckDB list entries.
+    #[inline(always)]
+    pub(crate) unsafe fn list_entry_unchecked(&self, index: usize) -> Option<crate::types::ListIndex> {
+        // SAFETY: the caller guarantees bounds and list entry storage.
+        unsafe {
+            self.physical_index_unchecked(index)
+                .map(|physical| *self.view().data.cast::<crate::types::ListIndex>().add(physical))
+        }
+    }
+
     #[inline(always)]
     pub(crate) unsafe fn get_unchecked(&self, index: usize) -> Option<T::Ref<'vec>> {
         let physical = unsafe { self.cached().storage.physical_index_unchecked(self.view(), index) }?;
