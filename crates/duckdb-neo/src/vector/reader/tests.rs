@@ -320,6 +320,20 @@ fn reader_handles_native_storage_layouts() -> Result<()> {
             let reader = vector.reader()?;
             assert_eq!(reader.vector().storage_kind(), vector.storage_kind());
             assert_physical_reads(&reader)?;
+            let stepped = reader.iter().map(|value| value.copied()).collect::<Vec<_>>();
+            let mut folded = Vec::new();
+            reader.iter().for_each(|value| folded.push(value.copied()));
+            assert_eq!(folded, stepped);
+            let mut rest = reader.iter();
+            rest.next();
+            let enumerated = rest.enumerate().fold(Vec::new(), |mut rows, (row, value)| {
+                rows.push((row, value.copied()));
+                rows
+            });
+            assert_eq!(
+                enumerated,
+                stepped.iter().skip(1).copied().enumerate().collect::<Vec<_>>()
+            );
             if reader.vector().storage_kind() == StorageKind::Dictionary {
                 assert!(matches!(reader.cached().storage, ReaderStorage::Dictionary(_)));
                 let Selection::Dictionary(_) = reader.selection() else {

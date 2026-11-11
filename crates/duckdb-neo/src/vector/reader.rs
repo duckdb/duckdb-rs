@@ -318,6 +318,45 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
         Some(unsafe { T::get(self, physical, index) })
     }
 
+    /// Fold `rows` with the storage kind resolved once, outside the loop.
+    ///
+    /// # Safety
+    /// Every row of `rows` must be a logical row of this reader.
+    #[inline(always)]
+    unsafe fn fold_rows<B>(
+        &self,
+        rows: Range<usize>,
+        init: B,
+        mut f: impl FnMut(B, usize, Option<T::Ref<'vec>>) -> B,
+    ) -> B {
+        let view = self.view();
+        match self.cached().storage {
+            // SAFETY: the caller guarantees every row is in bounds; flat rows are their own physical slots.
+            ReaderStorage::Flat => rows.fold(init, |acc, row| {
+                let value = unsafe { FlatReader::is_valid_unchecked(view.validity, row) }
+                    .then(|| unsafe { T::get(self, row, row) });
+                f(acc, row, value)
+            }),
+            // SAFETY: as above; the selection maps every logical row.
+            ReaderStorage::Dictionary(_) => rows.fold(init, |acc, row| {
+                let value = unsafe { DictionaryReader::physical_index_unchecked(view.validity, view.sel, row) }
+                    .map(|physical| unsafe { T::get(self, physical, row) });
+                f(acc, row, value)
+            }),
+            // SAFETY: as above; every row reads physical slot zero.
+            ReaderStorage::Constant(reader) => {
+                let physical = reader.physical_index();
+                rows.fold(init, |acc, row| {
+                    f(
+                        acc,
+                        row,
+                        physical.map(|physical| unsafe { T::get(self, physical, row) }),
+                    )
+                })
+            }
+        }
+    }
+
     #[inline(always)]
     pub(crate) unsafe fn get_flat_unchecked(&self, index: usize) -> Option<T::Ref<'vec>> {
         let ReaderStorage::Flat = &self.cached().storage else {
@@ -351,6 +390,12 @@ impl<'vec, T: VectorElement + 'vec> Iterator for VectorReaderIter<'vec, T> {
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.rows.size_hint()
+    }
+
+    #[inline(always)]
+    fn fold<B, F: FnMut(B, Self::Item) -> B>(self, init: B, mut f: F) -> B {
+        // SAFETY: the range only yields logical rows of the prepared reader.
+        unsafe { self.reader.fold_rows(self.rows, init, |acc, _, value| f(acc, value)) }
     }
 }
 
@@ -386,6 +431,17 @@ impl<'vec, T: VectorElement + 'vec> Iterator for EnumeratedVectorReaderIter<'vec
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.inner.size_hint()
+    }
+
+    #[inline(always)]
+    fn fold<B, F: FnMut(B, Self::Item) -> B>(self, init: B, mut f: F) -> B {
+        let origin = self.origin;
+        // SAFETY: the range only yields logical rows of the prepared reader.
+        unsafe {
+            self.inner
+                .reader
+                .fold_rows(self.inner.rows, init, |acc, row, value| f(acc, (row - origin, value)))
+        }
     }
 }
 
