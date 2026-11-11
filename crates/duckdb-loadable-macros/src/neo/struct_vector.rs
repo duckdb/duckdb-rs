@@ -82,7 +82,7 @@ pub(super) fn native_impls(
             ) where Self: #lifetime {}
         }
 
-        // SAFETY: the children are always initialized, and NULL rows null their children.
+        // SAFETY: the children are always initialized, so a valid row needs no data of its own.
         unsafe impl #impl_generics ::duckdb_neo::vector::WritableNativeElement for #ident #type_generics #where_clause {
             type Write = ();
 
@@ -379,7 +379,7 @@ fn struct_rows(
 
                 fn set_null(&mut self, row: ::core::primitive::usize) -> ::duckdb_neo::Result<()> {
                     #(#row_writer::set_null(&mut self.#field_idents, row)?;)*
-                    // SAFETY: every field of the row was just nulled.
+                    // SAFETY: a NULL row needs no initialized children.
                     unsafe { ::duckdb_neo::__derive::set_row_validity(&mut self.rows, row, false) }
                 }
 

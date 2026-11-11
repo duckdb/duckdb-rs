@@ -122,7 +122,7 @@ unsafe impl<T: NativeElement, const N: usize> ReadableNativeElement for Array<T,
     }
 }
 
-// SAFETY: the elements are always initialized, and NULL rows null their elements.
+// SAFETY: the elements are always initialized, so a valid row needs no data of its own.
 unsafe impl<T: NativeElement, const N: usize> WritableNativeElement for Array<T, N> {
     type Write = ();
 

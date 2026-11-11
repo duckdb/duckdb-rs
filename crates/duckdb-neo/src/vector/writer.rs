@@ -163,10 +163,11 @@ impl<'writer, T: NativeElement> VectorWriter<'writer, T> {
     ///
     /// Bit `index % 64` of word `index / 64` marks a non-NULL row.
     ///
+    /// This only changes the parent's mask; DuckDB expects NULL STRUCT, ARRAY, and UNION rows to have
+    /// NULL descendants, which [`Self::set_null`] maintains.
+    ///
     /// # Safety
-    /// Rows marked valid must contain initialized values of the logical type
-    /// before any read. NULL STRUCT, ARRAY, and UNION rows must have NULL descendants. This only
-    /// changes the parent's mask; it does not update children.
+    /// Rows marked valid must contain initialized values of the logical type before any read.
     ///
     /// A borrowed mask cannot survive a typed write that might replace it:
     ///
@@ -199,9 +200,11 @@ impl<'writer, T: NativeElement> VectorWriter<'writer, T> {
 
     /// Set a row's validity without changing its data or descendants.
     ///
+    /// DuckDB expects NULL STRUCT, ARRAY, and UNION rows to have NULL descendants, which
+    /// [`Self::set_null`] maintains.
+    ///
     /// # Safety
-    /// A row marked valid must contain an initialized value of the logical type
-    /// before any read. A NULL STRUCT, ARRAY, or UNION row must have NULL descendants.
+    /// A row marked valid must contain an initialized value of the logical type before any read.
     pub unsafe fn set_row_validity(&mut self, index: usize, is_valid: bool) -> Result<()> {
         if index >= self.len() {
             return Err(out_of_bounds(index, self.len()));
@@ -213,11 +216,13 @@ impl<'writer, T: NativeElement> VectorWriter<'writer, T> {
 
     /// Set every row's validity, including padding bits in the last word.
     ///
+    /// DuckDB expects NULL STRUCT, ARRAY, and UNION rows to have NULL descendants, which
+    /// [`Self::fill_null`] maintains.
+    ///
     /// # Safety
-    /// Rows marked valid must contain initialized values of the logical type
-    /// before any read. NULL STRUCT, ARRAY, and UNION rows must have NULL descendants.
+    /// Rows marked valid must contain initialized values of the logical type before any read.
     pub unsafe fn fill_validity(&mut self, is_valid: bool) -> Result<()> {
-        // SAFETY: The caller upholds the validity and descendant invariants.
+        // SAFETY: the caller guarantees rows marked valid hold initialized values.
         unsafe { self.validity_mut()? }.fill(if is_valid { u64::MAX } else { 0 });
         Ok(())
     }
@@ -279,7 +284,7 @@ impl<'writer, T: NativeElement> VectorWriter<'writer, T> {
             .null_rows(start, end)
     }
 
-    /// NULL `row` of every child, as a NULL STRUCT or UNION row requires.
+    /// NULL `row` of every child, as DuckDB expects of a NULL STRUCT or UNION row.
     pub(crate) fn null_children_row(&mut self, row: usize) -> Result<()> {
         if let Some(children) = self.vector_mut().children_collection_mut() {
             for child in children.cached_iter_mut()? {

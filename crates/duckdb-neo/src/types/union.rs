@@ -68,7 +68,7 @@ unsafe impl ReadableNativeElement for Union {
     }
 }
 
-// SAFETY: the tag and members are always initialized, and NULL rows null them.
+// SAFETY: the tag and members are always initialized, so a valid row needs no data of its own.
 unsafe impl WritableNativeElement for Union {
     type Write = ();
 

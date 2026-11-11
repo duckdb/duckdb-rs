@@ -197,17 +197,17 @@ pub mod __derive {
     /// Mark a row valid or NULL without touching its children.
     ///
     /// # Safety
-    /// A valid row must hold initialized children; a NULL STRUCT row must have NULL children.
+    /// A row marked valid must hold initialized children.
     pub unsafe fn set_row_validity<T: NativeElement>(
         writer: &mut VectorWriter<'_, T>,
         row: usize,
         valid: bool,
     ) -> crate::Result<()> {
-        // SAFETY: the caller upholds the validity contract; `set_row_validity` checks bounds.
+        // SAFETY: the caller guarantees initialized children; `set_row_validity` checks bounds.
         unsafe { writer.set_row_validity(row, valid) }
     }
 
-    /// NULL `row` of every child, as a NULL STRUCT or UNION row requires.
+    /// NULL `row` of every child, as DuckDB expects of a NULL STRUCT or UNION row.
     pub fn null_children<T: NativeElement>(writer: &mut VectorWriter<'_, T>, row: usize) -> crate::Result<()> {
         writer.null_children_row(row)
     }

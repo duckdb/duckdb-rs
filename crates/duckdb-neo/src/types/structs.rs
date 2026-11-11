@@ -45,7 +45,7 @@ unsafe impl ReadableNativeElement for Struct {
     }
 }
 
-// SAFETY: the fields are always initialized, and NULL rows null their fields.
+// SAFETY: the fields are always initialized, so a valid row needs no data of its own.
 unsafe impl WritableNativeElement for Struct {
     type Write = ();
 
