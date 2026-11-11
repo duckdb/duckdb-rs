@@ -277,7 +277,7 @@ where
         MapWriter::set_null(self, row)
     }
 
-    fn resize_rows(&mut self, len: usize) -> Result<()> {
+    unsafe fn resize_rows(&mut self, len: usize) -> Result<()> {
         self.parent.resize(len)?;
         self.entries.refresh_all()?;
         self.keys.refresh()?;

@@ -46,6 +46,23 @@ use crate::{
 /// # Ok(())
 /// # }
 /// ```
+///
+/// Neither can a child's row writer resize it:
+///
+/// ```compile_fail,E0133
+/// # use duckdb_neo::{AsDuckDB, DuckDBType, data_chunk::DataChunk, environment::{Environment, StorageLocation}, vector::RowWriter};
+/// # #[derive(AsDuckDB)]
+/// # struct Row { x: i64 }
+/// # fn main() -> duckdb_neo::Result<()> {
+/// # let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+/// let mut chunk = DataChunk::create(&conn, &[Row::logical_type(&conn)?], true)?;
+/// let mut rows = chunk.get_vector_at_mut::<Row>(0)?;
+/// rows.set_size(1)?;
+/// let mut children = rows.children_mut().unwrap();
+/// children.get_vector_at_mut::<i64>(0)?.writer()?.resize_rows(0)?;
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Debug)]
 pub struct ChildVector<'a, T: NativeElement>(pub(crate) Vector<'a, T>);
 

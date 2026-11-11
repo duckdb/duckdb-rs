@@ -465,8 +465,11 @@ impl<'w, M: UnionWriters + 'w> UnionWriter<'w, M> {
     }
 
     /// Resize the rows like [`Vector::set_size`].
+    ///
+    /// # Safety
+    /// As for [`RowWriter::resize_rows`](super::RowWriter::resize_rows).
     #[doc(hidden)]
-    pub fn resize_rows(&mut self, len: usize) -> Result<()> {
+    pub unsafe fn resize_rows(&mut self, len: usize) -> Result<()> {
         self.parent.resize(len)?;
         self.tags.refresh_all()?;
         M::refresh(&mut self.members)

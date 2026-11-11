@@ -114,7 +114,7 @@ where
         ArrayWriter::set_null(self, row)
     }
 
-    fn resize_rows(&mut self, len: usize) -> Result<()> {
+    unsafe fn resize_rows(&mut self, len: usize) -> Result<()> {
         // DuckDB resizes the child to `len * N` along with the parent.
         self.parent.resize(len)?;
         self.elements.refresh()

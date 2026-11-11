@@ -350,9 +350,10 @@ fn struct_rows(
                     unsafe { ::duckdb_neo::__derive::set_row_validity(&mut self.rows, row, false) }
                 }
 
-                fn resize_rows(&mut self, len: ::core::primitive::usize) -> ::duckdb_neo::Result<()> {
-                    // DuckDB resizes every field along with the struct.
-                    ::duckdb_neo::__derive::resize_rows(&mut self.rows, len)?;
+                unsafe fn resize_rows(&mut self, len: ::core::primitive::usize) -> ::duckdb_neo::Result<()> {
+                    // SAFETY: the caller upholds the contract for the struct's rows; DuckDB resizes
+                    // every field along with them.
+                    unsafe { ::duckdb_neo::__derive::resize_rows(&mut self.rows, len)? };
                     #(#row_writer::refresh(&mut self.#field_idents)?;)*
                     ::core::result::Result::Ok(())
                 }

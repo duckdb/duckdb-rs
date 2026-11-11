@@ -121,7 +121,8 @@ impl<'w, T: WithWriter + 'w> ListWriter<'w, T> {
             .checked_add(additional)
             .ok_or_else(|| Error::invalid_input("LIST element count overflow"))?;
         if needed > self.child_len() {
-            self.elements.resize_rows(needed)?;
+            // SAFETY: this writer owns the element count, and growing keeps every element.
+            unsafe { self.elements.resize_rows(needed)? };
         }
         Ok(())
     }
@@ -129,7 +130,8 @@ impl<'w, T: WithWriter + 'w> ListWriter<'w, T> {
     #[cold]
     fn grow(&mut self) -> Result<()> {
         let len = self.child_len();
-        self.elements.resize_rows(len.saturating_mul(2).max(len + 1).max(64))
+        // SAFETY: this writer owns the element count, and growing keeps every element.
+        unsafe { self.elements.resize_rows(len.saturating_mul(2).max(len + 1).max(64)) }
     }
 
     /// Borrow the element writer, for columnar writes; point rows at the elements with [`Self::set_entry`].
@@ -234,8 +236,9 @@ impl<'w, T: WithWriter + 'w> ListWriter<'w, T> {
     pub fn finish(mut self) -> Result<()> {
         let keep = self.used.max(self.offset);
         if self.child_len() > keep {
-            // Shrinking keeps every element a row uses, including rows written before this writer.
-            self.elements.resize_rows(keep)?;
+            // SAFETY: this writer owns the element count, and `keep` covers every element a row uses,
+            // including rows written before this writer.
+            unsafe { self.elements.resize_rows(keep)? };
         }
         Ok(())
     }
@@ -269,7 +272,7 @@ where
         ListWriter::set_null(self, row)
     }
 
-    fn resize_rows(&mut self, len: usize) -> Result<()> {
+    unsafe fn resize_rows(&mut self, len: usize) -> Result<()> {
         self.parent.resize(len)?;
         self.elements.refresh()
     }

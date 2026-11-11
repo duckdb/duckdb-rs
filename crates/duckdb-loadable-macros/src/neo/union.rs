@@ -449,8 +449,9 @@ fn union_rows(
                     self.inner.set_null(row)
                 }
 
-                fn resize_rows(&mut self, len: ::core::primitive::usize) -> ::duckdb_neo::Result<()> {
-                    self.inner.resize_rows(len)
+                unsafe fn resize_rows(&mut self, len: ::core::primitive::usize) -> ::duckdb_neo::Result<()> {
+                    // SAFETY: the caller upholds the contract.
+                    unsafe { self.inner.resize_rows(len) }
                 }
 
                 fn refresh(&mut self) -> ::duckdb_neo::Result<()> {

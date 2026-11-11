@@ -108,8 +108,12 @@ pub trait RowWriter {
     }
 
     /// Resize the rows like [`Vector::set_size`], keeping the writer and its children usable.
+    ///
+    /// # Safety
+    /// The rows must not be fixed by a parent, as `STRUCT` fields, `ARRAY` elements and `UNION`
+    /// members are, and shrinking must keep every row a parent's `LIST` or `MAP` entry references.
     #[doc(hidden)]
-    fn resize_rows(&mut self, len: usize) -> Result<()>;
+    unsafe fn resize_rows(&mut self, len: usize) -> Result<()>;
 
     /// Reacquire buffers after an ancestor resized or rewrote this writer's vector.
     #[doc(hidden)]
@@ -207,7 +211,7 @@ impl<T: WritableNativeElement> RowWriter for VectorWriter<'_, T> {
         VectorWriter::set_option(self, row, value)
     }
 
-    fn resize_rows(&mut self, len: usize) -> Result<()> {
+    unsafe fn resize_rows(&mut self, len: usize) -> Result<()> {
         self.resize(len)
     }
 

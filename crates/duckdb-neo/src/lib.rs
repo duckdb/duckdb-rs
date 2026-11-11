@@ -184,7 +184,10 @@ pub mod __derive {
     }
 
     /// Resize the rows of a derived writer's own vector.
-    pub fn resize_rows<T: NativeElement>(writer: &mut VectorWriter<'_, T>, len: usize) -> crate::Result<()> {
+    ///
+    /// # Safety
+    /// As for [`RowWriter::resize_rows`](crate::vector::RowWriter::resize_rows).
+    pub unsafe fn resize_rows<T: NativeElement>(writer: &mut VectorWriter<'_, T>, len: usize) -> crate::Result<()> {
         writer.resize(len)
     }
 
