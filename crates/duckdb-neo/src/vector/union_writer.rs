@@ -25,7 +25,7 @@ pub trait UnionMember<const I: usize>: UnionMembers {
     type Member: NativeElement;
 }
 
-/// Member tuples whose members all have a [`RowReader`].
+/// Member tuples whose members all have a [`RowReader`](super::RowReader).
 pub trait UnionReaders: UnionMembers {
     /// The tuple of member readers.
     type Readers<'a>
@@ -186,6 +186,14 @@ union_members!(5; A 0, B 1, C 2, D 3, E 4);
 union_members!(6; A 0, B 1, C 2, D 3, E 4, F 5);
 union_members!(7; A 0, B 1, C 2, D 3, E 4, F 5, G 6);
 union_members!(8; A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7);
+union_members!(9; A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8);
+union_members!(10; A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9);
+union_members!(11; A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9, K 10);
+union_members!(12; A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9, K 10, L 11);
+union_members!(13; A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9, K 10, L 11, M 12);
+union_members!(14; A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9, K 10, L 11, M 12, N 13);
+union_members!(15; A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9, K 10, L 11, M 12, N 13, O 14);
+union_members!(16; A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9, K 10, L 11, M 12, N 13, O 14, P 15);
 
 fn check_union<M: UnionMembers>(vector: &Vector<'_, Unknown>) -> Result<()> {
     if vector.logical_type().id()? != LogicalTypeID::Union {
@@ -297,9 +305,9 @@ impl<'a, M: UnionReaders + 'a> std::fmt::Debug for UnionReader<'a, M> {
 
 /// Writes `UNION` rows whose member types `M` are checked once, when the writer is created.
 ///
-/// The writer takes over every row: creating it makes each row the first member with a NULL
-/// value. [`Self::set`] then writes the tag and the active member, keeping the other members
-/// NULL as DuckDB requires, and [`Self::set_null`] nulls the row and its members.
+/// [`Self::set`] writes the tag and the active member and nulls every other member of the row,
+/// as DuckDB requires, and [`Self::set_null`] nulls the row and its members. Rows that are not
+/// written keep their contents; [`Vector::set_size`] makes new rows the first member.
 ///
 /// ```
 /// # use duckdb_neo::{Result, data_chunk::DataChunk, environment::{Environment, StorageLocation}, logical_type::LogicalType, types::Union};
@@ -310,8 +318,8 @@ impl<'a, M: UnionReaders + 'a> std::fmt::Debug for UnionReader<'a, M> {
 /// let mut vector = chunk.get_vector_at_mut::<Union>(0)?;
 /// vector.set_size(3)?;
 /// let mut writer = vector.union_writer::<(i32, String)>()?;
-/// writer.set::<0>(0, Some(&42))?;
-/// writer.set::<1>(1, Some("duck"))?;
+/// writer.set::<0>(0, &42)?;
+/// writer.set::<1>(1, "duck")?;
 /// writer.set_null(2)?;
 /// # drop(writer);
 /// assert_eq!(vector.get_value_slow(1)?.dbg_string()?, "duck");
@@ -337,8 +345,6 @@ impl<'a, M: UnionReaders + 'a> std::fmt::Debug for UnionReader<'a, M> {
 pub struct UnionWriter<'w, M: UnionWriters + 'w> {
     parent: VectorWriter<'w, Unknown>,
     tags: VectorWriter<'w, u8>,
-    /// The member vectors, whose new rows a resize must NULL.
-    member_vectors: Box<[NonNull<Vector<'w, Unknown>>]>,
     members: M::Writers<'w>,
 }
 
@@ -350,7 +356,6 @@ impl<'w, M: UnionWriters + 'w> UnionWriter<'w, M> {
         // SAFETY: the caller guarantees an exclusive borrow of a writable vector.
         let borrowed = unsafe { vector.as_mut() };
         check_union::<M>(borrowed)?;
-        let len = borrowed.len();
         let mut children = borrowed
             .children
             .as_mut()
@@ -360,32 +365,17 @@ impl<'w, M: UnionWriters + 'w> UnionWriter<'w, M> {
             .collect::<Vec<_>>()
             .into_iter();
         let tags = children.next().expect("UNION vectors have a tag child");
-        let member_vectors = children.collect::<Box<[_]>>();
-        for member in &member_vectors {
-            // SAFETY: the member wrappers live as long as the borrowed vector.
-            unsafe { (*member.as_ptr()).null_rows(0, len)? };
-        }
+        let members = children.collect::<Vec<_>>();
         // SAFETY: the writer keeps `vector` exclusively borrowed and only touches its children
         // through these disjoint writers, whose types `check_union` validated.
-        let (mut parent, mut tags, members) = unsafe {
+        let (parent, tags, members) = unsafe {
             (
                 VectorWriter::from_raw(vector)?,
                 VectorWriter::<u8>::from_raw(tags.cast())?,
-                M::writers(&member_vectors)?,
+                M::writers(&members)?,
             )
         };
-        // SAFETY: every row becomes the first member, whose value was nulled above.
-        unsafe {
-            tags.as_mut_ptr().write_bytes(0, len);
-            tags.fill_validity(true)?;
-            parent.fill_validity(true)?;
-        }
-        Ok(Self {
-            parent,
-            tags,
-            member_vectors,
-            members,
-        })
+        Ok(Self { parent, tags, members })
     }
 
     /// Return the number of rows.
@@ -403,19 +393,19 @@ impl<'w, M: UnionWriters + 'w> UnionWriter<'w, M> {
         if row >= self.len() {
             return Err(out_of_bounds(row, self.len()));
         }
+        for member in 0..M::COUNT {
+            M::set_null(&mut self.members, member, row)?;
+        }
         // SAFETY: the row is in bounds of the parent and its tags, which share its rows.
         unsafe {
             self.parent.set_validity_unchecked(row, false);
             self.tags.set_validity_unchecked(row, false);
         }
-        for member in 0..M::COUNT {
-            M::set_null(&mut self.members, member, row)?;
-        }
         Ok(())
     }
 
     /// Make member `I` the row's active member and borrow its writer, to write the member's `row`.
-    /// The member value stays NULL unless it is written.
+    /// The other members of the row become NULL; member `I` keeps its contents until written.
     #[inline]
     pub fn member<const I: usize>(
         &mut self,
@@ -427,23 +417,39 @@ impl<'w, M: UnionWriters + 'w> UnionWriter<'w, M> {
         if row >= self.len() {
             return Err(out_of_bounds(row, self.len()));
         }
-        // SAFETY: the row is in bounds of every child; creating the writer initialized every tag.
+        for member in (0..M::COUNT).filter(|member| *member != I) {
+            M::set_null(&mut self.members, member, row)?;
+        }
+        // SAFETY: the row is in bounds of every child.
         unsafe {
-            let tag = self.tags.as_mut_ptr().add(row);
-            let previous = *tag as usize;
-            if previous != I {
-                M::set_null(&mut self.members, previous, row)?;
-                *tag = I as u8;
-            }
+            self.tags.as_mut_ptr().add(row).write(I as u8);
             self.tags.set_validity_unchecked(row, true);
             self.parent.set_validity_unchecked(row, true);
         }
         Ok(M::writer(&mut self.members))
     }
 
-    /// Make member `I` the row's active member, holding `value`; `None` is a NULL member value.
+    /// Make member `I` the row's active member, holding `value`; a failed write leaves the row NULL.
     #[inline]
     pub fn set<const I: usize>(
+        &mut self,
+        row: usize,
+        value: &<<<M as UnionMember<I>>::Member as WithWriter>::Writer<'w> as RowWriter>::Value,
+    ) -> Result<()>
+    where
+        M: UnionMemberWriter<I>,
+    {
+        let written = self.member::<I>(row)?.set(row, value);
+        if written.is_err() {
+            self.set_null(row)?;
+        }
+        written
+    }
+
+    /// Make member `I` the row's active member, holding `value`; `None` is a NULL member value.
+    /// A failed write leaves the row NULL.
+    #[inline]
+    pub fn set_option<const I: usize>(
         &mut self,
         row: usize,
         value: Option<&<<<M as UnionMember<I>>::Member as WithWriter>::Writer<'w> as RowWriter>::Value>,
@@ -451,19 +457,18 @@ impl<'w, M: UnionWriters + 'w> UnionWriter<'w, M> {
     where
         M: UnionMemberWriter<I>,
     {
-        self.member::<I>(row)?.set_option(row, value)
+        let written = self.member::<I>(row)?.set_option(row, value);
+        if written.is_err() {
+            self.set_null(row)?;
+        }
+        written
     }
 
-    /// Resize the rows like [`Vector::set_size`]; new rows are the first member with a NULL value.
+    /// Resize the rows like [`Vector::set_size`].
     #[doc(hidden)]
     pub fn resize_rows(&mut self, len: usize) -> Result<()> {
-        let old = self.len();
         self.parent.resize(len)?;
         self.tags.refresh_all()?;
-        for member in &self.member_vectors {
-            // SAFETY: the member wrappers live as long as the borrowed vector.
-            unsafe { (*member.as_ptr()).null_rows(old, len)? };
-        }
         M::refresh(&mut self.members)
     }
 
@@ -512,6 +517,7 @@ mod tests {
     };
 
     #[derive(Debug, AsDuckDB)]
+    #[duckdb(writer)]
     struct Inner {
         a: i32,
     }
@@ -531,24 +537,24 @@ mod tests {
         let union_type = LogicalType::from_text(&conn, "UNION(num INTEGER, str VARCHAR)")?;
         let mut chunk = DataChunk::create(&conn, &[union_type], true)?;
         let mut vector = chunk.get_vector_at_mut::<Union>(0)?;
-        // SAFETY: the union writer initializes every row.
-        unsafe { vector.set_size_uninit(5)? };
+        vector.set_size(5)?;
         {
             let mut writer = vector.union_writer::<(i32, String)>()?;
-            writer.set::<0>(0, Some(&7))?;
-            writer.set::<1>(1, Some("long enough to leave the inline storage"))?;
-            writer.set::<0>(1, None)?;
-            writer.set::<1>(2, Some("x"))?;
+            writer.set::<0>(0, &7)?;
+            writer.set::<1>(1, "long enough to leave the inline storage")?;
+            writer.set_option::<0>(1, None)?;
+            writer.set::<1>(2, "x")?;
             writer.set_null(2)?;
-            writer.set::<0>(3, Some(&1))?;
-            writer.set::<1>(3, Some("y"))?;
-            assert!(writer.set::<0>(5, Some(&1)).is_err());
+            writer.set::<0>(3, &1)?;
+            writer.set::<1>(3, "y")?;
+            assert!(writer.set::<0>(5, &1).is_err());
             assert!(writer.set_null(5).is_err());
         }
         let values = (0..5)
             .map(|row| vector.get_value_slow(row)?.dbg_string())
             .collect::<Result<Vec<_>>>()?;
-        assert_eq!(values, ["7", "NULL", "NULL", "y", "NULL"]);
+        // Unwritten rows keep the zeroed first member that `set_size` gave them.
+        assert_eq!(values, ["7", "NULL", "NULL", "y", "0"]);
         let reader = vector.reader()?;
         assert_eq!(
             (0..5).map(|row| reader.is_null(row)).collect::<Result<Vec<_>>>()?,
@@ -564,7 +570,7 @@ mod tests {
                 .unwrap(),
             1
         );
-        assert_eq!(nulls::<i32>(&vector, 1)?, [false, true, true, true, true]);
+        assert_eq!(nulls::<i32>(&vector, 1)?, [false, true, true, true, false]);
         assert_eq!(nulls::<String>(&vector, 2)?, [true, true, true, false, true]);
         Ok(())
     }
@@ -578,10 +584,10 @@ mod tests {
         vector.set_size(3)?;
         {
             let mut writer = vector.union_writer::<(Inner, i32)>()?;
-            writer.set::<0>(0, Some(&Inner { a: 1 }))?;
-            writer.set::<0>(1, Some(&Inner { a: 2 }))?;
-            writer.set::<1>(1, Some(&5))?;
-            writer.set::<0>(2, Some(&Inner { a: 3 }))?;
+            writer.set::<0>(0, &Inner { a: 1 })?;
+            writer.set::<0>(1, &Inner { a: 2 })?;
+            writer.set::<1>(1, &5)?;
+            writer.set::<0>(2, &Inner { a: 3 })?;
             writer.set_null(2)?;
         }
         let inner = vector.children().unwrap().get_untyped_vector_at(1)?;
@@ -619,7 +625,7 @@ mod tests {
             items.push(Some(&1))?;
             items.push(None)?;
             items.finish_row(0)?;
-            writer.set::<1>(1, Some(&5))?;
+            writer.set::<1>(1, &5)?;
             writer.member::<0>(2)?;
             writer.set_null(3)?;
         }
@@ -631,9 +637,9 @@ mod tests {
         assert_eq!(reader.tag(1)?, Some(1));
         assert_eq!(reader.member::<1>().get(1)?, Some(&5));
         assert!(reader.member::<0>().get(1)?.is_none());
-        // A member chosen but never written is a NULL member value.
+        // A member chosen but never written keeps its initialized value.
         assert_eq!(reader.tag(2)?, Some(0));
-        assert!(reader.member::<0>().get(2)?.is_none());
+        assert!(reader.member::<0>().get(2)?.unwrap().is_empty());
         assert_eq!(reader.tag(3)?, None);
         assert!(reader.tag(4).is_err());
         assert!(vector.union_reader::<(i32, i32)>().is_err());

@@ -12,10 +12,11 @@ use duckdb_neo::{
     scalar::{ScalarCallbacks, ScalarFunctionBuilder},
     signature::{FunctionParameter, SignatureBuilder},
     types::{BitValue, List},
-    vector::{StorageKind, Unknown, Vector},
+    vector::{RowReader as _, RowWriter as _, StorageKind, Unknown, Vector},
 };
 
 #[derive(Debug, Clone, PartialEq, AsDuckDBUnion)]
+#[duckdb(reader, writer)]
 #[allow(non_camel_case_types)]
 pub enum Input {
     Num(i16),
@@ -23,29 +24,34 @@ pub enum Input {
 }
 
 #[derive(Debug, Clone, PartialEq, AsDuckDBUnion)]
+#[duckdb(reader, writer)]
 enum Nullable {
     Key(Option<i32>),
     Label(Option<String>),
 }
 
 #[derive(Debug, Clone, PartialEq, AsDuckDBUnion)]
+#[duckdb(reader, writer)]
 enum Same {
     Left(i32),
     Right(i32),
 }
 
 #[derive(Debug, Clone, PartialEq, AsDuckDBUnion)]
+#[duckdb(reader, writer)]
 enum Either<L, R> {
     Left(L),
     Right(R),
 }
 
 #[derive(Debug, Clone, PartialEq, AsDuckDBUnion)]
+#[duckdb(reader, writer)]
 enum Flag {
     On(bool),
 }
 
 #[derive(Debug, Clone, PartialEq, AsDuckDBUnion)]
+#[duckdb(reader, writer)]
 #[allow(non_camel_case_types)]
 enum Keyword {
     r#type(i32),
@@ -53,12 +59,14 @@ enum Keyword {
 }
 
 #[derive(Debug, Clone, PartialEq, AsDuckDB)]
+#[duckdb(reader, writer)]
 struct Point {
     x: i32,
     label: String,
 }
 
 #[derive(Debug, Clone, PartialEq, AsDuckDBUnion)]
+#[duckdb(reader, writer)]
 enum Shape {
     Point(Point),
     Points(List<i32>),
@@ -66,6 +74,7 @@ enum Shape {
 }
 
 #[derive(Debug, Clone, PartialEq, AsDuckDB)]
+#[duckdb(reader, writer)]
 struct Record {
     id: i32,
     input: Option<Input>,
@@ -167,11 +176,13 @@ fn derived_union_values_roundtrip() -> Result<()> {
 #[test]
 fn derived_union_nested_null_values_roundtrip() -> Result<()> {
     #[derive(Debug, PartialEq, AsDuckDBUnion)]
+    #[duckdb(reader, writer)]
     enum Inner {
         Nested(Option<i32>),
     }
 
     #[derive(Debug, PartialEq, AsDuckDBUnion)]
+    #[duckdb(reader, writer)]
     enum Outer {
         Number(i32),
         Nested(Option<Inner>),
@@ -193,7 +204,7 @@ fn derived_union_nested_null_values_roundtrip() -> Result<()> {
     let mut vector = chunk.get_vector_at_mut::<Outer>(0)?;
     vector.set_size(rows.len())?;
     for (index, row) in rows.iter().enumerate() {
-        vector.writer()?.set_option(index, row.as_ref())?;
+        vector.row_writer()?.set_option(index, row.as_ref())?;
         let value = row.value(&conn)?;
         assert_eq!(value.logical_type()?, logical_type);
         assert_eq!(value.is_null()?, row.is_none(), "row {index}");
@@ -206,6 +217,7 @@ fn derived_union_nested_null_values_roundtrip() -> Result<()> {
 #[test]
 fn derived_union_variants_can_use_associated_type_names() -> Result<()> {
     #[derive(Debug, PartialEq, AsDuckDBUnion)]
+    #[duckdb(reader, writer)]
     enum Named {
         Ref(i32),
         Internal(String),
@@ -220,12 +232,12 @@ fn derived_union_variants_can_use_associated_type_names() -> Result<()> {
         .iter()
         .enumerate()
     {
-        vector.writer()?.set(index, row)?;
+        vector.row_writer()?.set(index, row)?;
         assert_eq!(row.value(&conn)?.get::<Named>()?.as_ref(), Some(row));
     }
-    assert_eq!(vector.reader()?.get(0)?, Some(NamedRef::Ref(Some(&7))));
-    assert_eq!(vector.reader()?.get(1)?, Some(NamedRef::Internal(Some("duck"))));
-    assert_eq!(vector.reader()?.get(2)?, Some(NamedRef::Write(Some(&true))));
+    assert_eq!(vector.row_reader()?.get(0)?, Some(NamedRef::Ref(Some(&7))));
+    assert_eq!(vector.row_reader()?.get(1)?, Some(NamedRef::Internal(Some("duck"))));
+    assert_eq!(vector.row_reader()?.get(2)?, Some(NamedRef::Write(Some(&true))));
     Ok(())
 }
 
@@ -240,12 +252,12 @@ fn derived_union_binds_as_query_parameter() -> Result<()> {
         )?
         .next_chunk()?
         .unwrap();
-    assert_eq!(chunk.get_vector_at::<String>(0)?.reader()?.get(0)?, Some("Num"));
-    assert_eq!(chunk.get_vector_at::<i16>(1)?.reader()?.get(0)?, Some(&7));
-    assert_eq!(chunk.get_vector_at::<String>(2)?.reader()?.get(0)?, Some("str"));
-    assert_eq!(chunk.get_vector_at::<String>(3)?.reader()?.get(0)?, Some("duck"));
+    assert_eq!(chunk.get_vector_at::<String>(0)?.row_reader()?.get(0)?, Some("Num"));
+    assert_eq!(chunk.get_vector_at::<i16>(1)?.row_reader()?.get(0)?, Some(&7));
+    assert_eq!(chunk.get_vector_at::<String>(2)?.row_reader()?.get(0)?, Some("str"));
+    assert_eq!(chunk.get_vector_at::<String>(3)?.row_reader()?.get(0)?, Some("duck"));
     assert_eq!(
-        chunk.get_vector_at::<Same>(4)?.reader()?.get(0)?,
+        chunk.get_vector_at::<Same>(4)?.row_reader()?.get(0)?,
         Some(SameRef::Right(Some(&4)))
     );
     Ok(())
@@ -313,7 +325,8 @@ fn derived_union_reads_vectors() -> Result<()> {
         .next_chunk()?
         .unwrap();
     let vector = chunk.get_vector_at::<Input>(0)?;
-    let rows: Vec<Option<InputRef<'_>>> = vector.reader()?.iter().collect();
+    let reader = vector.row_reader()?;
+    let rows: Vec<_> = reader.iter().collect();
     assert_eq!(
         rows,
         [
@@ -325,7 +338,9 @@ fn derived_union_reads_vectors() -> Result<()> {
     );
     assert_eq!(vector.get_value_slow(0)?.get::<Input>()?, Some(Input::Num(7)));
     assert!(vector.get_value_slow(3)?.get::<Input>().is_err());
-    let rows: Vec<_> = chunk.get_vector_at::<Nullable>(1)?.reader()?.iter().collect();
+    let nullables = chunk.get_vector_at::<Nullable>(1)?;
+    let reader = nullables.row_reader()?;
+    let rows: Vec<_> = reader.iter().collect();
     assert_eq!(
         rows,
         [
@@ -353,18 +368,21 @@ fn derived_union_reads_nested_members() -> Result<()> {
         )?
         .next_chunk()?
         .unwrap();
-    let ShapeRef::Point(Some(point)) = chunk.get_vector_at::<Shape>(0)?.reader()?.get(0)?.unwrap() else {
+    let shapes = chunk.get_vector_at::<Shape>(0)?;
+    let reader = shapes.row_reader()?;
+    let ShapeRef::Point(Some(point)) = reader.get(0)?.unwrap() else {
         panic!("expected a point");
     };
     assert_eq!((point.x, point.label), (Some(&1), Some("p")));
     let vector = chunk.get_vector_at::<Shape>(1)?;
-    let ShapeRef::Points(Some(points)) = vector.reader()?.get(0)?.unwrap() else {
+    let reader = vector.row_reader()?;
+    let ShapeRef::Points(Some(points)) = reader.get(0)?.unwrap() else {
         panic!("expected points");
     };
     assert_eq!(points.iter().collect::<Vec<_>>(), [Some(&1), None, Some(&3)]);
     let vector = chunk.get_vector_at::<Shape>(2)?;
     assert!(matches!(
-        vector.reader()?.get(0)?.unwrap(),
+        vector.row_reader()?.get(0)?.unwrap(),
         ShapeRef::Nested(Some(InputRef::str(Some("inner"))))
     ));
     Ok(())
@@ -397,7 +415,7 @@ fn derived_union_rejects_invalid_schemas() -> Result<()> {
         .next_chunk()?
         .unwrap();
     assert_eq!(
-        chunk.get_vector_at::<Input>(0)?.reader()?.get(0)?,
+        chunk.get_vector_at::<Input>(0)?.row_reader()?.get(0)?,
         Some(InputRef::Num(Some(&1)))
     );
     Ok(())
@@ -411,7 +429,7 @@ fn derived_union_writes_vectors() -> Result<()> {
     vector.set_size(4)?;
     let long = "a string longer than the inline storage".to_owned();
     {
-        let mut writer = vector.writer()?;
+        let mut writer = vector.row_writer()?;
         writer.set(0, &Input::str(long.clone()))?;
         writer.set(1, &Input::Num(1))?;
         writer.set_null(2)?;
@@ -421,7 +439,7 @@ fn derived_union_writes_vectors() -> Result<()> {
         writer.set(1, &Input::str(long.clone()))?;
         assert!(writer.set_null(4).is_err());
     }
-    let rows: Vec<_> = vector.reader()?.iter().collect();
+    let rows: Vec<_> = vector.row_reader()?.iter().collect();
     assert_eq!(
         rows,
         [
@@ -445,19 +463,19 @@ fn derived_union_writes_vectors() -> Result<()> {
     let children = vector.children().unwrap();
     let tags: Vec<_> = children
         .get_vector_at::<u8>(0)?
-        .reader()?
+        .row_reader()?
         .iter()
         .map(|tag| tag.copied())
         .collect();
     assert_eq!(tags, [Some(0), Some(1), None, Some(0)]);
     let numbers: Vec<_> = children
         .get_vector_at::<i16>(1)?
-        .reader()?
+        .row_reader()?
         .iter()
         .map(|v| v.copied())
         .collect();
     assert_eq!(numbers, [Some(-1), None, None, Some(9)]);
-    let strings: Vec<_> = children.get_vector_at::<String>(2)?.reader()?.iter().collect();
+    let strings: Vec<_> = children.get_vector_at::<String>(2)?.row_reader()?.iter().collect();
     assert_eq!(strings, [None, Some(long.as_str()), None, None]);
     Ok(())
 }
@@ -471,18 +489,18 @@ fn derived_union_writes_null_members_and_duplicate_types() -> Result<()> {
         let [nullable, same] = chunk.get_vector_array_mut([0, 1])?;
         let mut nullable = nullable.cast::<Nullable>()?;
         nullable.set_size(3)?;
-        let mut writer = nullable.writer()?;
+        let mut writer = nullable.row_writer()?;
         writer.set(0, &Nullable::Key(None))?;
         writer.set(1, &Nullable::Label(Some("label".to_owned())))?;
         writer.set(2, &Nullable::Label(None))?;
         let mut same = same.cast::<Same>()?;
         same.set_size(2)?;
-        let mut writer = same.writer()?;
+        let mut writer = same.row_writer()?;
         writer.set(0, &Same::Right(5))?;
         writer.set(1, &Same::Left(5))?;
     }
     let nullable = chunk.get_vector_at::<Nullable>(0)?;
-    let rows: Vec<_> = nullable.reader()?.iter().collect();
+    let rows: Vec<_> = nullable.row_reader()?.iter().collect();
     assert_eq!(
         rows,
         [
@@ -522,26 +540,26 @@ fn derived_union_nests_in_structs_and_lists() -> Result<()> {
         let [record, items] = chunk.get_vector_array_mut([0, 1])?;
         let mut record = record.cast::<Record>()?;
         record.set_size(records.len())?;
-        let mut writer = record.writer()?;
+        let mut writer = record.row_writer()?;
         for (index, row) in records.iter().enumerate() {
             writer.set(index, row)?;
         }
         let mut items = items.cast::<List<Input>>()?;
         items.set_size(1)?;
-        // SAFETY: the single row below writes all three elements.
-        unsafe { items.set_child_size(3)? };
-        items.writer()?.set(0, &list)?;
+        items.set_child_size(3)?;
+        items.row_writer()?.set(0, &list)?;
     }
     let vector = chunk.get_vector_at::<Record>(0)?;
     for (index, record) in records.iter().enumerate() {
         assert_eq!(vector.get_value_slow(index)?.get::<Record>()?.as_ref(), Some(record));
     }
-    let row = vector.reader()?.get(2)?.unwrap();
+    let reader = vector.row_reader()?;
+    let row = reader.get(2)?.unwrap();
     assert_eq!(row.input, Some(InputRef::str(Some("three"))));
-    assert!(vector.reader()?.get(1)?.unwrap().input.is_none());
+    assert!(vector.row_reader()?.get(1)?.unwrap().input.is_none());
     let items = chunk.get_vector_at::<List<Input>>(1)?;
     assert_eq!(
-        items.reader()?.get(0)?.unwrap().iter().collect::<Vec<_>>(),
+        items.row_reader()?.get(0)?.unwrap().iter().collect::<Vec<_>>(),
         [Some(InputRef::Num(Some(&1))), None, Some(InputRef::str(Some("two")))]
     );
     assert_eq!(items.get_value_slow(0)?.get::<List<Input>>()?, Some(list));
@@ -577,7 +595,7 @@ fn derived_union_refs_write_vectors() -> Result<()> {
     let inputs = source.get_vector_at::<Input>(0)?;
     let nullables = source.get_vector_at::<Nullable>(1)?;
     let eithers = source.get_vector_at::<Either<i64, String>>(2)?;
-    let (inputs, nullables, eithers) = (inputs.reader()?, nullables.reader()?, eithers.reader()?);
+    let (inputs, nullables, eithers) = (inputs.row_reader()?, nullables.row_reader()?, eithers.row_reader()?);
 
     let types = [
         Input::logical_type(&conn)?,
@@ -587,32 +605,45 @@ fn derived_union_refs_write_vectors() -> Result<()> {
     let mut chunk = DataChunk::create(&conn, &types, true)?;
     {
         let [input, nullable, either] = chunk.get_vector_array_mut([0, 1, 2])?;
-        let mut input = input.cast::<InputRef<'_>>()?;
+        let mut input = input.cast::<Input>()?;
         input.set_size(4)?;
-        let mut writer = input.writer()?;
+        let mut writer = input.row_writer()?;
+        let mut copy_input = |row: usize, value: Option<InputRef<&i16, &str>>| match value {
+            Some(InputRef::Num(value)) => writer.members().set_option::<0>(row, value),
+            Some(InputRef::str(value)) => writer.members().set_option::<1>(row, value),
+            None => writer.set_null(row),
+        };
         // Rewriting shifted rows switches their active member, which must NULL the previous one.
         for row in 0..4 {
-            writer.set_option(row, inputs.get((row + 1) % 4)?.as_ref())?;
+            copy_input(row, inputs.get((row + 1) % 4)?)?;
         }
         for row in 0..4 {
-            writer.set_option(row, inputs.get(row)?.as_ref())?;
+            copy_input(row, inputs.get(row)?)?;
         }
-        let mut nullable = nullable.cast::<NullableRef<'_>>()?;
+        let mut nullable = nullable.cast::<Nullable>()?;
         nullable.set_size(4)?;
-        let mut writer = nullable.writer()?;
+        let mut writer = nullable.row_writer()?;
         for (row, value) in nullables.iter().enumerate() {
-            writer.set_option(row, value.as_ref())?;
+            match value {
+                Some(NullableRef::Key(value)) => writer.key(row)?.set_option(row, value)?,
+                Some(NullableRef::Label(value)) => writer.label(row)?.set_option(row, value)?,
+                None => writer.set_null(row)?,
+            }
         }
-        let mut either = either.cast::<EitherRef<'_, i64, String>>()?;
+        let mut either = either.cast::<Either<i64, String>>()?;
         either.set_size(4)?;
-        let mut writer = either.writer()?;
+        let mut writer = either.row_writer()?;
         for (row, value) in eithers.iter().enumerate() {
-            writer.set_option(row, value.as_ref())?;
+            match value {
+                Some(EitherRef::Left(value)) => writer.left(row)?.set_option(row, value)?,
+                Some(EitherRef::Right(value)) => writer.right(row)?.set_option(row, value)?,
+                None => writer.set_null(row)?,
+            }
         }
     }
     let copied = chunk.get_vector_at::<Input>(0)?;
     assert_eq!(
-        copied.reader()?.iter().collect::<Vec<_>>(),
+        copied.row_reader()?.iter().collect::<Vec<_>>(),
         inputs.iter().collect::<Vec<_>>()
     );
     assert_eq!(
@@ -623,13 +654,13 @@ fn derived_union_refs_write_vectors() -> Result<()> {
         .children()
         .unwrap()
         .get_vector_at::<i16>(1)?
-        .reader()?
+        .row_reader()?
         .iter()
         .collect();
     assert_eq!(numbers, [Some(&7), None, None, None]);
     let copied = chunk.get_vector_at::<Nullable>(1)?;
     assert_eq!(
-        copied.reader()?.iter().collect::<Vec<_>>(),
+        copied.row_reader()?.iter().collect::<Vec<_>>(),
         [
             Some(NullableRef::Key(None)),
             Some(NullableRef::Label(Some("label"))),
@@ -639,7 +670,7 @@ fn derived_union_refs_write_vectors() -> Result<()> {
     );
     let copied = chunk.get_vector_at::<Either<i64, String>>(2)?;
     assert_eq!(
-        copied.reader()?.iter().collect::<Vec<_>>(),
+        copied.row_reader()?.iter().collect::<Vec<_>>(),
         eithers.iter().collect::<Vec<_>>()
     );
     assert_eq!(
@@ -653,12 +684,13 @@ fn derived_union_refs_write_vectors() -> Result<()> {
 fn derived_union_refs_reject_mismatched_schemas() -> Result<()> {
     let conn = connect()?;
     let mut chunk = DataChunk::create(&conn, &[Nullable::logical_type(&conn)?], true)?;
-    assert!(chunk.get_vector_at_mut::<InputRef<'_>>(0).is_err());
-    assert!(chunk.get_vector_at_mut::<NullableRef<'_>>(0).is_ok());
+    assert!(chunk.get_vector_at_mut::<Input>(0).is_err());
+    assert!(chunk.get_vector_at_mut::<Nullable>(0).is_ok());
     Ok(())
 }
 
 #[derive(Debug, AsDuckDBUnion)]
+#[duckdb(reader, writer)]
 #[allow(dead_code)]
 enum Fallible {
     X(i32),
@@ -672,16 +704,16 @@ fn failed_union_writes_leave_the_row_null() -> Result<()> {
     let mut vector = chunk.get_vector_at_mut::<Fallible>(0)?;
     vector.set_size(2)?;
     {
-        let mut writer = vector.writer()?;
+        let mut writer = vector.row_writer()?;
         writer.set(0, &Fallible::X(1))?;
         writer.set(1, &Fallible::Bits(BitValue(vec![0, 1])))?;
         assert!(writer.set(0, &Fallible::Bits(BitValue(vec![]))).is_err());
         assert!(writer.set(1, &Fallible::Bits(BitValue(vec![]))).is_err());
     }
-    let reader = vector.reader()?;
+    let reader = vector.row_reader()?;
     let children = vector.children().unwrap();
-    let tags = children.get_vector_at::<u8>(0)?.reader()?;
-    let numbers = children.get_vector_at::<i32>(1)?.reader()?;
+    let tags = children.get_vector_at::<u8>(0)?.row_reader()?;
+    let numbers = children.get_vector_at::<i32>(1)?.row_reader()?;
     for row in 0..2 {
         assert!(reader.get(row)?.is_none(), "row {row}");
         assert!(tags.get(row)?.is_none(), "row {row}");
@@ -695,35 +727,40 @@ fn failed_union_ref_writes_leave_the_row_null() -> Result<()> {
     let conn = connect()?;
     let mut chunk = DataChunk::create(&conn, &[Fallible::logical_type(&conn)?], true)?;
     {
-        let mut vector = chunk.get_vector_at_mut::<FallibleRef<'_>>(0)?;
+        let mut vector = chunk.get_vector_at_mut::<Fallible>(0)?;
         vector.set_size(2)?;
-        let mut writer = vector.writer()?;
-        writer.set(0, &FallibleRef::X(Some(&1)))?;
-        writer.set(1, &FallibleRef::Bits(Some(&[0, 1])))?;
-        assert!(writer.set(0, &FallibleRef::Bits(Some(&[]))).is_err());
+        let mut writer = vector.row_writer()?;
+        writer.set(0, &Fallible::X(1))?;
+        writer.set(1, &Fallible::Bits(BitValue(vec![0, 1])))?;
+        assert!(writer.set(0, &Fallible::Bits(BitValue(vec![]))).is_err());
+        // A failed member write leaves the row with a NULL member value.
+        writer.set_null(0)?;
     }
     let vector = chunk.get_vector_at::<Fallible>(0)?;
-    assert!(vector.reader()?.get(0)?.is_none());
+    assert!(vector.row_reader()?.get(0)?.is_none());
     assert!(
         vector
             .children()
             .unwrap()
             .get_vector_at::<i32>(1)?
-            .reader()?
+            .row_reader()?
             .get(0)?
             .is_none()
     );
-    assert_eq!(vector.reader()?.get(1)?, Some(FallibleRef::Bits(Some(&[0, 1]))));
+    assert_eq!(
+        vector.row_reader()?.get(1)?,
+        Some(FallibleRef::Bits(Some(&[0_u8, 1][..])))
+    );
     Ok(())
 }
 
 #[test]
 fn derived_union_refs_implement_standard_traits() -> Result<()> {
     fn assert_traits<T: Clone + Copy + PartialEq + Eq + std::hash::Hash + std::fmt::Debug>() {}
-    assert_traits::<InputRef<'static>>();
-    assert_traits::<NullableRef<'static>>();
-    assert_traits::<EitherRef<'static, i32, String>>();
-    assert_traits::<FlagRef<'static>>();
+    assert_traits::<InputRef<&'static i16, &'static str>>();
+    assert_traits::<NullableRef<&'static i32, &'static str>>();
+    assert_traits::<EitherRef<&'static i32, &'static str>>();
+    assert_traits::<FlagRef<&'static bool>>();
 
     let conn = connect()?;
     conn.execute(
@@ -737,7 +774,7 @@ fn derived_union_refs_implement_standard_traits() -> Result<()> {
         )?
         .next_chunk()?
         .unwrap();
-    let rows: Vec<_> = chunk.get_vector_at::<Same>(0)?.reader()?.iter().flatten().collect();
+    let rows: Vec<_> = chunk.get_vector_at::<Same>(0)?.row_reader()?.iter().flatten().collect();
     assert_eq!(
         rows,
         [
@@ -787,8 +824,8 @@ impl ScalarCallbacks for InputProbe {
         }
         let mut output = output.cast::<String>()?;
         output.set_size(vector.len())?;
-        let mut writer = output.writer()?;
-        for (index, row) in vector.reader()?.iter().enumerate() {
+        let mut writer = output.row_writer()?;
+        for (index, row) in vector.row_reader()?.iter().enumerate() {
             let text = row.map(|row| match row {
                 InputRef::Num(value) => format!("Num:{}", value.map_or("NULL".to_owned(), i16::to_string)),
                 InputRef::str(value) => format!("str:{}", value.unwrap_or("NULL")),
@@ -817,8 +854,8 @@ impl ScalarCallbacks for ToInput {
         let keys = input.get_vector_at::<i32>(0)?;
         let mut output = output.cast::<Shape>()?;
         output.set_size(keys.len())?;
-        let mut writer = output.writer()?;
-        for (index, key) in keys.reader()?.iter().enumerate() {
+        let mut writer = output.row_writer()?;
+        for (index, key) in keys.row_reader()?.iter().enumerate() {
             let key = *key.unwrap();
             let row = match key % 3 {
                 0 => Shape::Nested(Input::Num(key as i16)),
@@ -882,8 +919,11 @@ fn derived_union_scalar_functions_read_and_write() -> Result<()> {
         ),
     ] {
         let chunk = conn.query(sql.as_str(), Parameters::None)?.next_chunk()?.unwrap();
-        assert_eq!(chunk.get_vector_at::<i64>(0)?.reader()?.get(0)?, Some(&0), "{sql}");
-        assert!(*chunk.get_vector_at::<i64>(1)?.reader()?.get(0)?.unwrap() > 0, "{sql}");
+        assert_eq!(chunk.get_vector_at::<i64>(0)?.row_reader()?.get(0)?, Some(&0), "{sql}");
+        assert!(
+            *chunk.get_vector_at::<i64>(1)?.row_reader()?.get(0)?.unwrap() > 0,
+            "{sql}"
+        );
     }
     assert_eq!(kinds.load(Ordering::Relaxed) & 7, 7);
 
@@ -901,13 +941,14 @@ fn derived_union_scalar_functions_read_and_write() -> Result<()> {
         .next_chunk()?
         .unwrap();
     let counts: Vec<_> = (0..5)
-        .map(|index| Ok(*chunk.get_vector_at::<i64>(index)?.reader()?.get(0)?.unwrap()))
+        .map(|index| Ok(*chunk.get_vector_at::<i64>(index)?.row_reader()?.get(0)?.unwrap()))
         .collect::<Result<_>>()?;
     assert_eq!(counts, [0, 1000, 1000, 1000, 0]);
     Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq, AsDuckDBUnion)]
+#[duckdb(reader, writer)]
 enum Tagged {
     #[duckdb(rename = "num")]
     Num(i16),
@@ -932,9 +973,13 @@ fn renamed_union_variants_use_their_sql_names() -> Result<()> {
         )?
         .next_chunk()?
         .unwrap();
-    assert_eq!(chunk.get_vector_at::<String>(0)?.reader()?.get(0)?, Some("free text"));
+    assert_eq!(
+        chunk.get_vector_at::<String>(0)?.row_reader()?.get(0)?,
+        Some("free text")
+    );
     let vector = chunk.get_vector_at::<Tagged>(1)?;
-    let row = vector.reader()?.get(0)?.unwrap();
+    let reader = vector.row_reader()?;
+    let row = reader.get(0)?.unwrap();
     assert_eq!(row, TaggedRef::Text(Some("goose")));
     assert_eq!(format!("{row:?}"), "Text(Some(\"goose\"))");
     assert_eq!(

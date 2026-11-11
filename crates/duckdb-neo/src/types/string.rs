@@ -16,7 +16,7 @@ use crate::{
     logical_type::{LogicalType, LogicalTypeID},
     raw::RawExt,
     value::{Value, ValueInput},
-    vector::{HasDuckDBBytes, NativeElement, WritableNativeElement},
+    vector::{HasDuckDBBytes, NativeElement, ReadableNativeElement, WritableNativeElement},
 };
 /// Copy bytes DuckDB just returned; `raw` must be null or valid for the duration of the call.
 pub(crate) fn owned_bytes(raw: ffi::duckdb_v2_str) -> Result<Vec<u8>> {
@@ -179,7 +179,10 @@ unsafe impl NativeElement for BlobValue {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Blob;
 
     type Native<'a> = DuckDBBytes<'a>;
+}
 
+// SAFETY: `get` reads the validated physical slot.
+unsafe impl ReadableNativeElement for BlobValue {
     type Ref<'a> = &'a [u8];
 
     #[inline]
@@ -201,7 +204,10 @@ unsafe impl NativeElement for BitValue {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Bit;
 
     type Native<'a> = DuckDBBytes<'a>;
+}
 
+// SAFETY: `get` reads the validated physical slot.
+unsafe impl ReadableNativeElement for BitValue {
     type Ref<'a> = &'a [u8];
 
     #[inline]
@@ -225,7 +231,10 @@ unsafe impl NativeElement for String {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Varchar;
 
     type Native<'a> = DuckDBBytes<'a>;
+}
 
+// SAFETY: `get` reads the validated physical slot.
+unsafe impl ReadableNativeElement for String {
     type Ref<'a> = &'a str;
 
     #[inline]
@@ -250,7 +259,10 @@ unsafe impl NativeElement for UncheckedString {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Varchar;
 
     type Native<'a> = DuckDBBytes<'a>;
+}
 
+// SAFETY: `get` reads the validated physical slot.
+unsafe impl ReadableNativeElement for UncheckedString {
     type Ref<'a> = &'a str;
 
     #[inline]
@@ -335,6 +347,10 @@ impl std::borrow::Borrow<str> for UncheckedString {
 unsafe impl NativeElement for &str {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Varchar;
     type Native<'a> = DuckDBBytes<'a>;
+}
+
+// SAFETY: `get` reads the validated physical slot.
+unsafe impl ReadableNativeElement for &str {
     type Ref<'a>
         = &'a str
     where

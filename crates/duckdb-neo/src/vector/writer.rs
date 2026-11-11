@@ -4,8 +4,8 @@ use crate::raw::RawExt;
 use crate::{Result, check_api_call, ffi, logical_type::LogicalTypeID};
 
 use super::{
-    Arena, DuckDBBytes, HasChildren, HasDuckDBBytes, NativeElement, StorageKind, Unknown, Vector,
-    WritableNativeElement, not_flat, not_writable, out_of_bounds,
+    Arena, DuckDBBytes, HasDuckDBBytes, NativeElement, StorageKind, Vector, WritableNativeElement, not_flat,
+    not_writable, out_of_bounds,
 };
 
 /// Exclusive access to a writable flat vector.
@@ -72,7 +72,6 @@ pub struct VectorWriter<'writer, T: NativeElement> {
     len: usize,
     validity: *mut u64,
     data: *mut std::ffi::c_void,
-    child_writers: Option<Vec<VectorWriter<'writer, Unknown>>>,
     _borrow: PhantomData<&'writer mut T>,
 }
 
@@ -104,15 +103,8 @@ impl<'writer, T: NativeElement> VectorWriter<'writer, T> {
             len: borrowed.len(),
             validity,
             data,
-            child_writers: None,
             _borrow: PhantomData,
         })
-    }
-
-    #[inline]
-    pub(crate) unsafe fn cast_unchecked<U: NativeElement + 'writer>(&mut self) -> &mut VectorWriter<'writer, U> {
-        // SAFETY: repr(C) fixes the layout; U changes only the vector pointer's type and borrow marker.
-        unsafe { &mut *(self as *mut Self).cast::<VectorWriter<'writer, U>>() }
     }
 
     /// Return the number of writable rows.
@@ -254,13 +246,12 @@ impl<'writer, T: NativeElement> VectorWriter<'writer, T> {
 
     /// Reacquire the buffers and size after an ancestor resized or rewrote this vector.
     pub(crate) fn refresh_all(&mut self) -> Result<()> {
-        self.child_writers = None;
         self.len = self.vector().len();
         self.refresh_buffers()
     }
 
     /// Resize the vector like [`Vector::set_size`] and reacquire its buffers.
-    pub(super) fn resize(&mut self, len: usize) -> Result<()> {
+    pub(crate) fn resize(&mut self, len: usize) -> Result<()> {
         let result = self.vector_mut().set_size(len);
         self.len = self.vector().len();
         self.refresh_buffers()?;
@@ -273,62 +264,29 @@ impl<'writer, T: NativeElement> VectorWriter<'writer, T> {
     }
 
     pub(crate) fn vector_mut(&mut self) -> &mut Vector<'writer, T> {
-        self.child_writers = None;
-        // SAFETY: cached descendant pointers are gone before borrowing the vector for mutation.
+        // SAFETY: construction retains the vector's exclusive borrow, and this reference cannot outlive self.
         unsafe { self.vector.as_mut() }
     }
-}
 
-impl<'writer, T: HasChildren> VectorWriter<'writer, T> {
-    fn prepare_children(&mut self) -> Result<()> {
-        let child_len = T::child_len(self)?;
-        let prepared = match self.vector_mut().children_collection_mut() {
-            Some(children) => children
-                .cached_iter_mut()?
-                .map(|child| {
-                    if child.len() != child_len {
-                        child.set_size(child_len)?;
-                    }
-                    // SAFETY: the iterator yields disjoint children, invalidated before any reshaping.
-                    unsafe { VectorWriter::from_raw(NonNull::from(child).cast()) }
-                })
-                .collect::<Result<Vec<_>>>()?,
-            None => Vec::new(),
-        };
-        self.child_writers = Some(prepared);
+    /// NULL rows `start..end` of child `child` and their descendants.
+    pub(crate) fn null_child_rows(&mut self, child: usize, start: usize, end: usize) -> Result<()> {
+        self.vector_mut()
+            .children_collection_mut()
+            .expect("nested vectors have children")
+            .cached_iter_mut()?
+            .nth(child)
+            .expect("validated child exists")
+            .null_rows(start, end)
+    }
+
+    /// NULL `row` of every child, as a NULL STRUCT or UNION row requires.
+    pub(crate) fn null_children_row(&mut self, row: usize) -> Result<()> {
+        if let Some(children) = self.vector_mut().children_collection_mut() {
+            for child in children.cached_iter_mut()? {
+                child.null_rows(row, row + 1)?;
+            }
+        }
         Ok(())
-    }
-
-    /// Write a borrowed field through its cached child writer.
-    ///
-    /// # Safety
-    /// The child must be validated as `U`, with `index` in bounds and a fixed type.
-    #[doc(hidden)]
-    #[inline]
-    pub unsafe fn write_child_unchecked<U: WritableNativeElement + 'writer>(
-        &mut self,
-        child_index: usize,
-        index: usize,
-        value: Option<&U::Write>,
-    ) -> Result<()> {
-        // SAFETY: the caller guarantees the child's type and row bounds.
-        unsafe {
-            self.child_writer_unchecked::<U>(child_index)?
-                .set_option_unchecked(index, value)
-        }
-    }
-
-    #[inline]
-    pub(crate) unsafe fn child_writer_unchecked<U: NativeElement + 'writer>(
-        &mut self,
-        child_index: usize,
-    ) -> Result<&mut VectorWriter<'writer, U>> {
-        if self.child_writers.is_none() {
-            self.prepare_children()?;
-        }
-        let child = &mut self.child_writers.as_mut().expect("child writers are prepared")[child_index];
-        // SAFETY: the caller guarantees that this child was validated as U.
-        Ok(unsafe { child.cast_unchecked() })
     }
 }
 

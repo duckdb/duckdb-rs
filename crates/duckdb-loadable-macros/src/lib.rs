@@ -217,38 +217,27 @@ pub fn as_from_value(input: TokenStream) -> TokenStream {
     expand_neo_derive(input, neo::as_from_value)
 }
 
-/// Derive `NativeElement` and a borrowed `NameRef<'a>` for a named struct `Name`.
+/// Derive the native element traits for a named struct, and opt-in row readers and writers.
 ///
-/// Fields may be `T` or `Option<T>`, with `T: NativeElement`. The generated reference
-/// has the same field visibility and nullable `Option<T::Ref<'a>>` fields. Unlike `AsFromValue`,
-/// STRUCT fields are matched by position: names (case-insensitive), order, and child types must
-/// match. Whole-row NULLs remain separate. `NameRef` implements `Debug`, `Clone`, `Copy`,
-/// `PartialEq`, `Eq`, and `Hash` whenever every field's borrowed form does.
+/// Fields may be `T` or `Option<T>`, with `T: NativeElement`. Unlike `AsFromValue`, STRUCT fields
+/// are matched by position: names (case-insensitive), order, and child types must match. A STRUCT
+/// row natively reads and writes only its validity; `set_null` nulls every field.
+///
+/// `#[duckdb(reader)]` generates `NameReader<'a>`, the `WithReader` reader, whose rows are
+/// `NameRef<..>` with one nullable `Option<_>` per field, holding each field reader's item.
+/// `#[duckdb(writer)]` generates `NameWriter<'w>`, the `WithWriter` writer, which writes a whole
+/// `Name` row and exposes each field's writer as a public field for columnar writes. Field readers
+/// and writers are prepared once, so nested fields such as `List<T>` and other derived structs compose.
 #[cfg(feature = "neo")]
 #[proc_macro_derive(AsNativeElement, attributes(duckdb))]
 pub fn as_native_element(input: TokenStream) -> TokenStream {
     expand_neo_derive(input, neo::as_native_element)
 }
 
-/// Derive `WritableNativeElement` for a named struct.
+/// Derive `DuckDBType`, `ToValue`, `FromValue`, and the native element traits together.
 ///
-/// `set` borrows the struct and writes each field through its borrowed write input.
-/// Requires `NativeElement` and fields implementing `WritableNativeElement + Borrow<T::Write>`.
-/// Plain fields write non-NULL values; optional fields preserve NULL. `set_null` nulls every
-/// child without requiring `Default` or a separate write struct.
-/// A custom unsafe `NativeElement` implementation must validate the complete named field layout;
-/// derive `AsNativeElement` to generate that validation. Writes do not revalidate the schema.
-#[cfg(feature = "neo")]
-#[proc_macro_derive(AsWritableNativeElement, attributes(duckdb))]
-pub fn as_writable_native_element(input: TokenStream) -> TokenStream {
-    expand_neo_derive(input, neo::as_writable_native_element)
-}
-
-/// Derive `DuckDBType`, `ToValue`, `FromValue`, and the vector element traits together.
-///
-/// Requires a named struct whose fields support the corresponding value and vector traits.
-/// Generates `NameRef<'a>` for borrowed reads; writes take `Name` or `&Name`. Plain and
-/// optional fields, owned strings, `List<T>` and `Array<T, N>` fields, and nested structs are supported.
+/// Requires a named struct whose fields support the corresponding value and vector traits;
+/// `#[duckdb(reader, writer)]` adds the row reader and writer of `AsNativeElement`.
 #[cfg(feature = "neo")]
 #[proc_macro_derive(AsDuckDB, attributes(duckdb))]
 pub fn as_duckdb(input: TokenStream) -> TokenStream {

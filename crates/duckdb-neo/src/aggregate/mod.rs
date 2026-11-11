@@ -10,7 +10,6 @@ use std::{
     collections::HashMap,
     ops::{Index, IndexMut},
     panic::AssertUnwindSafe,
-    rc::Rc,
 };
 
 use crate::{
@@ -373,7 +372,7 @@ unsafe extern "C" fn finalize_callback<T: AggregateCallbacks>(
             let result_vector_handle =
                 check_api_call!(ffi::duckdb_v2_aggregate_function_finalize_get_result, info, RET)?;
 
-            let mut result_vector = Vector::from_handle(&result_vector_handle, Access::Writable, &Rc::default())?;
+            let mut result_vector = Vector::from_handle(&result_vector_handle, Access::Writable)?;
 
             let result_offset =
                 check_api_call!(ffi::duckdb_v2_aggregate_function_finalize_get_result_offset, info, RET)? as usize;

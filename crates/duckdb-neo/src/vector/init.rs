@@ -13,6 +13,8 @@ enum Fill {
     Zero(usize),
     /// Fill each child over `size` rows per row: 1 for struct fields, the length for array elements.
     Children(usize),
+    /// Make each row the first member: a zero tag and first member, and NULL other members.
+    Union,
     /// Mark rows NULL, for types whose zeroed value is not a valid DuckDB value.
     Null,
 }
@@ -37,7 +39,8 @@ fn fill(logical_type: &LogicalType) -> Result<Fill> {
             0x100..=0xFFFF => 2,
             _ => 4,
         }),
-        Struct | Tuple | Union => Fill::Children(1),
+        Struct | Tuple => Fill::Children(1),
+        Union => Fill::Union,
         Array => Fill::Children(array_size(logical_type)?),
         _ => Fill::Null,
     })
@@ -62,6 +65,16 @@ impl<T: NativeElement> Vector<'_, T> {
                 if let Some(children) = &mut self.children {
                     for child in children.cached_iter_mut()? {
                         child.init_rows(start * size, end * size)?;
+                    }
+                }
+            }
+            Fill::Union => {
+                if let Some(children) = &mut self.children {
+                    for (index, child) in children.cached_iter_mut()?.enumerate() {
+                        match index {
+                            0 | 1 => child.init_rows(start, end)?,
+                            _ => child.null_rows(start, end)?,
+                        }
                     }
                 }
             }

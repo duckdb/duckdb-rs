@@ -9,8 +9,8 @@ use duckdb_neo::{
     logical_type::LogicalType,
     scalar::{ScalarCallbacks, ScalarFunctionBuilder},
     signature::{FunctionParameter, SignatureBuilder},
-    types::{Decimal, Map, Struct, UncheckedString},
-    vector::{ChildVector, NativeElement, Unknown, Vector, WritableNativeElement},
+    types::{Decimal, Map, Struct, UncheckedString, Union},
+    vector::{ChildVector, ReadableNativeElement, Unknown, Vector, WritableNativeElement},
 };
 
 use super::{nulls::Nulls, readable};
@@ -62,11 +62,7 @@ impl ScalarCallbacks for MergeStruct {
         copy_column(&ints, &mut fields.get_vector_at_mut::<i32>(0)?)?;
         copy_column(&strings, &mut fields.get_vector_at_mut::<String>(1)?)?;
         copy_maps(&maps, &mut fields.get_vector_at_mut::<Map<&str, i32>>(2)?, rows)?;
-        copy_unions(
-            &unions,
-            &mut fields.get_vector_at_mut::<UnionInputRef<'_, UncheckedString>>(3)?,
-            rows,
-        )?;
+        copy_unions(&unions, &mut fields.get_vector_at_mut::<Union>(3)?, rows)?;
         copy_column(&amounts, &mut fields.get_vector_at_mut::<Amount>(4)?)?;
         Ok(())
     }
@@ -75,7 +71,7 @@ impl ScalarCallbacks for MergeStruct {
 #[inline(never)]
 fn copy_column<'s, S, T>(source: &'s Vector<'_, S>, target: &mut ChildVector<'_, T>) -> Result<()>
 where
-    S: NativeElement<Ref<'s> = &'s T::Write> + 's,
+    S: ReadableNativeElement<Ref<'s> = &'s T::Write> + 's,
     T: WritableNativeElement,
     T::Write: 's,
 {
@@ -98,7 +94,7 @@ fn copy_maps(
     let keys = input_fields.get_vector_at::<UncheckedString>(0)?.reader()?;
     let values = input_fields.get_vector_at::<i32>(1)?.reader()?;
     let entries = (0..parent.len())
-        .map(|row| Ok(parent.get_list_entry(row)?.map_or(0, |entry| entry.length() as usize)))
+        .map(|row| Ok(parent.get(row)?.map_or(0, |entry| entry.length() as usize)))
         .sum::<Result<usize>>()?;
     super::ensure(parent.len() == rows, || {
         "MAP row count differs from the input chunk".to_owned()
@@ -106,7 +102,7 @@ fn copy_maps(
     let mut writer = field.map_writer()?;
     writer.reserve(entries)?;
     for row in 0..parent.len() {
-        let Some(entry) = parent.get_list_entry(row)? else {
+        let Some(entry) = parent.get(row)? else {
             writer.set_null(row)?;
             continue;
         };
@@ -124,7 +120,7 @@ fn copy_maps(
 #[inline(never)]
 fn copy_unions(
     unions: &Vector<'_, UnionInput<UncheckedString>>,
-    field: &mut ChildVector<'_, UnionInputRef<'_, UncheckedString>>,
+    field: &mut ChildVector<'_, Union>,
     rows: usize,
 ) -> Result<()> {
     let parent = unions.reader()?;
@@ -143,8 +139,8 @@ fn copy_unions(
             continue;
         }
         match tags.get(row)? {
-            Some(&0) => writer.set::<0>(row, numbers.get(row)?)?,
-            Some(&1) => writer.set::<1>(row, strings.get(row)?)?,
+            Some(&0) => writer.set_option::<0>(row, numbers.get(row)?)?,
+            Some(&1) => writer.set_option::<1>(row, strings.get(row)?)?,
             _ => return Err(Error::invalid_input("invalid UNION tag")),
         }
     }

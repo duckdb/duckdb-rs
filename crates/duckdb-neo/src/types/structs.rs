@@ -1,14 +1,15 @@
 //! The `STRUCT` logical type.
 //!
 //! Named Rust structs map to `STRUCT` through `#[derive(AsDuckDB)]`, which generates typed
-//! values, borrowed vector rows, and vector writes. [`Struct`] is the untyped fallback.
+//! values and, with `#[duckdb(reader, writer)]`, row readers and writers. [`Struct`] is the
+//! untyped fallback.
 
 use crate::{
     Result,
     data_chunk::VectorCollection,
     enums::LogicalTypeID,
     logical_type::LogicalType,
-    vector::{HasChildren, NativeElement, VectorWriter},
+    vector::{NativeElement, ReadableNativeElement, VectorReader, VectorWriter, WritableNativeElement},
 };
 
 /// Accepts any `STRUCT` or `TUPLE` vector without checking its fields.
@@ -19,35 +20,43 @@ use crate::{
 #[derive(Debug)]
 pub struct Struct;
 
-// SAFETY: there is no physical row data, and `get` reads nothing.
+// SAFETY: there is no physical row data.
 unsafe impl NativeElement for Struct {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Struct;
-    type Ref<'a>
-        = ()
-    where
-        Self: 'a;
     type Native<'a> = ();
 
     fn validate(other: &LogicalType, _children: Option<&VectorCollection>) -> Result<bool> {
         Ok(matches!(other.id()?, LogicalTypeID::Struct | LogicalTypeID::Tuple))
     }
+}
+
+// SAFETY: `get` reads nothing.
+unsafe impl ReadableNativeElement for Struct {
+    type Ref<'a>
+        = ()
+    where
+        Self: 'a;
 
     #[inline]
-    unsafe fn get<'a, U: NativeElement>(
-        _reader: &crate::vector::VectorReader<'a, U>,
-        _physical: usize,
-        _logical: usize,
-    ) -> Self::Ref<'a>
+    unsafe fn get<'a, U: NativeElement>(_reader: &VectorReader<'a, U>, _physical: usize, _logical: usize)
     where
         Self: 'a,
     {
     }
 }
 
-// SAFETY: every STRUCT field has one row per parent row.
-unsafe impl HasChildren for Struct {
-    fn child_len(writer: &VectorWriter<'_, Self>) -> Result<usize> {
-        Ok(writer.len())
+// SAFETY: the fields are always initialized, and NULL rows null their fields.
+unsafe impl WritableNativeElement for Struct {
+    type Write = ();
+
+    #[inline]
+    unsafe fn write(_writer: &mut VectorWriter<'_, Self>, _index: usize, _value: &()) -> Result<()> {
+        Ok(())
+    }
+
+    #[inline]
+    unsafe fn write_null(writer: &mut VectorWriter<'_, Self>, index: usize) -> Result<()> {
+        writer.null_children_row(index)
     }
 }
 
@@ -128,7 +137,7 @@ mod tests {
         enums::LogicalTypeID,
         environment::{Environment, StorageLocation},
         types::List,
-        vector::Unknown,
+        vector::{RowReader, RowWriter, Unknown},
     };
 
     #[derive(Debug, PartialEq, AsDuckDBType, AsFromValue, AsToValue)]
@@ -387,6 +396,7 @@ mod tests {
     }
 
     #[derive(Debug, PartialEq, crate::AsDuckDB)]
+    #[duckdb(reader)]
     struct Entry {
         key: i32,
         value: String,
@@ -399,11 +409,13 @@ mod tests {
     }
 
     #[derive(Debug, PartialEq, crate::AsDuckDB)]
+    #[duckdb(reader)]
     struct KeyOnly {
         key: i32,
     }
 
     #[derive(Debug, PartialEq, crate::AsDuckDB)]
+    #[duckdb(writer)]
     struct EmptyRow {}
 
     #[test]
@@ -458,7 +470,7 @@ mod tests {
         assert!(chunk.get_vector_at_mut::<IntegerEntry>(0).is_err());
         assert!(chunk.get_vector_at_mut::<Unknown>(0)?.cast::<IntegerEntry>().is_err());
         let vector = chunk.get_vector_at::<Entry>(0)?;
-        let reader = vector.reader()?;
+        let reader = vector.row_reader()?;
         let row = reader.get(0)?.unwrap();
         assert_eq!(row.key, Some(&42));
         assert_eq!(row.value, Some("duck"));
@@ -473,7 +485,7 @@ mod tests {
         for sql in ["SELECT {'Key': 42}", "SELECT {'KEY': 42}", "SELECT {'key': 42}"] {
             let chunk = conn.query(sql, Parameters::None)?.next_chunk()?.unwrap();
             let vector = chunk.get_vector_at::<KeyOnly>(0)?;
-            assert_eq!(vector.reader()?.get(0)?.unwrap().key, Some(&42), "{sql}");
+            assert_eq!(vector.row_reader()?.get(0)?.unwrap().key, Some(&42), "{sql}");
             assert_eq!(
                 vector.get_value_slow(0)?.get::<KeyOnly>()?,
                 Some(KeyOnly { key: 42 }),
@@ -500,7 +512,7 @@ mod tests {
         {
             let mut vector = chunk.get_vector_at_mut::<EmptyRow>(0)?;
             vector.set_size(2)?;
-            let mut writer = vector.writer()?;
+            let mut writer = vector.row_writer()?;
             writer.set(0, &EmptyRow {})?;
             writer.set_null(1)?;
         }

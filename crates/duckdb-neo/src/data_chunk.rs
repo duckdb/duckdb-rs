@@ -1,8 +1,7 @@
 //! Columnar batches exchanged with DuckDB.
 
-use std::cell::{Cell, OnceCell};
+use std::cell::OnceCell;
 use std::ops::Deref;
-use std::rc::Rc;
 
 use duckdb_loadable_macros::AsRaw;
 
@@ -11,7 +10,7 @@ use crate::error::check_api_call_no_err;
 use crate::ffi;
 use crate::links::{InstanceKeepAlive, KeepAlive};
 use crate::logical_type::LogicalType;
-use crate::vector::{Access, ChildOffsets, ChildVector, NativeElement};
+use crate::vector::{Access, ChildVector, NativeElement};
 use crate::{
     Result, check_api_call,
     raw::RawExt,
@@ -101,10 +100,6 @@ pub struct VectorCollection {
     rows: RowCount,
     /// `'static` because the collection has no lifetime; views are only handed out as `&Vector<'_, _>`.
     cache: Vec<OnceCell<Vector<'static, Unknown>>>,
-    /// Whether every view, including nested children, is prepared for reading.
-    complete: Cell<bool>,
-    /// Next unwritten child element of every `LIST` and `MAP` in this tree, shared with nested collections.
-    offsets: Rc<ChildOffsets>,
 }
 
 /// Where a [`VectorCollection`] reads its row count from.
@@ -120,41 +115,21 @@ pub(crate) enum RowCount {
 
 impl VectorCollection {
     pub(crate) fn new(handles: Vec<ffi::duckdb_v2_vector_handle>, access: Access, rows: RowCount) -> Self {
-        Self::build(handles, access, rows, Rc::default())
-    }
-
-    pub(crate) fn children(
-        handles: Vec<ffi::duckdb_v2_vector_handle>,
-        access: Access,
-        offsets: Rc<ChildOffsets>,
-    ) -> Self {
-        Self::build(handles, access, RowCount::FirstVector, offsets)
-    }
-
-    fn build(
-        handles: Vec<ffi::duckdb_v2_vector_handle>,
-        access: Access,
-        rows: RowCount,
-        offsets: Rc<ChildOffsets>,
-    ) -> Self {
         let cache = handles.iter().map(|_| OnceCell::new()).collect();
         Self {
             handles,
             access,
             rows,
             cache,
-            complete: Cell::new(false),
-            offsets,
         }
     }
 
-    fn wrap<T: NativeElement>(&self, index: usize, access: Access) -> Result<Vector<'static, T>> {
-        Vector::from_handle(&self.handles[index], access, &self.offsets)
+    pub(crate) fn children(handles: Vec<ffi::duckdb_v2_vector_handle>, access: Access) -> Self {
+        Self::new(handles, access, RowCount::FirstVector)
     }
 
-    /// Restart every `LIST` and `MAP` offset in this tree, e.g. after the chunk was cleared.
-    pub(crate) fn reset_child_offsets(&self) {
-        self.offsets.reset();
+    fn wrap<T: NativeElement>(&self, index: usize, access: Access) -> Result<Vector<'static, T>> {
+        Vector::from_handle(&self.handles[index], access)
     }
 
     fn cached(&self, index: usize) -> Result<&Vector<'_, Unknown>> {
@@ -166,29 +141,7 @@ impl VectorCollection {
         Ok(slot.get().expect("view was just cached"))
     }
 
-    /// Prepare every vector recursively, so nested row types can borrow their read metadata infallibly.
-    pub(crate) fn cache_all(&self) -> Result<()> {
-        if self.complete.get() {
-            return Ok(());
-        }
-        for index in 0..self.handles.len() {
-            self.cached(index)?.reader()?;
-        }
-        self.complete.set(true);
-        Ok(())
-    }
-
-    /// Borrow a view cached by [`Self::cache_all`].
-    ///
-    /// # Panics
-    ///
-    /// Panics if the view is not cached.
-    pub(crate) fn cached_unchecked(&self, index: usize) -> &Vector<'_, Unknown> {
-        self.cache[index].get().expect("vector views are cached before reads")
-    }
-
     pub(crate) fn cached_iter_mut(&mut self) -> Result<impl Iterator<Item = &mut Vector<'_, Unknown>>> {
-        self.complete.set(false);
         for index in 0..self.cache.len() {
             if self.cache[index]
                 .get()
@@ -207,7 +160,6 @@ impl VectorCollection {
     /// Drop the cached view of `index`, which a mutable wrapper may reshape.
     fn evict(&mut self, index: usize) {
         self.cache[index].take();
-        self.complete.set(false);
     }
 
     /// Refresh every cached child after its parent was resized or written, keeping the wrappers.
@@ -215,14 +167,12 @@ impl VectorCollection {
         for vector in self.cache.iter_mut().filter_map(OnceCell::get_mut) {
             vector.refresh_from_handle()?;
         }
-        self.complete.set(false);
         Ok(())
     }
 
     /// Drop every cached view after an operation that may have changed the vectors.
     pub(crate) fn evict_all(&mut self) {
         self.cache.iter_mut().for_each(|slot| drop(slot.take()));
-        self.complete.set(false);
     }
 
     fn check_index(&self, index: usize) {
@@ -643,7 +593,6 @@ impl<'a> DataChunk<'a> {
     /// Reset the row count to zero and drop cached views, preserving writability.
     pub fn clear(&mut self) -> Result<()> {
         self.evict_cached();
-        self.chunk.vectors.reset_child_offsets();
         check_api_call!(ffi::duckdb_v2_data_chunk_clear, self.handle)
     }
 }
@@ -775,9 +724,11 @@ mod tests {
         let mut chunk = DataChunk::create(&conn, &[List::<i64>::logical_type(&conn)?], true)?;
         let mut list = chunk.get_vector_at_mut::<List<i64>>(0)?;
         list.set_size(1)?;
-        // SAFETY: the row below writes both elements.
-        unsafe { list.set_child_size(2)? };
-        list.writer()?.set(0, &List(vec![Some(0), Some(0)]))?;
+        {
+            let mut writer = list.list_writer()?;
+            writer.set_elements(0, [Some(&0), Some(&0)])?;
+            writer.finish()?;
+        }
         {
             let mut children = list.children_mut().unwrap();
             let child = children.get_vector_at_mut::<i64>(0)?;
@@ -785,13 +736,13 @@ mod tests {
             crate::check_api_call!(crate::ffi::duckdb_v2_vector_make_sequence, child.handle, 10, 1, 2)?;
         }
 
-        let error = list.reader().expect_err("sequence child must not read as NULL");
+        // The rows themselves stay readable; reading the elements needs the child flattened.
+        assert_eq!(list.reader()?.get(0)?.map(|entry| entry.length()), Some(2));
+        let error = list.list_reader().expect_err("sequence child must not read as NULL");
         assert!(error.to_string().contains("OTHER vectors must be flattened"));
-        assert!(list.reader().is_err());
         list.children_mut().unwrap().get_vector_at_mut::<i64>(0)?.flatten()?;
-        let values = list
-            .reader()?
-            .get(0)?
+        let lists = list.list_reader()?;
+        let values = crate::vector::RowReader::get(&lists, 0)?
             .expect("non-NULL list")
             .iter()
             .map(|value| value.copied())

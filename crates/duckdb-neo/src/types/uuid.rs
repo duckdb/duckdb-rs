@@ -11,7 +11,7 @@
 use super::{DuckDBType, FromValue, ToValue};
 use crate::ffi;
 use crate::types::HugeInt;
-use crate::vector::NativeElement;
+use crate::vector::{NativeElement, ReadableNativeElement};
 use crate::{
     Parameters, Result, check_api_call,
     connection::FFILink,
@@ -65,7 +65,10 @@ unsafe impl NativeElement for UuidValueRaw {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Uuid;
 
     type Native<'a> = HugeInt;
+}
 
+// SAFETY: `get` reads the validated physical slot.
+unsafe impl ReadableNativeElement for UuidValueRaw {
     type Ref<'a>
         = &'a UuidValueRaw
     where
@@ -138,7 +141,7 @@ mod external {
         logical_type::{LogicalType, LogicalTypeID},
         types::{DuckDBType, FromValue, ToValue},
         value::Value,
-        vector::{NativeElement, WritableNativeElement},
+        vector::{NativeElement, ReadableNativeElement, WritableNativeElement},
     };
     use ::uuid::Uuid;
 
@@ -177,7 +180,10 @@ mod external {
         const TYPE_ID: LogicalTypeID = LogicalTypeID::Uuid;
 
         type Native<'a> = UuidValueRaw;
+    }
 
+    // SAFETY: `get` reads the validated physical slot.
+    unsafe impl ReadableNativeElement for Uuid {
         type Ref<'a> = Uuid;
 
         #[inline]

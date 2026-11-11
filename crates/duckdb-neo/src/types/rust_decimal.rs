@@ -7,7 +7,7 @@ use crate::{
     logical_type::{LogicalType, LogicalTypeID},
     types::{FromValue, ToValue},
     value::Value,
-    vector::{NativeElement, WritableNativeElement},
+    vector::{NativeElement, ReadableNativeElement, WritableNativeElement},
 };
 
 /// Widest `DECIMAL` whose values all fit `rust_decimal`'s 96-bit mantissa.
@@ -59,14 +59,17 @@ unsafe impl NativeElement for rust_decimal::Decimal {
     // The storage integer depends on the column's width.
     type Native<'a> = ();
 
-    type Ref<'a> = rust_decimal::Decimal;
-
     fn validate(other: &LogicalType, _children: Option<&VectorCollection>) -> Result<bool> {
         if other.id()? != Self::TYPE_ID {
             return Ok(false);
         }
         Ok(DecimalSignature::from_logical_type(other)?.width <= MAX_RUST_DECIMAL_WIDTH)
     }
+}
+
+// SAFETY: `get` reads the validated physical slot.
+unsafe impl ReadableNativeElement for rust_decimal::Decimal {
+    type Ref<'a> = rust_decimal::Decimal;
 
     #[inline]
     unsafe fn get<'a, U: NativeElement>(

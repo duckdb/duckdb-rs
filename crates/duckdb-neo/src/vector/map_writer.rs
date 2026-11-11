@@ -51,7 +51,6 @@ impl<'w, K: WithWriter + 'w, V: WithWriter + 'w> MapWriter<'w, K, V> {
     pub(super) unsafe fn from_raw(mut vector: NonNull<Vector<'w, Map<K, V>>>) -> Result<Self> {
         // SAFETY: the caller guarantees an exclusive borrow of a validated, writable vector.
         let borrowed = unsafe { vector.as_mut() };
-        let offset = borrowed.child_offset();
         let entries = borrowed
             .children
             .as_mut()
@@ -79,15 +78,15 @@ impl<'w, K: WithWriter + 'w, V: WithWriter + 'w> MapWriter<'w, K, V> {
                 V::row_writer(value.cast())?,
             )
         };
-        let used = entries.len();
+        let len = entries.len();
         Ok(Self {
             parent,
             entries,
             keys,
             values,
-            row_start: offset,
-            offset,
-            used,
+            row_start: len,
+            offset: len,
+            used: len,
         })
     }
 
@@ -223,7 +222,6 @@ impl<'w, K: WithWriter + 'w, V: WithWriter + 'w> MapWriter<'w, K, V> {
         let entry = ListIndex::new(self.row_start as u64, (self.offset - self.row_start) as u64);
         self.row_start = self.offset;
         self.used = self.used.max(self.offset);
-        self.parent.vector().child_offset_cell().set(self.offset);
         // SAFETY: the row is in bounds, and the entry covers the entries just pushed.
         unsafe { self.write_entry(row, entry) };
         Ok(())
@@ -262,6 +260,9 @@ where
 
     #[inline]
     fn set(&mut self, row: usize, value: &Map<K, V>) -> Result<()> {
+        if row >= self.len() {
+            return Err(out_of_bounds(row, self.len()));
+        }
         self.reserve(value.0.len())?;
         for (key, value) in &value.0 {
             if let Err(error) = self.push(key.borrow(), value.as_ref().map(Borrow::borrow)) {
@@ -334,6 +335,7 @@ mod tests {
         data_chunk::DataChunk,
         environment::{Environment, StorageLocation},
         types::{List, Map},
+        vector::{RowReader, RowWriter},
     };
 
     fn connection() -> Result<Connection> {
@@ -359,8 +361,7 @@ mod tests {
             writer.finish()?;
         }
         assert_eq!(vector.children().unwrap().get_untyped_vector_at(0)?.len(), 5000);
-        assert_eq!(vector.child_offset(), 5000);
-        let reader = vector.reader()?;
+        let reader = vector.map_reader()?;
         assert!(reader.get(0)?.unwrap().is_empty());
         assert!(reader.get(1)?.is_none());
         let row = reader.get(2)?.unwrap();
@@ -378,16 +379,11 @@ mod tests {
         let mut chunk = DataChunk::create(&conn, &[Map::<i32, List<i32>>::logical_type(&conn)?], true)?;
         let mut vector = chunk.get_vector_at_mut::<Map<i32, List<i32>>>(0)?;
         vector.set_size(2)?;
-        // SAFETY: row 0 writes the only entry.
-        unsafe { vector.set_child_size(1)? };
         {
-            let mut children = vector.children_mut().unwrap();
-            let mut entries = children.get_vector_at_mut::<crate::types::Struct>(0)?;
-            let mut fields = entries.children_mut().unwrap();
-            // SAFETY: the rows below only use the inner elements they write.
-            unsafe { fields.get_vector_at_mut::<List<i32>>(1)?.set_child_size(3)? };
+            let mut writer = vector.map_writer()?;
+            writer.set(0, &Map(vec![(1, Some(List(vec![Some(1)])))]))?;
+            writer.finish()?;
         }
-        vector.writer()?.set(0, &Map(vec![(1, Some(List(vec![Some(1)])))]))?;
         {
             let mut writer = vector.map_writer()?;
             writer.push(&2, Some(&List(vec![Some(2), None])))?;
@@ -406,7 +402,7 @@ mod tests {
     }
 
     #[test]
-    fn leaked_map_writer_leaves_a_readable_vector() -> Result<()> {
+    fn unfinished_map_writer_leaves_a_readable_vector() -> Result<()> {
         let conn = connection()?;
         let mut chunk = DataChunk::create(&conn, &[Map::<String, String>::logical_type(&conn)?], true)?;
         let mut vector = chunk.get_vector_at_mut::<Map<String, String>>(0)?;
@@ -415,8 +411,7 @@ mod tests {
         writer.reserve(100)?;
         writer.push("key", Some("value"))?;
         writer.finish_row(0)?;
-        std::mem::forget(writer);
-        let reader = vector.reader()?;
+        let reader = vector.map_reader()?;
         let row = reader.get(0)?.unwrap();
         assert_eq!(row.iter().collect::<Vec<_>>(), [("key", Some("value"))]);
         assert_eq!(vector.children().unwrap().get_untyped_vector_at(0)?.len(), 100);

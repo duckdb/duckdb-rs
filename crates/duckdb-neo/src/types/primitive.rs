@@ -111,7 +111,10 @@ macro_rules! declare_vector_element {
             const TYPE_ID: $crate::logical_type::LogicalTypeID = $crate::logical_type::LogicalTypeID::$type_id;
 
             type Native<'a> = $type;
+        }
 
+        // SAFETY: `get` reads the validated physical slot.
+        unsafe impl $crate::vector::ReadableNativeElement for $type {
             type Ref<'a> = &'a $type;
 
             #[inline]

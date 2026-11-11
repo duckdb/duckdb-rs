@@ -39,7 +39,7 @@ impl<'a, T: WithReader + 'a> ListReader<'a, T> {
 
     /// Return a row's range in the element child, or `None` for SQL NULL.
     pub fn entry(&self, row: usize) -> Result<Option<ListIndex>> {
-        self.rows.get_list_entry(row)
+        self.rows.get(row)
     }
 
     /// Borrow the reader of the element child, for columnar reads.
@@ -170,7 +170,7 @@ impl<'a, K: WithReader + 'a, V: WithReader + 'a> MapReader<'a, K, V> {
 
     /// Return a row's range in the entries child, or `None` for SQL NULL.
     pub fn entry(&self, row: usize) -> Result<Option<ListIndex>> {
-        self.rows.get_list_entry(row)
+        self.rows.get(row)
     }
 
     /// Borrow the reader of every entry's key, for columnar reads.
@@ -262,6 +262,16 @@ impl<'r, K: RowReader, V: RowReader> Entries<'r, K, V> {
         let (keys, values) = (self.keys, self.values);
         // SAFETY: DuckDB keeps every entry within its child.
         (self.offset..self.offset + self.len).map(move |index| unsafe { Self::read(keys, values, index) })
+    }
+
+    /// Iterate over the keys.
+    pub fn keys(&self) -> impl ExactSizeIterator<Item = K::Item<'r>> + 'r {
+        self.iter().map(|(key, _)| key)
+    }
+
+    /// Iterate over the values; `None` values are SQL NULL.
+    pub fn values(&self) -> impl ExactSizeIterator<Item = Option<V::Item<'r>>> + 'r {
+        self.iter().map(|(_, value)| value)
     }
 
     /// Return the value of the first entry whose key equals `key`.

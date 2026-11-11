@@ -8,7 +8,7 @@ use crate::{
     scalar::MicroScalar,
     types::{Array, BitValue, BlobValue, DuckDBType, List, UncheckedString, Variant},
     value::Value,
-    vector::{StorageKind, Unknown, Vector, VectorWriter, WritableNativeElement},
+    vector::{RowReader, RowWriter, StorageKind, Unknown, Vector, VectorWriter, WritableNativeElement},
 };
 
 #[test]
@@ -99,6 +99,7 @@ fn writer_copies_borrowed_unsized_inputs() -> Result<()> {
 #[test]
 fn writer_borrows_non_clone_fields_and_values() -> Result<()> {
     #[derive(AsDuckDB)]
+    #[duckdb(writer)]
     struct Row {
         text: UncheckedString,
         bytes: BlobValue,
@@ -112,7 +113,14 @@ fn writer_borrows_non_clone_fields_and_values() -> Result<()> {
             text: UncheckedString("a borrowed field longer than inline storage".to_owned()),
             bytes: BlobValue(vec![42; 32]),
         };
-        write_twice(&mut chunk.get_vector_at_mut::<Row>(0)?, &row)?;
+        {
+            let mut vector = chunk.get_vector_at_mut::<Row>(0)?;
+            vector.set_size(3)?;
+            let mut writer = vector.row_writer()?;
+            writer.set(0, &row)?;
+            writer.set(1, &row)?;
+            writer.set_null(2)?;
+        }
         let value = 42_i32.value(&conn)?;
         write_twice(&mut chunk.get_vector_at_mut::<Variant>(1)?, &value)?;
         assert_eq!(value.get::<i32>()?, Some(42));
@@ -486,17 +494,17 @@ fn writer_reuses_nested_children_across_rows() -> Result<()> {
     let mut chunk = DataChunk::create(&conn, &[List::<i32>::logical_type(&conn)?], true)?;
     let mut vector = chunk.get_vector_at_mut::<List<i32>>(0)?;
     vector.set_size(3)?;
-    // SAFETY: the writes below use all 5003 elements; rewriting row 0 takes a new range.
-    unsafe { vector.set_child_size(5003)? };
     {
-        let mut writer = vector.writer()?;
+        let mut writer = vector.list_writer()?;
         writer.set(0, &List(vec![Some(1), None]))?;
         writer.set_null(1)?;
         writer.set(2, &(0..5000).map(Some).collect())?;
+        // Rewriting a row takes a new range.
         writer.set(0, &List(vec![Some(42)]))?;
         assert_eq!(writer.child_offset(), 5003);
+        writer.finish()?;
     }
-    let reader = vector.reader()?;
+    let reader = vector.list_reader()?;
     assert_eq!(reader.get(0)?.unwrap().iter().collect::<Vec<_>>(), [Some(&42)]);
     assert!(reader.get(1)?.is_none());
     assert_eq!(reader.get(2)?.unwrap().iter().last(), Some(Some(&4999)));
@@ -504,28 +512,28 @@ fn writer_reuses_nested_children_across_rows() -> Result<()> {
 }
 
 #[test]
-fn writer_nested_nulls_refresh_buffers_and_null_descendants() -> Result<()> {
+fn writer_nested_nulls_null_descendants() -> Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
     let mut chunk = DataChunk::create(&conn, &[Array::<i32, 2>::logical_type(&conn)?], true)?;
     let mut vector = chunk.get_vector_at_mut::<Array<i32, 2>>(0)?;
     vector.set_size(2)?;
     {
+        let mut writer = vector.array_writer()?;
+        writer.set(0, &Array([Some(1), Some(2)]))?;
+        writer.set_null(1)?;
+        writer.set(1, &Array([Some(3), Some(4)]))?;
+        writer.set_null(0)?;
+    }
+    {
         let mut writer = vector.writer()?;
         assert!(writer.as_mut_ptr().is_null());
         // SAFETY: ARRAY values have no parent data slots.
         assert!(unsafe { writer.as_slice_mut() }.is_none());
-        writer.set(0, &Array([Some(1), Some(2)]))?;
-        writer.set_null(1)?;
         // SAFETY: This observes the initialized mask without changing its bits.
-        assert_eq!(unsafe { writer.validity_mut() }?[0] & 3, 1);
-        writer.set(1, &Array([Some(3), Some(4)]))?;
-        writer.set_null(0)?;
-        // SAFETY: The rows and descendants were initialized by typed writes.
-        unsafe { writer.set_row_validity(1, true)? };
-        assert_eq!(unsafe { writer.validity_mut() }.unwrap()[0] & 3, 2);
+        assert_eq!(unsafe { writer.validity_mut() }?[0] & 3, 2);
     }
-    let reader = vector.reader()?;
+    let reader = vector.array_reader()?;
     assert!(reader.get(0)?.is_none());
     assert_eq!(reader.get(1)?.unwrap().iter().collect::<Vec<_>>(), [Some(&3), Some(&4)]);
     let child = vector.children().unwrap().get_vector_at::<i32>(0)?;
@@ -533,10 +541,15 @@ fn writer_nested_nulls_refresh_buffers_and_null_descendants() -> Result<()> {
         child.reader()?.iter().collect::<Vec<_>>(),
         [None, None, Some(&3), Some(&4)]
     );
+    // A native NULL also nulls the elements.
+    vector.writer()?.set_null(1)?;
+    let child = vector.children().unwrap().get_vector_at::<i32>(0)?;
+    assert_eq!(child.reader()?.iter().collect::<Vec<_>>(), [None, None, None, None]);
     Ok(())
 }
 
 #[derive(Debug, AsDuckDB)]
+#[duckdb(writer)]
 struct NullStruct {
     n: i32,
 }
@@ -552,11 +565,18 @@ fn writer_struct_nulls_propagate_to_children() -> Result<()> {
     let mut vector = chunk.get_vector_at_mut::<NullStruct>(0)?;
     vector.set_size(1)?;
     {
-        let mut writer = vector.writer()?;
+        let mut writer = vector.row_writer()?;
         writer.set(0, &NullStruct { n: 42 })?;
         writer.set_null(0)?;
-        assert_eq!(unsafe { writer.validity_mut() }.unwrap()[0] & 1, 0);
     }
+    {
+        let mut writer = vector.writer()?;
+        // SAFETY: This observes the mask without changing its bits.
+        assert_eq!(unsafe { writer.validity_mut() }?[0] & 1, 0);
+    }
+    vector.row_writer()?.set(0, &NullStruct { n: 42 })?;
+    // A native NULL also nulls the fields.
+    vector.writer()?.set_null(0)?;
     assert!(vector.reader()?.get(0)?.is_none());
     assert_eq!(
         vector.children().unwrap().get_vector_at::<i32>(0)?.reader()?.get(0)?,

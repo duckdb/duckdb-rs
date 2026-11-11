@@ -1,7 +1,5 @@
 //! User-defined casts between logical types.
 
-use std::rc::Rc;
-
 use crate::ffi;
 
 use crate::{
@@ -37,14 +35,12 @@ unsafe extern "C" fn exec_callback<T: CastFunctionCallbacks>(
             let input = Vector::<T::InputType>::from_handle(
                 &check_api_call!(ffi::duckdb_v2_cast_function_exec_get_input, info, RET)?,
                 Access::Exclusive,
-                &Rc::default(),
             )?;
 
             let mode = check_api_call!(ffi::duckdb_v2_cast_function_exec_get_mode, info, RET)?;
             let output = Vector::<T::OutputType>::from_handle(
                 &check_api_call!(ffi::duckdb_v2_cast_function_exec_get_output, info, RET)?,
                 Access::Writable,
-                &Rc::default(),
             )?;
 
             T::exec(
@@ -228,6 +224,7 @@ mod tests {
     #[test]
     fn test_cast_accepts_derived_struct_layout() -> crate::Result<()> {
         #[derive(Debug, crate::AsDuckDB)]
+        #[duckdb(reader)]
         struct Derived {
             value: Option<i32>,
         }
@@ -240,7 +237,9 @@ mod tests {
             .next_chunk()?
             .unwrap();
         assert_eq!(
-            chunk.get_vector_at::<Derived>(0)?.reader()?.get(0)?.unwrap().value,
+            crate::vector::RowReader::get(&chunk.get_vector_at::<Derived>(0)?.row_reader()?, 0)?
+                .unwrap()
+                .value,
             Some(&42)
         );
         let chunk = conn

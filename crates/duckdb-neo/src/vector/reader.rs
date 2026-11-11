@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use super::{NativeElement, StorageKind, Vector, other_not_readable, out_of_bounds};
+use super::{NativeElement, ReadableNativeElement, StorageKind, Vector, other_not_readable, out_of_bounds};
 use crate::Result;
 use crate::ffi;
 
@@ -146,7 +146,6 @@ impl ReaderStorage {
 impl<'vec, T: NativeElement> VectorReader<'vec, T> {
     pub(super) fn new(vector: &'vec Vector<'vec, T>) -> Result<Self> {
         let cached = *vector.view()?.ok_or_else(other_not_readable)?;
-        vector.cache_children()?;
         Ok(Self { vector, cached })
     }
 
@@ -230,50 +229,6 @@ impl<'vec, T: NativeElement> VectorReader<'vec, T> {
         }
     }
 
-    /// Return a logical row, or `None` for SQL NULL. Out-of-range indices are errors.
-    #[inline]
-    pub fn get(&self, index: usize) -> Result<Option<T::Ref<'vec>>> {
-        if index >= self.len() {
-            return Err(out_of_bounds(index, self.len()));
-        }
-        // SAFETY: Construction prepared the descendants, and the index is in bounds.
-        Ok(unsafe { self.get_unchecked(index) })
-    }
-
-    /// Read a validated child directly from its prepared view.
-    ///
-    /// # Safety
-    ///
-    /// `child_index` must name a child validated as `U`, its descendants must be
-    /// prepared, and `logical` must be within the child's logical rows.
-    #[doc(hidden)]
-    #[inline(always)]
-    pub unsafe fn get_child_value_unchecked<U: NativeElement>(
-        &self,
-        child_index: usize,
-        logical: usize,
-    ) -> Option<U::Ref<'vec>> {
-        // SAFETY: the caller guarantees the child type and logical row bounds.
-        unsafe { self.child_reader::<U>(child_index).get_unchecked(logical) }
-    }
-
-    /// # Safety
-    /// `index` must name a child validated as `U`.
-    #[inline(always)]
-    pub(crate) unsafe fn child_reader<U: NativeElement>(&self, index: usize) -> VectorReader<'vec, U> {
-        let child = self
-            .vector
-            .children()
-            .expect("child vectors are prepared")
-            .cached_unchecked(index);
-        VectorReader {
-            // SAFETY: the caller guarantees the type, and construction prepared every descendant.
-            vector: unsafe { child.cast_ref_unchecked::<U>() },
-            // SAFETY: construction cached every descendant's view, and the shared borrow keeps it.
-            cached: unsafe { *child.view.get().unwrap_unchecked() },
-        }
-    }
-
     /// Return whether a logical row is SQL NULL. Out-of-range indices are errors.
     #[inline]
     pub fn is_null(&self, index: usize) -> Result<bool> {
@@ -282,33 +237,6 @@ impl<'vec, T: NativeElement> VectorReader<'vec, T> {
         }
         // SAFETY: The index is within the prepared vector's logical rows.
         Ok(unsafe { self.cached().storage.physical_index_unchecked(self.view(), index) }.is_none())
-    }
-
-    /// Iterate over logical rows without repeating reader preparation.
-    pub fn iter(&self) -> VectorReaderIter<'vec, T> {
-        VectorReaderIter {
-            reader: self.clone(),
-            rows: 0..self.len(),
-        }
-    }
-
-    /// Return a row's list entry, or `None` for SQL NULL, without building the row.
-    ///
-    /// # Safety
-    /// The physical storage must hold DuckDB list entries, as for `LIST` and `MAP`.
-    #[inline]
-    pub(crate) unsafe fn list_entry(&self, index: usize) -> Result<Option<crate::types::ListIndex>> {
-        if index >= self.len() {
-            return Err(out_of_bounds(index, self.len()));
-        }
-        // SAFETY: The index is within the prepared vector's logical rows.
-        let Some(physical) = (unsafe { self.cached().storage.physical_index_unchecked(self.view(), index) }) else {
-            return Ok(None);
-        };
-        // SAFETY: The caller guarantees list entry storage, and the row is valid.
-        Ok(Some(unsafe {
-            *self.view().data.cast::<crate::types::ListIndex>().add(physical)
-        }))
     }
 
     /// # Safety
@@ -329,11 +257,31 @@ impl<'vec, T: NativeElement> VectorReader<'vec, T> {
                 .map(|physical| *self.view().data.cast::<crate::types::ListIndex>().add(physical))
         }
     }
+}
+
+impl<'vec, T: ReadableNativeElement> VectorReader<'vec, T> {
+    /// Return a logical row, or `None` for SQL NULL. Out-of-range indices are errors.
+    #[inline]
+    pub fn get(&self, index: usize) -> Result<Option<T::Ref<'vec>>> {
+        if index >= self.len() {
+            return Err(out_of_bounds(index, self.len()));
+        }
+        // SAFETY: The index is in bounds.
+        Ok(unsafe { self.get_unchecked(index) })
+    }
+
+    /// Iterate over logical rows without repeating reader preparation.
+    pub fn iter(&self) -> VectorReaderIter<'vec, T> {
+        VectorReaderIter {
+            reader: self.clone(),
+            rows: 0..self.len(),
+        }
+    }
 
     #[inline(always)]
     pub(crate) unsafe fn get_unchecked(&self, index: usize) -> Option<T::Ref<'vec>> {
         let physical = unsafe { self.cached().storage.physical_index_unchecked(self.view(), index) }?;
-        // SAFETY: The reader is typed, its descendants are prepared, and the row is valid.
+        // SAFETY: The reader is typed, and the row is valid.
         Some(unsafe { T::get(self, physical, index) })
     }
 
@@ -392,12 +340,12 @@ impl<'vec, T: NativeElement> VectorReader<'vec, T> {
 
 /// Iterates over the logical rows of a prepared [`VectorReader`].
 #[derive(Debug)]
-pub struct VectorReaderIter<'vec, T: NativeElement> {
+pub struct VectorReaderIter<'vec, T: ReadableNativeElement> {
     reader: VectorReader<'vec, T>,
     rows: Range<usize>,
 }
 
-impl<'vec, T: NativeElement + 'vec> Iterator for VectorReaderIter<'vec, T> {
+impl<'vec, T: ReadableNativeElement + 'vec> Iterator for VectorReaderIter<'vec, T> {
     type Item = Option<T::Ref<'vec>>;
 
     #[inline(always)]
@@ -418,11 +366,11 @@ impl<'vec, T: NativeElement + 'vec> Iterator for VectorReaderIter<'vec, T> {
     }
 }
 
-impl<T: NativeElement> ExactSizeIterator for VectorReaderIter<'_, T> {}
+impl<T: ReadableNativeElement> ExactSizeIterator for VectorReaderIter<'_, T> {}
 
-impl<T: NativeElement> std::iter::FusedIterator for VectorReaderIter<'_, T> {}
+impl<T: ReadableNativeElement> std::iter::FusedIterator for VectorReaderIter<'_, T> {}
 
-impl<'vec, T: NativeElement> VectorReaderIter<'vec, T> {
+impl<'vec, T: ReadableNativeElement> VectorReaderIter<'vec, T> {
     /// Add row numbers like [`Iterator::enumerate`], numbering the remaining rows from zero.
     /// Unlike [`std::iter::Enumerate`], it always inlines into large loops.
     pub fn enumerate(self) -> EnumeratedVectorReaderIter<'vec, T> {
@@ -433,12 +381,12 @@ impl<'vec, T: NativeElement> VectorReaderIter<'vec, T> {
 
 /// Row-numbered adapter returned by [`VectorReaderIter::enumerate`].
 #[derive(Debug)]
-pub struct EnumeratedVectorReaderIter<'vec, T: NativeElement> {
+pub struct EnumeratedVectorReaderIter<'vec, T: ReadableNativeElement> {
     inner: VectorReaderIter<'vec, T>,
     origin: usize,
 }
 
-impl<'vec, T: NativeElement + 'vec> Iterator for EnumeratedVectorReaderIter<'vec, T> {
+impl<'vec, T: ReadableNativeElement + 'vec> Iterator for EnumeratedVectorReaderIter<'vec, T> {
     type Item = (usize, Option<T::Ref<'vec>>);
 
     #[inline(always)]
@@ -464,9 +412,9 @@ impl<'vec, T: NativeElement + 'vec> Iterator for EnumeratedVectorReaderIter<'vec
     }
 }
 
-impl<T: NativeElement> ExactSizeIterator for EnumeratedVectorReaderIter<'_, T> {}
+impl<T: ReadableNativeElement> ExactSizeIterator for EnumeratedVectorReaderIter<'_, T> {}
 
-impl<T: NativeElement> std::iter::FusedIterator for EnumeratedVectorReaderIter<'_, T> {}
+impl<T: ReadableNativeElement> std::iter::FusedIterator for EnumeratedVectorReaderIter<'_, T> {}
 
 #[cfg(test)]
 mod tests;

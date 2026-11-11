@@ -873,17 +873,15 @@ fn test_table_function_list_output_child_starts_empty() -> Result<()> {
             let call = global_state.unwrap().fetch_add(1, Ordering::SeqCst);
             let mut vector = output.get_vector_at_mut::<List<i32>>(0)?;
             let child_len = vector.children().unwrap().get_untyped_vector_at(0)?.len();
-            self.0.lock().unwrap().push((child_len, vector.child_offset()));
             let rows = if call < 3 { 2048 } else { 0 };
             vector.set_size(rows)?;
-            // SAFETY: every row writes two elements.
-            unsafe { vector.set_child_size(2 * rows)? };
-            let mut writer = vector.writer()?;
+            let mut writer = vector.list_writer()?;
+            self.0.lock().unwrap().push((child_len, writer.child_offset()));
             for row in 0..rows {
                 let value = (call * 2048 + row) as i32;
-                writer.set(row, &List(vec![Some(value), Some(value)]))?;
+                writer.set_elements(row, [Some(&value), Some(&value)])?;
             }
-            Ok(())
+            writer.finish()
         }
     }
 

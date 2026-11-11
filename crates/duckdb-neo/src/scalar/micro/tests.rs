@@ -68,7 +68,7 @@ fn nested_input_and_string_output() -> Result<()> {
         |_ctx, input: Vector<'_, List<i32>>, mut output: Vector<'_, String>| {
             let mut writer = output.writer()?;
             for (row, value) in input.reader()?.iter().enumerate() {
-                let text = value.map(|list| format!("length: {}", list.iter().count()));
+                let text = value.map(|list| format!("length: {}", list.length()));
                 writer.set_option(row, text.as_deref())?;
             }
             Ok(())

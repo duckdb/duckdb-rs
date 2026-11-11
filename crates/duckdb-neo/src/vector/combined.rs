@@ -2,7 +2,7 @@ use std::{iter::FusedIterator, ops::Range};
 
 use crate::{Result, error::Error};
 
-use super::{NativeElement, VectorReader};
+use super::{ReadableNativeElement, VectorReader};
 
 /// Iterates over equally sized readers, returning one flat tuple per logical row.
 ///
@@ -177,11 +177,11 @@ pub trait VectorReaderTuple: private::Sealed {
 
 macro_rules! impl_reader_tuple {
     ($(($lifetime:lifetime, $element:ident, $index:tt)),+ $(,)?) => {
-        impl<$($lifetime,)+ $($element: NativeElement + $lifetime,)+> private::Sealed
+        impl<$($lifetime,)+ $($element: ReadableNativeElement + $lifetime,)+> private::Sealed
             for ($(VectorReader<$lifetime, $element>,)+)
         {}
 
-        impl<$($lifetime,)+ $($element: NativeElement + $lifetime,)+> VectorReaderTuple
+        impl<$($lifetime,)+ $($element: ReadableNativeElement + $lifetime,)+> VectorReaderTuple
             for ($(VectorReader<$lifetime, $element>,)+)
         {
             type Row = ($(Option<$element::Ref<$lifetime>>,)+);

@@ -8,7 +8,7 @@ use crate::{
     scalar::MicroScalar,
     types::{DuckDBType, List},
     value::Value,
-    vector::{Selection, StorageKind, Unknown, Vector},
+    vector::{RowReader, RowWriter, Selection, StorageKind, Unknown, Vector},
 };
 
 fn assert_physical_reads(reader: &VectorReader<'_, i32>) -> Result<()> {
@@ -209,6 +209,7 @@ fn constant_reader_does_not_index_the_shared_selection() -> Result<()> {
 }
 
 #[derive(Debug, AsDuckDB)]
+#[duckdb(reader)]
 struct ParamStruct {
     value: i32,
 }
@@ -228,7 +229,8 @@ fn reader_values_borrow_the_vector_not_the_reader() -> Result<()> {
     assert_eq!(text, "hello");
 
     let vector = chunk.get_vector_at::<List<List<i32>>>(1)?;
-    let row = vector.reader()?.get(0)?.unwrap();
+    let lists = vector.list_reader()?;
+    let row = lists.get(0)?.unwrap();
     let values = row
         .iter()
         .map(|row| row.unwrap().iter().map(|value| value.copied()).collect::<Vec<_>>())
@@ -240,7 +242,8 @@ fn reader_values_borrow_the_vector_not_the_reader() -> Result<()> {
     assert!(reader.as_ptr().is_null());
     // SAFETY: STRUCT has no physical data slots to initialize.
     assert!(unsafe { reader.as_slice() }.is_none());
-    let row = reader.get(0)?.unwrap();
+    assert!(reader.get(0)?.is_some());
+    let row = vector.row_reader()?.get(0)?.unwrap();
     assert_eq!(row.value, Some(&42));
     Ok(())
 }
@@ -251,7 +254,7 @@ fn same_view(reader: &VectorReader<'_, impl crate::vector::NativeElement>, vecto
 }
 
 #[test]
-fn child_readers_copy_vector_metadata() -> Result<()> {
+fn nested_readers_copy_child_metadata() -> Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
     let chunk = conn
@@ -259,24 +262,21 @@ fn child_readers_copy_vector_metadata() -> Result<()> {
         .next_chunk()?
         .unwrap();
     let vector = chunk.get_vector_at::<List<List<i32>>>(0)?;
-    let elements = {
-        let child = {
-            let reader = vector.reader()?;
-            assert_eq!(reader.view().data, reader.clone().view().data);
-            // SAFETY: validating List<List<i32>> checked its child as List<i32>.
-            unsafe { reader.child_reader::<List<i32>>(0) }
-        };
-        let cached = vector.children().unwrap().cached_unchecked(0);
-        assert!(same_view(&child, cached));
-        assert_eq!(child.len(), 2);
-        assert_eq!(child.get(0)?.unwrap().iter().collect::<Vec<_>>(), [Some(&1), None]);
-
-        // SAFETY: validating List<i32> checked its child as i32.
-        unsafe { child.child_reader::<i32>(0) }
-    };
-    let cached = vector.children().unwrap().cached_unchecked(0);
-    assert!(same_view(&elements, cached.children().unwrap().cached_unchecked(0)));
-    assert_eq!(elements.iter().collect::<Vec<_>>(), [Some(&1), None, Some(&3)]);
+    let reader = vector.reader()?;
+    assert_eq!(reader.view().data, reader.clone().view().data);
+    let lists = vector.list_reader()?;
+    let inner = vector.children().unwrap().get_untyped_vector_at(0)?;
+    let elements = inner.children().unwrap().get_untyped_vector_at(0)?;
+    assert!(same_view(lists.elements().elements(), elements));
+    assert_eq!(lists.elements().len(), 2);
+    assert_eq!(
+        lists.elements().get(0)?.unwrap().iter().collect::<Vec<_>>(),
+        [Some(&1), None]
+    );
+    assert_eq!(
+        lists.elements().elements().iter().collect::<Vec<_>>(),
+        [Some(&1), None, Some(&3)]
+    );
     Ok(())
 }
 
@@ -424,6 +424,7 @@ fn cached_views_follow_writes_and_resizes() -> Result<()> {
 }
 
 #[derive(Debug, AsDuckDB)]
+#[duckdb(reader, writer)]
 struct CachedField {
     x: Option<i32>,
 }
@@ -443,7 +444,7 @@ fn cached_child_views_follow_parent_writes() -> Result<()> {
     }
     let read = |vector: &crate::vector::Vector<'_, CachedField>| -> Result<Vec<Option<Option<i32>>>> {
         Ok(vector
-            .reader()?
+            .row_reader()?
             .iter()
             .map(|row| row.map(|row| row.x.copied()))
             .collect())
@@ -459,7 +460,7 @@ fn cached_child_views_follow_parent_writes() -> Result<()> {
             .is_none()
     );
 
-    vector.writer()?.set(1, &CachedField { x: None })?;
+    vector.row_writer()?.set(1, &CachedField { x: None })?;
     assert_eq!(read(&vector)?, [Some(Some(1)), Some(None)]);
     assert_view_is_current(vector.children().unwrap().get_vector_at::<i32>(0)?)?;
     Ok(())

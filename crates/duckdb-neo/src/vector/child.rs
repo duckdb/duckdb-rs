@@ -98,17 +98,8 @@ impl<'a> ChildVector<'a, Unknown> {
 
 impl<T: NativeElement> ChildVector<'_, List<T>> {
     /// Size the element child, as for a top-level [`List`] vector.
-    ///
-    /// # Safety
-    /// The contract of the top-level `set_child_size` applies.
-    pub unsafe fn set_child_size(&mut self, elements: usize) -> Result<()> {
-        // SAFETY: the caller upholds the contract of `Vector::set_child_size`.
-        unsafe { self.0.set_child_size(elements) }
-    }
-
-    /// Continue writes at `offset`, as for a top-level vector.
-    pub fn set_child_offset(&mut self, offset: usize) -> Result<()> {
-        self.0.set_child_offset(offset)
+    pub fn set_child_size(&mut self, elements: usize) -> Result<()> {
+        self.0.set_child_size(elements)
     }
 }
 
@@ -121,17 +112,8 @@ impl<T: WithWriter> ChildVector<'_, List<T>> {
 
 impl<K: NativeElement, V: NativeElement> ChildVector<'_, Map<K, V>> {
     /// Size the entries child, as for a top-level [`Map`] vector.
-    ///
-    /// # Safety
-    /// The contract of the top-level `set_child_size` applies.
-    pub unsafe fn set_child_size(&mut self, entries: usize) -> Result<()> {
-        // SAFETY: the caller upholds the contract of `Vector::set_child_size`.
-        unsafe { self.0.set_child_size(entries) }
-    }
-
-    /// Continue writes at `offset`, as for a top-level vector.
-    pub fn set_child_offset(&mut self, offset: usize) -> Result<()> {
-        self.0.set_child_offset(offset)
+    pub fn set_child_size(&mut self, entries: usize) -> Result<()> {
+        self.0.set_child_size(entries)
     }
 }
 

@@ -22,7 +22,7 @@ use crate::{
     logical_type::{LogicalType, LogicalTypeID},
     raw::RawExt,
     value::{Value, ValueInput},
-    vector::{NativeElement, WritableNativeElement},
+    vector::{NativeElement, ReadableNativeElement, WritableNativeElement},
 };
 
 /// The widest `DECIMAL` DuckDB supports.
@@ -66,14 +66,18 @@ macro_rules! decimal_storage {
 
                 type Native<'a> = $type;
 
-                type Ref<'a> = &'a $name;
-
                 fn validate(other: &LogicalType, _children: Option<&VectorCollection>) -> Result<bool> {
                     if other.id()? != Self::TYPE_ID {
                         return Ok(false);
                     }
                     Ok(matches!(DecimalSignature::from_logical_type(other)?.width, $min..=$max))
                 }
+            }
+
+            // SAFETY: `get` reads the validated physical slot.
+            unsafe impl ReadableNativeElement for $name {
+
+                type Ref<'a> = &'a $name;
 
                 #[inline]
                 unsafe fn get<'a, U: NativeElement>(vector: &crate::vector::VectorReader<'a, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
@@ -244,8 +248,6 @@ where
 
     type Native<'a> = <Width<WIDTH> as DecimalWidth>::Storage;
 
-    type Ref<'a> = &'a Self;
-
     fn validate(other: &LogicalType, _children: Option<&VectorCollection>) -> Result<bool> {
         if other.id()? != Self::TYPE_ID {
             return Ok(false);
@@ -256,6 +258,14 @@ where
                 scale: SCALE,
             })
     }
+}
+
+// SAFETY: `get` reads the validated physical slot.
+unsafe impl<const WIDTH: u8, const SCALE: u8> ReadableNativeElement for Decimal<WIDTH, SCALE>
+where
+    Width<WIDTH>: DecimalWidth,
+{
+    type Ref<'a> = &'a Self;
 
     #[inline]
     unsafe fn get<'a, U: NativeElement>(

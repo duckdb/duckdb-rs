@@ -3,7 +3,9 @@
 
 use std::ptr::NonNull;
 
-use super::{NativeElement, Vector, VectorReader, VectorWriter, WritableNativeElement, out_of_bounds};
+use super::{
+    NativeElement, ReadableNativeElement, Vector, VectorReader, VectorWriter, WritableNativeElement, out_of_bounds,
+};
 use crate::Result;
 
 /// Reads the rows of one vector, with the readers of any children prepared up front.
@@ -38,7 +40,44 @@ pub trait RowReader {
     /// `row` must be less than [`Self::len`].
     #[doc(hidden)]
     unsafe fn get_unchecked(&self, row: usize) -> Option<Self::Item<'_>>;
+
+    /// Iterate over the rows; `None` items are SQL NULL.
+    fn iter(&self) -> RowIter<'_, Self>
+    where
+        Self: Sized,
+    {
+        RowIter {
+            reader: self,
+            rows: 0..self.len(),
+        }
+    }
 }
+
+/// Iterates over the rows of a [`RowReader`].
+#[derive(Debug)]
+pub struct RowIter<'r, R> {
+    reader: &'r R,
+    rows: std::ops::Range<usize>,
+}
+
+impl<'r, R: RowReader> Iterator for RowIter<'r, R> {
+    type Item = Option<R::Item<'r>>;
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<Self::Item> {
+        let row = self.rows.next()?;
+        // SAFETY: the range only yields rows of the reader.
+        Some(unsafe { self.reader.get_unchecked(row) })
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.rows.size_hint()
+    }
+}
+
+impl<R: RowReader> ExactSizeIterator for RowIter<'_, R> {}
+
+impl<R: RowReader> std::iter::FusedIterator for RowIter<'_, R> {}
 
 /// Writes the rows of one vector, with the writers of any children prepared up front.
 pub trait RowWriter {
@@ -122,7 +161,7 @@ impl<T: WithWriter> Vector<'_, T> {
     }
 }
 
-impl<'a, T: NativeElement + 'a> RowReader for VectorReader<'a, T> {
+impl<'a, T: ReadableNativeElement + 'a> RowReader for VectorReader<'a, T> {
     type Item<'r>
         = T::Ref<'a>
     where

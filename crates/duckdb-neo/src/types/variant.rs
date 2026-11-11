@@ -6,7 +6,7 @@ use crate::{
     connection::FFILink,
     logical_type::{LogicalType, LogicalTypeID},
     value::Value,
-    vector::{NativeElement, WritableNativeElement},
+    vector::{NativeElement, ReadableNativeElement, WritableNativeElement},
 };
 
 /// [`VectorReader::get`](crate::vector::VectorReader::get) reads each row through an owned [`Value`].
@@ -20,7 +20,10 @@ unsafe impl NativeElement for Variant {
 
     /// VARIANT has no fixed physical layout; rows use the per-cell value API.
     type Native<'a> = ();
+}
 
+// SAFETY: `get` reads the validated physical slot.
+unsafe impl ReadableNativeElement for Variant {
     type Ref<'a> = Value;
 
     #[inline]

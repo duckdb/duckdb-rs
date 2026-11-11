@@ -69,7 +69,6 @@ impl<'w, T: WithWriter + 'w> ListWriter<'w, T> {
     pub(super) unsafe fn from_raw(mut vector: NonNull<Vector<'w, List<T>>>) -> Result<Self> {
         // SAFETY: the caller guarantees an exclusive borrow of a validated, writable vector.
         let borrowed = unsafe { vector.as_mut() };
-        let offset = borrowed.child_offset();
         let child = borrowed
             .children
             .as_mut()
@@ -82,14 +81,14 @@ impl<'w, T: WithWriter + 'w> ListWriter<'w, T> {
         // `elements`, which `List<T>::validate` checked as `T`; resizing the parent keeps the child wrapper.
         let (parent, elements) = unsafe { (VectorWriter::from_raw(vector)?, T::row_writer(child.cast())?) };
         // SAFETY: the child wrapper lives as long as the borrowed vector.
-        let used = unsafe { child.as_ref() }.len();
+        let len = unsafe { child.as_ref() }.len();
         Ok(Self {
             parent,
             child,
             elements,
-            row_start: offset,
-            offset,
-            used,
+            row_start: len,
+            offset: len,
+            used: len,
         })
     }
 
@@ -205,7 +204,6 @@ impl<'w, T: WithWriter + 'w> ListWriter<'w, T> {
         let entry = ListIndex::new(self.row_start as u64, (self.offset - self.row_start) as u64);
         self.row_start = self.offset;
         self.used = self.used.max(self.offset);
-        self.parent.vector().child_offset_cell().set(self.offset);
         // SAFETY: the row is in bounds, and the entry covers the elements just pushed.
         unsafe { self.write_entry(row, entry) };
         Ok(())
@@ -218,6 +216,9 @@ impl<'w, T: WithWriter + 'w> ListWriter<'w, T> {
         I: IntoIterator<Item = Option<&'v <T::Writer<'w> as RowWriter>::Value>>,
         <T::Writer<'w> as RowWriter>::Value: 'v,
     {
+        if row >= self.len() {
+            return Err(out_of_bounds(row, self.len()));
+        }
         let values = values.into_iter();
         self.reserve(values.size_hint().0)?;
         for value in values {
@@ -321,7 +322,7 @@ mod tests {
         data_chunk::DataChunk,
         environment::{Environment, StorageLocation},
         types::{List, ListIndex},
-        vector::Vector,
+        vector::{RowReader, Vector},
     };
 
     fn connection() -> Result<Connection> {
@@ -357,7 +358,6 @@ mod tests {
             writer.finish()?;
         }
         assert_eq!(child_len(&vector)?, 5002);
-        assert_eq!(vector.child_offset(), 5002);
         let read = rows(&vector)?;
         assert_eq!(read[0], Some(List(vec![Some(long), None])));
         assert_eq!(read[1], Some(List(many.into_iter().map(Some).collect())));
@@ -396,27 +396,29 @@ mod tests {
     }
 
     #[test]
-    fn list_writer_keeps_elements_of_earlier_rows() -> Result<()> {
+    fn list_writer_appends_after_earlier_rows() -> Result<()> {
         let conn = connection()?;
         let mut chunk = DataChunk::create(&conn, &[List::<i32>::logical_type(&conn)?], true)?;
         let mut vector = chunk.get_vector_at_mut::<List<i32>>(0)?;
         vector.set_size(3)?;
-        // SAFETY: row 0 writes both elements.
-        unsafe { vector.set_child_size(2)? };
-        vector.writer()?.set(0, &List(vec![Some(1), Some(2)]))?;
-        // Rewinding makes the next rows overwrite the elements, but trimming must keep them.
-        vector.set_child_offset(0)?;
+        vector.set_child_size(2)?;
+        vector.writer()?.set(0, &ListIndex::new(0, 2))?;
         {
             let mut writer = vector.list_writer()?;
-            assert_eq!(writer.child_offset(), 0);
+            assert_eq!(writer.child_offset(), 2);
             writer.set_elements(1, [Some(&9)])?;
+            writer.finish()?;
         }
-        vector.list_writer()?.set_elements(2, [Some(&3)])?;
-        assert_eq!(child_len(&vector)?, 2);
+        {
+            let mut writer = vector.list_writer()?;
+            writer.set_elements(2, [Some(&3)])?;
+            writer.finish()?;
+        }
+        assert_eq!(child_len(&vector)?, 4);
         assert_eq!(
             rows(&vector)?,
             [
-                Some(List(vec![Some(9), Some(3)])),
+                Some(List(vec![Some(0), Some(0)])),
                 Some(List(vec![Some(9)])),
                 Some(List(vec![Some(3)]))
             ]
@@ -430,11 +432,6 @@ mod tests {
         let mut chunk = DataChunk::create(&conn, &[List::<List<i32>>::logical_type(&conn)?], true)?;
         let mut vector = chunk.get_vector_at_mut::<List<List<i32>>>(0)?;
         vector.set_size(2)?;
-        {
-            let mut children = vector.children_mut().unwrap();
-            // SAFETY: the rows below only use inner elements they write.
-            unsafe { children.get_vector_at_mut::<List<i32>>(0)?.set_child_size(3)? };
-        }
         let inner = [List(vec![Some(1), Some(2)]), List(vec![Some(3)])];
         {
             let mut writer = vector.list_writer()?;
@@ -453,7 +450,7 @@ mod tests {
     }
 
     #[test]
-    fn leaked_list_writer_leaves_a_readable_vector() -> Result<()> {
+    fn unfinished_list_writer_leaves_a_readable_vector() -> Result<()> {
         let conn = connection()?;
         let mut chunk = DataChunk::create(&conn, &[List::<String>::logical_type(&conn)?], true)?;
         let mut vector = chunk.get_vector_at_mut::<List<String>>(0)?;
@@ -462,8 +459,7 @@ mod tests {
         writer.reserve(100)?;
         writer.elements().set(0, "written")?;
         writer.set_entry(0, ListIndex::new(0, 100))?;
-        std::mem::forget(writer);
-        let reader = vector.reader()?;
+        let reader = vector.list_reader()?;
         let row = reader.get(0)?.unwrap();
         assert_eq!(row.get(0), Some(Some("written")));
         assert!((1..100).all(|index| row.get(index) == Some(Some(""))));

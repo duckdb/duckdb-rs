@@ -13,7 +13,7 @@ use crate::{
     logical_type::{LogicalType, LogicalTypeID},
     raw::RawExt,
     value::{Value, ValueInput},
-    vector::{HasDuckDBBytes, NativeElement, WritableNativeElement},
+    vector::{HasDuckDBBytes, NativeElement, ReadableNativeElement, WritableNativeElement},
 };
 use std::fmt::Display;
 
@@ -80,7 +80,10 @@ unsafe impl NativeElement for BigNum {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::BigNum;
 
     type Native<'a> = BigNum;
+}
 
+// SAFETY: `get` reads the validated physical slot.
+unsafe impl ReadableNativeElement for BigNum {
     type Ref<'a> = &'a BigNum;
 
     #[inline]
@@ -155,7 +158,10 @@ unsafe impl NativeElement for BigNumValue {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::BigNum;
 
     type Native<'a> = BigNum;
+}
 
+// SAFETY: `get` reads the validated physical slot.
+unsafe impl ReadableNativeElement for BigNumValue {
     type Ref<'a> = &'a BigNum;
 
     #[inline]
