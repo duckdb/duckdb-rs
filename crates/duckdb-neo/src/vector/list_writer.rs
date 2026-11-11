@@ -3,12 +3,14 @@ use std::{borrow::Borrow, ptr::NonNull};
 use super::{RowWriter, Unknown, Vector, VectorWriter, WithWriter, out_of_bounds};
 use crate::{Result, error::Error, types::List, types::ListIndex};
 
-/// Appends `LIST` rows to a writable flat vector, growing the element child as needed.
+/// Writes `LIST` rows into a writable flat vector whose element child is already sized.
 ///
-/// Elements are appended after the child's written elements, through the element type's own
-/// [`RowWriter`], so lists of nested types compose: [`Self::push_with`] hands out the element
-/// writer of, e.g., a derived struct or an inner `LIST`. [`Self::finish`] trims the child to the
-/// elements the rows use; skipping it only leaves unused, initialized elements.
+/// Size the element child with [`Vector::set_child_size`] first: the writer fills it from the first
+/// element, through the element type's own [`RowWriter`], so lists of nested types compose. [`Self::set_elements`] writes a whole row; columnar writers fill [`Self::elements`] and
+/// point rows at them with [`Self::set_entry`]. Both move [`Self::child_offset`] past the row's elements.
+///
+/// Every writer starts at the first element, so write all rows through one writer: a second writer
+/// overwrites the elements of the rows the first one wrote.
 ///
 /// ```
 /// # use duckdb_neo::{DuckDBType, Result, data_chunk::DataChunk, environment::{Environment, StorageLocation}, types::List};
@@ -16,15 +18,13 @@ use crate::{Result, error::Error, types::List, types::ListIndex};
 /// # let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
 /// let mut chunk = DataChunk::create(&conn, &[List::<i32>::logical_type(&conn)?], true)?;
 /// let mut vector = chunk.get_vector_at_mut::<List<i32>>(0)?;
-/// vector.set_size(3)?;
+/// vector.set_size(2)?;
+/// vector.set_child_size(2)?;
 /// let mut writer = vector.list_writer()?;
-/// writer.set_elements(2, [Some(&1), None])?;
+/// writer.set_elements(0, [Some(&1), None])?;
 /// writer.set_null(1)?;
-/// writer.push(Some(&3))?;
-/// writer.finish_row(0)?;
-/// writer.finish()?;
-/// assert_eq!(vector.get_value_slow(2)?.get::<List<i32>>()?, Some(List(vec![Some(1), None])));
-/// assert_eq!(vector.get_value_slow(0)?.get::<List<i32>>()?, Some(List(vec![Some(3)])));
+/// assert!(writer.set_elements(1, [Some(&3)]).is_err());
+/// assert_eq!(vector.get_value_slow(0)?.get::<List<i32>>()?, Some(List(vec![Some(1), None])));
 /// # Ok(())
 /// # }
 /// ```
@@ -39,14 +39,16 @@ use crate::{Result, error::Error, types::List, types::ListIndex};
 /// # let mut chunk = DataChunk::create(&conn, &[List::<i32>::logical_type(&conn)?], true)?;
 /// # let mut vector = chunk.get_vector_at_mut::<List<i32>>(0)?;
 /// vector.set_size(2)?;
+/// vector.set_child_size(3)?;
 /// let mut writer = vector.list_writer()?;
-/// writer.reserve(3)?;
+/// let start = writer.child_offset();
 /// for (index, value) in [7, 8, 9].iter().enumerate() {
-///     writer.elements().set(index, value)?;
+///     writer.elements().set(start + index, value)?;
 /// }
-/// writer.set_entry(0, ListIndex::new(0, 2))?;
-/// writer.set_entry(1, ListIndex::new(2, 1))?;
+/// writer.set_entry(0, ListIndex::new(start as u64, 2))?;
+/// writer.set_entry(1, ListIndex::new(start as u64 + 2, 1))?;
 /// assert!(writer.set_entry(1, ListIndex::new(2, 2)).is_err());
+/// assert_eq!(writer.child_offset(), 3);
 /// # Ok(())
 /// # }
 /// ```
@@ -55,12 +57,8 @@ pub struct ListWriter<'w, T: WithWriter> {
     /// The element child, whose size bounds every entry; the element writer could be swapped out.
     child: NonNull<Vector<'w, Unknown>>,
     elements: T::Writer<'w>,
-    /// The first element of the row being appended.
-    row_start: usize,
-    /// The next element to append.
+    /// The first element no row written by this writer uses.
     offset: usize,
-    /// One past the last element any row uses; elements before the writer's start are kept.
-    used: usize,
 }
 
 impl<'w, T: WithWriter + 'w> ListWriter<'w, T> {
@@ -80,15 +78,11 @@ impl<'w, T: WithWriter + 'w> ListWriter<'w, T> {
         // SAFETY: the writer keeps `vector` exclusively borrowed and only touches its child through
         // `elements`, which `List<T>::validate` checked as `T`; resizing the parent keeps the child wrapper.
         let (parent, elements) = unsafe { (VectorWriter::from_raw(vector)?, T::row_writer(child.cast())?) };
-        // SAFETY: the child wrapper lives as long as the borrowed vector.
-        let len = unsafe { child.as_ref() }.len();
         Ok(Self {
             parent,
             child,
             elements,
-            row_start: len,
-            offset: len,
-            used: len,
+            offset: 0,
         })
     }
 
@@ -107,31 +101,9 @@ impl<'w, T: WithWriter + 'w> ListWriter<'w, T> {
         self.len() == 0
     }
 
-    /// Return the next element [`Self::push`] writes.
+    /// Return the first element no row written by this writer uses, where [`Self::set_elements`] writes next.
     pub fn child_offset(&self) -> usize {
         self.offset
-    }
-
-    /// Grow the element child so that `additional` elements fit after [`Self::child_offset`].
-    ///
-    /// New elements are initialized like [`Vector::set_size`].
-    pub fn reserve(&mut self, additional: usize) -> Result<()> {
-        let needed = self
-            .offset
-            .checked_add(additional)
-            .ok_or_else(|| Error::invalid_input("LIST element count overflow"))?;
-        if needed > self.child_len() {
-            // SAFETY: this writer owns the element count, and growing keeps every element.
-            unsafe { self.elements.resize_rows(needed)? };
-        }
-        Ok(())
-    }
-
-    #[cold]
-    fn grow(&mut self) -> Result<()> {
-        let len = self.child_len();
-        // SAFETY: this writer owns the element count, and growing keeps every element.
-        unsafe { self.elements.resize_rows(len.saturating_mul(2).max(len + 1).max(64)) }
     }
 
     /// Borrow the element writer, for columnar writes; point rows at the elements with [`Self::set_entry`].
@@ -156,13 +128,13 @@ impl<'w, T: WithWriter + 'w> ListWriter<'w, T> {
                     self.child_len()
                 ))
             })?;
-        self.used = self.used.max(end as usize);
+        self.offset = self.offset.max(end as usize);
         // SAFETY: the row is in bounds, and the entry covers initialized child elements.
         unsafe { self.write_entry(row, entry) };
         Ok(())
     }
 
-    /// Make a row SQL NULL, with an empty entry.
+    /// Make a row SQL NULL.
     pub fn set_null(&mut self, row: usize) -> Result<()> {
         if row >= self.len() {
             return Err(out_of_bounds(row, self.len()));
@@ -172,43 +144,9 @@ impl<'w, T: WithWriter + 'w> ListWriter<'w, T> {
         Ok(())
     }
 
-    /// Append one element, written by `write` through the element writer at the given child row;
-    /// finish the row with [`Self::finish_row`].
-    #[inline]
-    pub fn push_with(&mut self, write: impl FnOnce(&mut T::Writer<'w>, usize) -> Result<()>) -> Result<()> {
-        if self.offset >= self.child_len() {
-            self.grow()?;
-        }
-        write(&mut self.elements, self.offset)?;
-        self.offset += 1;
-        Ok(())
-    }
-
-    /// Append one element to the row being written; `None` is a NULL element.
-    #[inline]
-    pub fn push(&mut self, value: Option<&<T::Writer<'w> as RowWriter>::Value>) -> Result<()> {
-        self.push_with(|elements, index| elements.set_option(index, value))
-    }
-
-    /// Make the elements pushed since the last finished row the elements of `row`.
-    pub fn finish_row(&mut self, row: usize) -> Result<()> {
-        if row >= self.len() {
-            return Err(out_of_bounds(row, self.len()));
-        }
-        if self.offset > self.child_len() {
-            return Err(Error::invalid_input(
-                "LIST elements were written past the element child",
-            ));
-        }
-        let entry = ListIndex::new(self.row_start as u64, (self.offset - self.row_start) as u64);
-        self.row_start = self.offset;
-        self.used = self.used.max(self.offset);
-        // SAFETY: the row is in bounds, and the entry covers the elements just pushed.
-        unsafe { self.write_entry(row, entry) };
-        Ok(())
-    }
-
-    /// Write a whole row from its elements.
+    /// Write a whole row from its elements, at [`Self::child_offset`].
+    ///
+    /// Fails, leaving the row unchanged, if the elements do not fit the child.
     #[inline]
     pub fn set_elements<'v, I>(&mut self, row: usize, values: I) -> Result<()>
     where
@@ -218,25 +156,20 @@ impl<'w, T: WithWriter + 'w> ListWriter<'w, T> {
         if row >= self.len() {
             return Err(out_of_bounds(row, self.len()));
         }
-        let values = values.into_iter();
-        self.reserve(values.size_hint().0)?;
+        let (start, capacity) = (self.offset, self.child_len());
+        let mut end = start;
         for value in values {
-            if let Err(error) = self.push(value) {
-                self.offset = self.row_start;
-                return Err(error);
+            if end >= capacity {
+                return Err(Error::invalid_input(format!(
+                    "LIST elements do not fit the {capacity} child elements; size the child first"
+                )));
             }
+            self.elements.set_option(end, value)?;
+            end += 1;
         }
-        self.finish_row(row)
-    }
-
-    /// Trim the element child to the elements rows use.
-    pub fn finish(mut self) -> Result<()> {
-        let keep = self.used.max(self.offset);
-        if self.child_len() > keep {
-            // SAFETY: this writer owns the element count, and `keep` covers every element a row uses,
-            // including rows written before this writer.
-            unsafe { self.elements.resize_rows(keep)? };
-        }
+        self.offset = end;
+        // SAFETY: the row is in bounds, and the entry covers the elements just written.
+        unsafe { self.write_entry(row, ListIndex::new(start as u64, (end - start) as u64)) };
         Ok(())
     }
 
@@ -307,7 +240,7 @@ impl<T: WithWriter> std::fmt::Debug for ListWriter<'_, T> {
 }
 
 impl<T: WithWriter> Vector<'_, List<T>> {
-    /// Prepare a [`ListWriter`] that appends after the elements already written.
+    /// Prepare a [`ListWriter`] that fills the sized element child from its first element.
     pub fn list_writer(&mut self) -> Result<ListWriter<'_, T>> {
         // SAFETY: the exclusive borrow covers the writer, and validation checked the type.
         unsafe { ListWriter::from_raw(NonNull::from(self).cast()) }
@@ -342,11 +275,12 @@ mod tests {
     }
 
     #[test]
-    fn list_writer_grows_and_trims_the_child() -> Result<()> {
+    fn list_writer_fills_the_sized_child() -> Result<()> {
         let conn = connection()?;
         let mut chunk = DataChunk::create(&conn, &[List::<String>::logical_type(&conn)?], true)?;
         let mut vector = chunk.get_vector_at_mut::<List<String>>(0)?;
         vector.set_size(3)?;
+        vector.set_child_size(5002)?;
         let long = "a string longer than the inline storage".to_owned();
         let many = (0..5000).map(|index| index.to_string()).collect::<Vec<_>>();
         {
@@ -355,7 +289,8 @@ mod tests {
             writer.set_null(2)?;
             writer.set_elements(0, [Some(long.as_str()), None])?;
             assert_eq!(writer.child_offset(), 5002);
-            writer.finish()?;
+            let error = writer.set_elements(2, [Some("no room")]).unwrap_err();
+            assert!(error.message.contains("do not fit the 5002 child elements"), "{error}");
         }
         assert_eq!(child_len(&vector)?, 5002);
         let read = rows(&vector)?;
@@ -371,23 +306,23 @@ mod tests {
         let mut chunk = DataChunk::create(&conn, &[List::<i32>::logical_type(&conn)?], true)?;
         let mut vector = chunk.get_vector_at_mut::<List<i32>>(0)?;
         vector.set_size(2)?;
+        vector.set_child_size(3)?;
         {
             let mut writer = vector.list_writer()?;
-            writer.reserve(3)?;
             assert_eq!(writer.elements().len(), 3);
             writer.elements().set(0, &7)?;
             writer.elements().set(1, &8)?;
             writer.set_entry(0, ListIndex::new(0, 2))?;
             // Unwritten elements below the child's size are initialized.
             writer.set_entry(1, ListIndex::new(2, 1))?;
+            assert_eq!(writer.child_offset(), 3);
             for entry in [ListIndex::new(2, 2), ListIndex::new(4, 0), ListIndex::new(u64::MAX, 2)] {
                 assert!(writer.set_entry(1, entry).is_err(), "{entry:?}");
             }
             assert!(writer.set_entry(2, ListIndex::new(0, 0)).is_err());
             assert!(writer.set_null(2).is_err());
-            assert!(writer.finish_row(2).is_err());
+            assert!(writer.set_elements(2, []).is_err());
         }
-        assert_eq!(child_len(&vector)?, 3);
         assert_eq!(
             rows(&vector)?,
             [Some(List(vec![Some(7), Some(8)])), Some(List(vec![Some(0)]))]
@@ -396,32 +331,22 @@ mod tests {
     }
 
     #[test]
-    fn list_writer_appends_after_earlier_rows() -> Result<()> {
+    fn set_entry_moves_the_offset_past_its_elements() -> Result<()> {
         let conn = connection()?;
         let mut chunk = DataChunk::create(&conn, &[List::<i32>::logical_type(&conn)?], true)?;
         let mut vector = chunk.get_vector_at_mut::<List<i32>>(0)?;
-        vector.set_size(3)?;
-        vector.set_child_size(2)?;
-        vector.writer()?.set(0, &ListIndex::new(0, 2))?;
+        vector.set_size(2)?;
+        vector.set_child_size(3)?;
         {
             let mut writer = vector.list_writer()?;
-            assert_eq!(writer.child_offset(), 2);
+            writer.elements().set(0, &7)?;
+            writer.elements().set(1, &8)?;
+            writer.set_entry(0, ListIndex::new(0, 2))?;
             writer.set_elements(1, [Some(&9)])?;
-            writer.finish()?;
         }
-        {
-            let mut writer = vector.list_writer()?;
-            writer.set_elements(2, [Some(&3)])?;
-            writer.finish()?;
-        }
-        assert_eq!(child_len(&vector)?, 4);
         assert_eq!(
             rows(&vector)?,
-            [
-                Some(List(vec![Some(0), Some(0)])),
-                Some(List(vec![Some(9)])),
-                Some(List(vec![Some(3)]))
-            ]
+            [Some(List(vec![Some(7), Some(8)])), Some(List(vec![Some(9)]))]
         );
         Ok(())
     }
@@ -432,6 +357,12 @@ mod tests {
         let mut chunk = DataChunk::create(&conn, &[List::<List<i32>>::logical_type(&conn)?], true)?;
         let mut vector = chunk.get_vector_at_mut::<List<List<i32>>>(0)?;
         vector.set_size(2)?;
+        vector.set_child_size(3)?;
+        vector
+            .children_mut()
+            .unwrap()
+            .get_vector_at_mut::<List<i32>>(0)?
+            .set_child_size(3)?;
         let inner = [List(vec![Some(1), Some(2)]), List(vec![Some(3)])];
         {
             let mut writer = vector.list_writer()?;
@@ -450,13 +381,13 @@ mod tests {
     }
 
     #[test]
-    fn unfinished_list_writer_leaves_a_readable_vector() -> Result<()> {
+    fn unwritten_elements_read_as_initialized() -> Result<()> {
         let conn = connection()?;
         let mut chunk = DataChunk::create(&conn, &[List::<String>::logical_type(&conn)?], true)?;
         let mut vector = chunk.get_vector_at_mut::<List<String>>(0)?;
         vector.set_size(1)?;
+        vector.set_child_size(100)?;
         let mut writer = vector.list_writer()?;
-        writer.reserve(100)?;
         writer.elements().set(0, "written")?;
         writer.set_entry(0, ListIndex::new(0, 100))?;
         let reader = vector.list_reader()?;
@@ -479,6 +410,7 @@ mod tests {
         let mut chunk = DataChunk::create(&conn, &[structs, unions], true)?;
         let mut vector = chunk.get_vector_at_mut::<List<Struct>>(0)?;
         vector.set_size(1)?;
+        vector.set_child_size(2)?;
         vector.list_writer()?.set_elements(0, [Some(&()), None])?;
         assert_eq!(vector.get_value_slow(0)?.dbg_string()?, "[{'a': 0}, NULL]");
         let reader = vector.list_reader()?;

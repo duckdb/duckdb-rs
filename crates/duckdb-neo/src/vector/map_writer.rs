@@ -7,11 +7,12 @@ use crate::{
     types::{ListIndex, Map, Struct},
 };
 
-/// Appends `MAP` rows to a writable flat vector, growing the entries child as needed.
+/// Writes `MAP` rows into a writable flat vector whose entries child is already sized.
 ///
-/// Works like [`ListWriter`](super::ListWriter): entries are appended after the written ones,
-/// through the key and value types' own [`RowWriter`]s, and [`Self::finish`] trims the entries to
-/// the ones the rows use. DuckDB requires unique keys per row, which the writer does not check.
+/// Works like [`ListWriter`](super::ListWriter): size the entries with [`Vector::set_child_size`]
+/// first, then fill them from the first entry by writing whole rows with [`Self::set_entries`], or fill [`Self::keys`] and
+/// [`Self::values`] and point rows at them with [`Self::set_entry`]. As with lists, write all rows
+/// through one writer. DuckDB requires unique, non-NULL keys per row, which the writer does not check.
 ///
 /// ```
 /// # use duckdb_neo::{DuckDBType, Result, data_chunk::DataChunk, environment::{Environment, StorageLocation}, types::Map};
@@ -20,12 +21,10 @@ use crate::{
 /// let mut chunk = DataChunk::create(&conn, &[Map::<String, i32>::logical_type(&conn)?], true)?;
 /// let mut vector = chunk.get_vector_at_mut::<Map<String, i32>>(0)?;
 /// vector.set_size(2)?;
+/// vector.set_child_size(2)?;
 /// let mut writer = vector.map_writer()?;
-/// writer.push("a", Some(&1))?;
-/// writer.push("b", None)?;
-/// writer.finish_row(0)?;
+/// writer.set_entries(0, [("a", Some(&1)), ("b", None)])?;
 /// writer.set_null(1)?;
-/// writer.finish()?;
 /// let row = vector.get_value_slow(0)?.get::<Map<String, i32>>()?.unwrap();
 /// assert_eq!(row, Map(vec![("a".to_owned(), Some(1)), ("b".to_owned(), None)]));
 /// # Ok(())
@@ -37,12 +36,8 @@ pub struct MapWriter<'w, K: WithWriter, V: WithWriter> {
     entries: VectorWriter<'w, Struct>,
     keys: K::Writer<'w>,
     values: V::Writer<'w>,
-    /// The first entry of the row being appended.
-    row_start: usize,
-    /// The next entry to append.
+    /// The first entry no row written by this writer uses.
     offset: usize,
-    /// One past the last entry any row uses; entries before the writer's start are kept.
-    used: usize,
 }
 
 impl<'w, K: WithWriter + 'w, V: WithWriter + 'w> MapWriter<'w, K, V> {
@@ -78,15 +73,12 @@ impl<'w, K: WithWriter + 'w, V: WithWriter + 'w> MapWriter<'w, K, V> {
                 V::row_writer(value.cast())?,
             )
         };
-        let len = entries.len();
         Ok(Self {
             parent,
             entries,
             keys,
             values,
-            row_start: len,
-            offset: len,
-            used: len,
+            offset: 0,
         })
     }
 
@@ -104,37 +96,9 @@ impl<'w, K: WithWriter + 'w, V: WithWriter + 'w> MapWriter<'w, K, V> {
         self.len() == 0
     }
 
-    /// Return the next entry [`Self::push`] writes.
+    /// Return the first entry no row written by this writer uses, where [`Self::set_entries`] writes next.
     pub fn child_offset(&self) -> usize {
         self.offset
-    }
-
-    /// Grow the entries so that `additional` entries fit after [`Self::child_offset`].
-    pub fn reserve(&mut self, additional: usize) -> Result<()> {
-        let needed = self
-            .offset
-            .checked_add(additional)
-            .ok_or_else(|| Error::invalid_input("MAP entry count overflow"))?;
-        if needed > self.entries_len() {
-            self.resize_entries(needed)?;
-        }
-        Ok(())
-    }
-
-    #[cold]
-    fn grow(&mut self) -> Result<()> {
-        let len = self.entries_len();
-        self.resize_entries(len.saturating_mul(2).max(len + 1).max(64))
-    }
-
-    fn resize_entries(&mut self, len: usize) -> Result<()> {
-        let old = self.entries_len();
-        self.entries.resize(len)?;
-        self.keys.refresh()?;
-        self.values.refresh()?;
-        // SAFETY: MAP entries are never NULL; the resize initialized both fields.
-        unsafe { self.entries.mark_valid_range(old, self.entries.len()) };
-        Ok(())
     }
 
     /// Borrow the key writer, for columnar writes; point rows at the entries with [`Self::set_entry`].
@@ -164,13 +128,13 @@ impl<'w, K: WithWriter + 'w, V: WithWriter + 'w> MapWriter<'w, K, V> {
                     self.entries_len()
                 ))
             })?;
-        self.used = self.used.max(end as usize);
+        self.offset = self.offset.max(end as usize);
         // SAFETY: the row is in bounds, and the entry covers initialized entries.
         unsafe { self.write_entry(row, entry) };
         Ok(())
     }
 
-    /// Make a row SQL NULL, with an empty entry.
+    /// Make a row SQL NULL.
     pub fn set_null(&mut self, row: usize) -> Result<()> {
         if row >= self.len() {
             return Err(out_of_bounds(row, self.len()));
@@ -180,64 +144,49 @@ impl<'w, K: WithWriter + 'w, V: WithWriter + 'w> MapWriter<'w, K, V> {
         Ok(())
     }
 
-    /// Append one entry, written by `write` through the key and value writers at the given child row;
-    /// finish the row with [`Self::finish_row`]. The key must be written: DuckDB forbids NULL keys.
+    /// Write a whole row from its keys and values, at [`Self::child_offset`]; `None` is a NULL value.
+    ///
+    /// Fails, leaving the row unchanged, if the entries do not fit the child.
     #[inline]
-    pub fn push_with(
-        &mut self,
-        write: impl FnOnce(&mut K::Writer<'w>, &mut V::Writer<'w>, usize) -> Result<()>,
-    ) -> Result<()> {
-        if self.offset >= self.entries_len() {
-            self.grow()?;
-        }
-        write(&mut self.keys, &mut self.values, self.offset)?;
-        self.offset += 1;
-        Ok(())
-    }
-
-    /// Append one entry to the row being written; `None` is a NULL value.
-    #[inline]
-    pub fn push(
-        &mut self,
-        key: &<K::Writer<'w> as RowWriter>::Value,
-        value: Option<&<V::Writer<'w> as RowWriter>::Value>,
-    ) -> Result<()> {
-        self.push_with(|keys, values, index| {
-            keys.set(index, key)?;
-            values.set_option(index, value)
-        })
-    }
-
-    /// Make the entries pushed since the last finished row the entries of `row`.
-    pub fn finish_row(&mut self, row: usize) -> Result<()> {
+    pub fn set_entries<'v, I>(&mut self, row: usize, entries: I) -> Result<()>
+    where
+        I: IntoIterator<
+            Item = (
+                &'v <K::Writer<'w> as RowWriter>::Value,
+                Option<&'v <V::Writer<'w> as RowWriter>::Value>,
+            ),
+        >,
+        <K::Writer<'w> as RowWriter>::Value: 'v,
+        <V::Writer<'w> as RowWriter>::Value: 'v,
+    {
         if row >= self.len() {
             return Err(out_of_bounds(row, self.len()));
         }
-        if self.offset > self.entries_len() {
-            return Err(Error::invalid_input("MAP entries were written past the entries child"));
+        let (start, capacity) = (self.offset, self.entries_len());
+        let mut end = start;
+        for (key, value) in entries {
+            if end >= capacity {
+                return Err(Error::invalid_input(format!(
+                    "MAP entries do not fit the {capacity} child entries; size the child first"
+                )));
+            }
+            self.keys.set(end, key)?;
+            self.values.set_option(end, value)?;
+            end += 1;
         }
-        let entry = ListIndex::new(self.row_start as u64, (self.offset - self.row_start) as u64);
-        self.row_start = self.offset;
-        self.used = self.used.max(self.offset);
-        // SAFETY: the row is in bounds, and the entry covers the entries just pushed.
-        unsafe { self.write_entry(row, entry) };
-        Ok(())
-    }
-
-    /// Trim the entries to the ones rows use.
-    pub fn finish(mut self) -> Result<()> {
-        let keep = self.used.max(self.offset);
-        if self.entries_len() > keep {
-            // Shrinking keeps every entry a row uses, including rows written before this writer.
-            self.resize_entries(keep)?;
-        }
+        self.offset = end;
+        // SAFETY: the row is in bounds, and the entry covers the entries just written.
+        unsafe { self.write_entry(row, ListIndex::new(start as u64, (end - start) as u64)) };
         Ok(())
     }
 
     #[inline(always)]
     unsafe fn write_entry(&mut self, row: usize, entry: ListIndex) {
-        // SAFETY: the caller guarantees the row's bounds and that the entry covers initialized entries.
+        // SAFETY: the caller guarantees the row's bounds and that the entry covers initialized entries,
+        // which MAP entries make valid.
         unsafe {
+            self.entries
+                .mark_valid_range(entry.offset as usize, (entry.offset + entry.length) as usize);
             let _ = self.parent.write_internal(row, Some(entry));
             self.parent.set_validity_unchecked(row, true);
         }
@@ -257,17 +206,13 @@ where
 
     #[inline]
     fn set(&mut self, row: usize, value: &Map<K, V>) -> Result<()> {
-        if row >= self.len() {
-            return Err(out_of_bounds(row, self.len()));
-        }
-        self.reserve(value.0.len())?;
-        for (key, value) in &value.0 {
-            if let Err(error) = self.push(key.borrow(), value.as_ref().map(Borrow::borrow)) {
-                self.offset = self.row_start;
-                return Err(error);
-            }
-        }
-        self.finish_row(row)
+        self.set_entries(
+            row,
+            value
+                .0
+                .iter()
+                .map(|(key, value)| (key.borrow(), value.as_ref().map(Borrow::borrow))),
+        )
     }
 
     fn set_null(&mut self, row: usize) -> Result<()> {
@@ -317,7 +262,7 @@ impl<K: WithWriter, V: WithWriter> std::fmt::Debug for MapWriter<'_, K, V> {
 }
 
 impl<K: WithWriter, V: WithWriter> Vector<'_, Map<K, V>> {
-    /// Prepare a [`MapWriter`] that appends after the entries already written.
+    /// Prepare a [`MapWriter`] that fills the sized entries child from its first entry.
     pub fn map_writer(&mut self) -> Result<MapWriter<'_, K, V>> {
         // SAFETY: the exclusive borrow covers the writer, and validation checked the type.
         unsafe { MapWriter::from_raw(NonNull::from(self).cast()) }
@@ -331,8 +276,8 @@ mod tests {
         connection::Connection,
         data_chunk::DataChunk,
         environment::{Environment, StorageLocation},
-        types::{List, Map},
-        vector::{RowReader, RowWriter},
+        types::{List, ListIndex, Map},
+        vector::{RowReader, RowWriter, Unknown},
     };
 
     fn connection() -> Result<Connection> {
@@ -340,24 +285,28 @@ mod tests {
     }
 
     #[test]
-    fn map_writer_grows_and_trims_the_entries() -> Result<()> {
+    fn map_writer_fills_the_sized_entries() -> Result<()> {
         let conn = connection()?;
         let mut chunk = DataChunk::create(&conn, &[Map::<String, i32>::logical_type(&conn)?], true)?;
         let mut vector = chunk.get_vector_at_mut::<Map<String, i32>>(0)?;
         vector.set_size(3)?;
+        vector.set_child_size(5000)?;
         let keys = (0..5000).map(|index| format!("key number {index}")).collect::<Vec<_>>();
+        let values = (0..5000).collect::<Vec<i32>>();
         {
             let mut writer = vector.map_writer()?;
             writer.set_null(1)?;
-            for (index, key) in keys.iter().enumerate() {
-                writer.push(key, (index % 3 != 0).then_some(&(index as i32)))?;
-            }
-            writer.finish_row(2)?;
-            writer.finish_row(0)?;
+            writer.set_entries(
+                2,
+                keys.iter()
+                    .zip(&values)
+                    .map(|(key, value)| (key.as_str(), (value % 3 != 0).then_some(value))),
+            )?;
+            writer.set_entries(0, [])?;
             assert_eq!(writer.child_offset(), 5000);
-            writer.finish()?;
+            let error = writer.set_entries(0, [("no room", None)]).unwrap_err();
+            assert!(error.message.contains("do not fit the 5000 child entries"), "{error}");
         }
-        assert_eq!(vector.children().unwrap().get_untyped_vector_at(0)?.len(), 5000);
         let reader = vector.map_reader()?;
         assert!(reader.get(0)?.unwrap().is_empty());
         assert!(reader.get(1)?.is_none());
@@ -371,21 +320,22 @@ mod tests {
     }
 
     #[test]
-    fn map_writer_writes_nested_values_after_earlier_rows() -> Result<()> {
+    fn map_writer_writes_nested_values() -> Result<()> {
         let conn = connection()?;
         let mut chunk = DataChunk::create(&conn, &[Map::<i32, List<i32>>::logical_type(&conn)?], true)?;
         let mut vector = chunk.get_vector_at_mut::<Map<i32, List<i32>>>(0)?;
         vector.set_size(2)?;
+        vector.set_child_size(3)?;
         {
-            let mut writer = vector.map_writer()?;
-            writer.set(0, &Map(vec![(1, Some(List(vec![Some(1)])))]))?;
-            writer.finish()?;
+            let mut children = vector.children_mut().unwrap();
+            let mut entries = children.get_vector_at_mut::<Unknown>(0)?;
+            let mut fields = entries.children_mut().unwrap();
+            fields.get_vector_at_mut::<List<i32>>(1)?.set_child_size(3)?;
         }
         {
             let mut writer = vector.map_writer()?;
-            writer.push(&2, Some(&List(vec![Some(2), None])))?;
-            writer.push(&3, None)?;
-            writer.finish_row(1)?;
+            writer.set(0, &Map(vec![(1, Some(List(vec![Some(1)])))]))?;
+            writer.set_entries(1, [(&2, Some(&List(vec![Some(2), None]))), (&3, None)])?;
         }
         assert_eq!(
             vector.get_value_slow(0)?.get::<Map<i32, List<i32>>>()?,
@@ -399,19 +349,32 @@ mod tests {
     }
 
     #[test]
-    fn unfinished_map_writer_leaves_a_readable_vector() -> Result<()> {
+    fn map_writer_points_rows_at_columnar_entries() -> Result<()> {
         let conn = connection()?;
         let mut chunk = DataChunk::create(&conn, &[Map::<String, String>::logical_type(&conn)?], true)?;
         let mut vector = chunk.get_vector_at_mut::<Map<String, String>>(0)?;
-        vector.set_size(1)?;
-        let mut writer = vector.map_writer()?;
-        writer.reserve(100)?;
-        writer.push("key", Some("value"))?;
-        writer.finish_row(0)?;
+        vector.set_size(2)?;
+        vector.set_child_size(3)?;
+        {
+            let mut writer = vector.map_writer()?;
+            writer.keys().set(0, "a")?;
+            writer.values().set(0, "x")?;
+            writer.keys().set(1, "b")?;
+            writer.values().set_null(1)?;
+            writer.set_entry(0, ListIndex::new(0, 2))?;
+            assert_eq!(writer.child_offset(), 2);
+            writer.set_entries(1, [("c", Some("z"))])?;
+            assert!(writer.set_entry(1, ListIndex::new(2, 2)).is_err());
+        }
         let reader = vector.map_reader()?;
-        let row = reader.get(0)?.unwrap();
-        assert_eq!(row.iter().collect::<Vec<_>>(), [("key", Some("value"))]);
-        assert_eq!(vector.children().unwrap().get_untyped_vector_at(0)?.len(), 100);
+        let rows = (0..2)
+            .map(|row| {
+                reader
+                    .get(row)
+                    .map(|entries| entries.unwrap().iter().collect::<Vec<_>>())
+            })
+            .collect::<Result<Vec<_>>>()?;
+        assert_eq!(rows, [vec![("a", Some("x")), ("b", None)], vec![("c", Some("z"))]]);
         Ok(())
     }
 }

@@ -232,6 +232,7 @@ mod tests {
         let mut chunk = DataChunk::create(&conn, &[list], true)?;
         let mut vector = chunk.get_vector_at_mut::<List<EnumIndex<u8>>>(0)?;
         vector.set_size(1)?;
+        vector.set_child_size(4)?;
         {
             let mut writer = vector.list_writer()?;
             writer.set(0, &List(vec![Some(EnumIndex(2)), None, Some(EnumIndex(0))]))?;

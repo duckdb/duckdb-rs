@@ -875,13 +875,14 @@ fn test_table_function_list_output_child_starts_empty() -> Result<()> {
             let child_len = vector.children().unwrap().get_untyped_vector_at(0)?.len();
             let rows = if call < 3 { 2048 } else { 0 };
             vector.set_size(rows)?;
+            vector.set_child_size(2 * rows)?;
             let mut writer = vector.list_writer()?;
             self.0.lock().unwrap().push((child_len, writer.child_offset()));
             for row in 0..rows {
                 let value = (call * 2048 + row) as i32;
                 writer.set_elements(row, [Some(&value), Some(&value)])?;
             }
-            writer.finish()
+            Ok(())
         }
     }
 

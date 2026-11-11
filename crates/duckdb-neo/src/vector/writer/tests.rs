@@ -495,6 +495,7 @@ fn writer_reuses_nested_children_across_rows() -> Result<()> {
     let mut chunk = DataChunk::create(&conn, &[List::<i32>::logical_type(&conn)?], true)?;
     let mut vector = chunk.get_vector_at_mut::<List<i32>>(0)?;
     vector.set_size(3)?;
+    vector.set_child_size(5003)?;
     {
         let mut writer = vector.list_writer()?;
         writer.set(0, &List(vec![Some(1), None]))?;
@@ -503,7 +504,6 @@ fn writer_reuses_nested_children_across_rows() -> Result<()> {
         // Rewriting a row takes a new range.
         writer.set(0, &List(vec![Some(42)]))?;
         assert_eq!(writer.child_offset(), 5003);
-        writer.finish()?;
     }
     let reader = vector.list_reader()?;
     assert_eq!(reader.get(0)?.unwrap().iter().collect::<Vec<_>>(), [Some(&42)]);

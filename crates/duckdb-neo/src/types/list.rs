@@ -49,7 +49,7 @@ impl ListIndex {
 ///
 /// A `LIST` vector reads and writes its rows natively as [`ListIndex`] entries, checked against the
 /// size of the element child, which [`Vector::set_child_size`] sets. A [`ListWriter`](crate::vector::ListWriter)
-/// appends whole rows instead, growing the child as it goes:
+/// writes whole rows into the sized child instead:
 ///
 /// ```
 /// use duckdb_neo::{DuckDBType, Result, data_chunk::DataChunk, environment::{Environment, StorageLocation}, types::List, vector::RowWriter};
@@ -59,10 +59,10 @@ impl ListIndex {
 /// let mut chunk = DataChunk::create(&conn, &[List::<i32>::logical_type(&conn)?], true)?;
 /// let mut vector = chunk.get_vector_at_mut::<List<i32>>(0)?;
 /// vector.set_size(2)?;
+/// vector.set_child_size(3)?;
 /// let mut writer = vector.list_writer()?;
 /// writer.set(0, &List(vec![Some(1), Some(2)]))?;
 /// writer.set(1, &List(vec![Some(3)]))?;
-/// writer.finish()?;
 /// assert_eq!(vector.children().unwrap().get_untyped_vector_at(0)?.len(), 3);
 /// assert_eq!(vector.get_value_slow(1)?.get::<List<i32>>()?, Some(List(vec![Some(3)])));
 /// # Ok(())

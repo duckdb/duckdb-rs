@@ -780,13 +780,12 @@ fn map_scalar(_ctx: &Context, input: &mut VectorCollection, result: Vector<'_, M
         .collect();
     let mut result = result;
     result.set_size(total_len)?;
+    result.set_child_size(rows.len())?;
     {
         let mut writer = result.map_writer()?;
         for (index, (key, value)) in rows.iter().enumerate() {
-            writer.push(key, Some(value.as_str()))?;
-            writer.finish_row(index)?;
+            writer.set_entries(index, [(key, Some(value.as_str()))])?;
         }
-        writer.finish()?;
     }
     let reader = result.row_reader()?;
     for (row, (key, value)) in reader.iter().zip(&rows) {
@@ -2408,8 +2407,11 @@ fn test_reference_rebuilds_children() -> crate::Result<()> {
     let mut src = source.get_vector_at_mut::<List<i32>>(0)?;
     src.set_size(2)?;
     src.set_child_size(4)?;
-    src.row_writer()?.set(0, &List(vec![Some(1), Some(2), Some(3)]))?;
-    src.row_writer()?.set(1, &List(vec![Some(4)]))?;
+    {
+        let mut writer = src.row_writer()?;
+        writer.set(0, &List(vec![Some(1), Some(2), Some(3)]))?;
+        writer.set(1, &List(vec![Some(4)]))?;
+    }
 
     let mut target = DataChunk::create(&conn, &types, true)?;
     let mut dst = target.get_vector_at_mut::<List<i32>>(0)?;
@@ -2682,7 +2684,7 @@ fn test_array_reads_use_type_size() -> crate::Result<()> {
 }
 
 #[test]
-fn test_list_and_map_writers_append_across_wrappers() -> crate::Result<()> {
+fn test_list_and_map_writers_start_at_the_first_child_row() -> crate::Result<()> {
     let env = Environment::new()?;
     let instance = env.open(StorageLocation::InMemory)?;
     let conn = instance.connect()?;
@@ -2691,17 +2693,17 @@ fn test_list_and_map_writers_append_across_wrappers() -> crate::Result<()> {
     {
         let mut first = list_chunk.get_vector_at_mut::<List<i32>>(0)?;
         first.set_size(2)?;
-        let mut writer = first.list_writer()?;
-        writer.set(0, &List(vec![Some(1), Some(2), Some(3)]))?;
-        writer.finish()?;
+        first.set_child_size(4)?;
+        first.list_writer()?.set(0, &List(vec![Some(1), Some(2), Some(3)]))?;
     }
-    // A writer from a new wrapper appends after the elements already written.
+    // A writer from a new wrapper does not know the earlier rows, so it starts at the first element.
     {
         let mut second = list_chunk.get_vector_at_mut::<List<i32>>(0)?;
         let mut writer = second.list_writer()?;
-        assert_eq!(writer.child_offset(), 3);
-        writer.set(1, &List(vec![Some(9)]))?;
-        writer.finish()?;
+        assert_eq!(writer.child_offset(), 0);
+        writer.elements().set(3, &9)?;
+        writer.set_entry(1, ListIndex::new(3, 1))?;
+        assert_eq!(writer.child_offset(), 4);
     }
 
     let lists = list_chunk.get_vector_at::<List<i32>>(0)?;
@@ -2716,16 +2718,16 @@ fn test_list_and_map_writers_append_across_wrappers() -> crate::Result<()> {
     {
         let mut first = map_chunk.get_vector_at_mut::<Map<i32, i32>>(0)?;
         first.set_size(2)?;
-        let mut writer = first.map_writer()?;
-        writer.set(0, &Map(vec![(1, Some(10)), (2, Some(20))]))?;
-        writer.finish()?;
+        first.set_child_size(3)?;
+        first.map_writer()?.set(0, &Map(vec![(1, Some(10)), (2, Some(20))]))?;
     }
     {
         let mut second = map_chunk.get_vector_at_mut::<Map<i32, i32>>(0)?;
         let mut writer = second.map_writer()?;
-        assert_eq!(writer.child_offset(), 2);
-        writer.set(1, &Map(vec![(3, Some(30))]))?;
-        writer.finish()?;
+        assert_eq!(writer.child_offset(), 0);
+        writer.keys().set(2, &3)?;
+        writer.values().set(2, &30)?;
+        writer.set_entry(1, ListIndex::new(2, 1))?;
     }
 
     let maps = map_chunk.get_vector_at::<Map<i32, i32>>(0)?;
@@ -2769,6 +2771,7 @@ fn test_children_follow_parent() -> crate::Result<()> {
     // An out-of-range row must not take elements from the child.
     assert!(list.row_writer()?.set(0, &List(vec![Some(1)])).is_err());
     list.set_size(1)?;
+    list.set_child_size(2)?;
     list.row_writer()?.set(0, &List(vec![Some(1), Some(2)]))?;
     // The row count is read live, and the cached child view is rebuilt after `children_mut`.
     assert_eq!(list.children().unwrap().row_count()?, 2);
@@ -2827,6 +2830,7 @@ fn test_nested_children_survive_reallocation() -> crate::Result<()> {
         assert_eq!(structs.row_reader()?.get(2999)?.unwrap().key, Some(&8));
         assert_eq!(structs.row_reader()?.get(0)?.unwrap().value, Some("a"));
         list.set_size(1)?;
+        list.set_child_size(5000)?;
         list.row_writer()?.set(0, &List((0..5000).map(Some).collect()))?;
     }
     let lists = chunk.get_vector_at::<List<i32>>(2)?;
@@ -2844,16 +2848,21 @@ fn test_nested_writes_reuse_child_wrappers() -> crate::Result<()> {
     lists.set_size(3000)?;
     // Rows 0 and 1 hold one inner list of one element; the rest hold two of each.
     let elements = 2 + 2 * 2998;
+    // Both child levels are sized past DuckDB's standard vector size before writing.
+    lists.set_child_size(elements)?;
+    lists
+        .children_mut()
+        .unwrap()
+        .get_vector_at_mut::<List<i32>>(0)?
+        .set_child_size(elements)?;
     {
         let mut writer = lists.list_writer()?;
         writer.set(0, &List(vec![Some(List(vec![Some(0)]))]))?;
         writer.set(1, &List(vec![Some(List(vec![Some(1)]))]))?;
-        // Both child levels exceed their initial capacity while one writer appends.
         for row in 2..3000 {
             writer.set(row, &List(vec![Some(List(vec![Some(row as i32), None])), None]))?;
         }
         assert_eq!(writer.child_offset(), elements);
-        writer.finish()?;
     }
     // The cache keeps the writer's wrapper rather than a fresh shared view.
     assert!(lists.children().unwrap().get_untyped_vector_at(0)?.is_writable());
@@ -3010,6 +3019,7 @@ fn test_list_output_child_starts_empty_in_every_callback() -> crate::Result<()> 
         let mut output = output;
         let child_len = output.children().unwrap().get_untyped_vector_at(0)?.len();
         output.set_size(input.len())?;
+        output.set_child_size(2 * input.len())?;
         let mut writer = output.list_writer()?;
         ENTRY_CHILD.lock().unwrap().push((child_len, writer.child_offset()));
         for (row, value) in input.row_reader()?.iter().enumerate() {
@@ -3067,6 +3077,7 @@ fn set_size_initializes_new_rows() -> crate::Result<()> {
         let [lists, strings, arrays, rows, bits, enums] = chunk.get_vector_array_mut([0, 1, 2, 3, 4, 5])?;
         let mut lists = lists.cast::<List<i32>>()?;
         lists.set_size(1)?;
+        lists.set_child_size(1)?;
         lists.row_writer()?.set(0, &List(vec![Some(7)]))?;
         lists.set_size(ROWS)?;
         assert_eq!(lists.children().unwrap().get_untyped_vector_at(0)?.len(), 1);

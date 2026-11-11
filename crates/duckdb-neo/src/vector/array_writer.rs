@@ -163,7 +163,7 @@ mod tests {
         data_chunk::DataChunk,
         environment::{Environment, StorageLocation},
         types::{Array, List, Map},
-        vector::{RowReader, RowWriter},
+        vector::{RowReader, RowWriter, Unknown},
     };
 
     #[test]
@@ -180,33 +180,30 @@ mod tests {
 
         let mut lists = lists.cast::<List<List<String>>>()?;
         lists.set_size(3)?;
-        let nested = List(vec![
-            Some(List(vec![Some(long.clone()), None])),
-            None,
-            Some(List(vec![])),
-        ]);
+        let inner = List(vec![Some(long.clone()), None]);
+        let nested = List(vec![Some(inner.clone()), None, Some(List(vec![]))]);
+        let built = List(vec![Some("built".to_owned())]);
+        // Every level is sized up front: 504 inner lists holding 1003 strings.
+        lists.set_child_size(500 + 3 + 1)?;
+        lists
+            .children_mut()
+            .unwrap()
+            .get_vector_at_mut::<List<String>>(0)?
+            .set_child_size(500 * 2 + 2 + 1)?;
         {
             let mut writer = lists.list_writer()?;
-            // Enough rows to grow the inner lists' rows and elements several times.
-            for _ in 0..500 {
-                writer.push(Some(&nested.0[0].clone().unwrap()))?;
-            }
-            writer.finish_row(0)?;
+            writer.set_elements(0, std::iter::repeat_n(Some(&inner), 500))?;
             RowWriter::set(&mut writer, 1, &nested)?;
-            writer.push_with(|inner, index| {
-                inner.push(Some("built"))?;
-                inner.finish_row(index)
-            })?;
-            writer.finish_row(2)?;
-            writer.finish()?;
+            writer.set_elements(2, [Some(&built)])?;
+            assert!(writer.set_elements(2, [Some(&built)]).is_err());
         }
         let read = lists.get_value_slow(0)?.get::<List<List<String>>>()?.unwrap();
         assert_eq!(read.0.len(), 500);
-        assert!(read.0.iter().all(|inner| inner == &nested.0[0]));
+        assert!(read.0.iter().all(|element| element.as_ref() == Some(&inner)));
         assert_eq!(lists.get_value_slow(1)?.get::<List<List<String>>>()?, Some(nested));
         assert_eq!(
             lists.get_value_slow(2)?.get::<List<List<String>>>()?,
-            Some(List(vec![Some(List(vec![Some("built".to_owned())]))]))
+            Some(List(vec![Some(built)]))
         );
 
         let mut maps = maps.cast::<List<Map<String, List<i32>>>>()?;
@@ -215,12 +212,19 @@ mod tests {
             ("a".to_owned(), Some(List(vec![Some(1), None]))),
             (long.clone(), None),
         ]);
+        maps.set_child_size(300)?;
+        {
+            let mut children = maps.children_mut().unwrap();
+            let mut inner = children.get_vector_at_mut::<Map<String, List<i32>>>(0)?;
+            inner.set_child_size(600)?;
+            let mut entries = inner.children_mut().unwrap();
+            let mut entries = entries.get_vector_at_mut::<Unknown>(0)?;
+            let mut fields = entries.children_mut().unwrap();
+            fields.get_vector_at_mut::<List<i32>>(1)?.set_child_size(600)?;
+        }
         {
             let mut writer = maps.list_writer()?;
-            for _ in 0..300 {
-                writer.push(Some(&map))?;
-            }
-            writer.finish_row(0)?;
+            writer.set_elements(0, std::iter::repeat_n(Some(&map), 300))?;
             writer.set_null(1)?;
         }
         let reader = maps.list_reader()?;
@@ -236,17 +240,13 @@ mod tests {
 
         let mut arrays = arrays.cast::<List<Array<String, 2>>>()?;
         arrays.set_size(1)?;
-        {
-            let mut writer = arrays.list_writer()?;
-            for index in 0..100 {
-                if index % 3 == 0 {
-                    writer.push(None)?;
-                } else {
-                    writer.push(Some(&Array([Some(index.to_string()), None])))?;
-                }
-            }
-            writer.finish_row(0)?;
-        }
+        arrays.set_child_size(100)?;
+        let elements = (0..100)
+            .map(|index| (index % 3 != 0).then(|| Array([Some(index.to_string()), None])))
+            .collect::<Vec<_>>();
+        arrays
+            .list_writer()?
+            .set_elements(0, elements.iter().map(Option::as_ref))?;
         let read = arrays.get_value_slow(0)?.get::<List<Array<String, 2>>>()?.unwrap();
         for (index, element) in read.0.iter().enumerate() {
             let expected = (index % 3 != 0).then(|| Array([Some(index.to_string()), None]));

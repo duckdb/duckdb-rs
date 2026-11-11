@@ -622,12 +622,14 @@ mod tests {
         let mut chunk = DataChunk::create(&conn, &[union_type], true)?;
         let mut vector = chunk.get_vector_at_mut::<Union>(0)?;
         vector.set_size(4)?;
+        vector
+            .children_mut()
+            .unwrap()
+            .get_vector_at_mut::<List<i32>>(1)?
+            .set_child_size(2)?;
         {
             let mut writer = vector.union_writer::<(List<i32>, i32)>()?;
-            let items = writer.member::<0>(0)?;
-            items.push(Some(&1))?;
-            items.push(None)?;
-            items.finish_row(0)?;
+            writer.member::<0>(0)?.set_elements(0, [Some(&1), None])?;
             writer.set::<1>(1, &5)?;
             writer.member::<0>(2)?;
             writer.set_null(3)?;

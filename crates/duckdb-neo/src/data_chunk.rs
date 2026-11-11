@@ -724,11 +724,8 @@ mod tests {
         let mut chunk = DataChunk::create(&conn, &[List::<i64>::logical_type(&conn)?], true)?;
         let mut list = chunk.get_vector_at_mut::<List<i64>>(0)?;
         list.set_size(1)?;
-        {
-            let mut writer = list.list_writer()?;
-            writer.set_elements(0, [Some(&0), Some(&0)])?;
-            writer.finish()?;
-        }
+        list.set_child_size(2)?;
+        list.list_writer()?.set_elements(0, [Some(&0), Some(&0)])?;
         {
             let mut children = list.children_mut().unwrap();
             let child = children.get_vector_at_mut::<i64>(0)?;

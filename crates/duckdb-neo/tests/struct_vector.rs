@@ -96,6 +96,20 @@ fn owned_struct_fields_roundtrip_without_a_write_projection() -> Result<()> {
     let mut vector = chunk.get_vector_at_mut::<Record>(0)?;
     vector.set_size(3)?;
     {
+        // Two records: 4 others, labels and nullable labels, and 6 inner lists of 4 integers.
+        let mut fields = vector.children_mut().unwrap();
+        fields.get_vector_at_mut::<List<Point>>(1)?.set_child_size(4)?;
+        fields.get_vector_at_mut::<List<String>>(2)?.set_child_size(4)?;
+        fields.get_vector_at_mut::<List<String>>(3)?.set_child_size(4)?;
+        let mut matrix = fields.get_vector_at_mut::<List<List<i32>>>(5)?;
+        matrix.set_child_size(6)?;
+        matrix
+            .children_mut()
+            .unwrap()
+            .get_vector_at_mut::<List<i32>>(0)?
+            .set_child_size(4)?;
+    }
+    {
         let mut writer = vector.row_writer()?;
         writer.set_null(2)?;
         writer.set(0, &record())?;
@@ -134,8 +148,8 @@ fn owned_struct_fields_roundtrip_without_a_write_projection() -> Result<()> {
     assert_eq!(vector.get_value_slow(0)?.get::<Record>()?, Some(record()));
     let labels = vector.children().unwrap().get_vector_at::<List<String>>(2)?;
     assert!(labels.row_reader()?.get(1)?.is_none());
-    // The list field writers appended both records' elements.
-    assert!(labels.children().unwrap().get_untyped_vector_at(0)?.len() >= 4);
+    // The list field writers filled both records' elements.
+    assert_eq!(labels.children().unwrap().get_untyped_vector_at(0)?.len(), 4);
     // NULL records null their arrays' elements too.
     let fixed = vector.children().unwrap().get_vector_at::<Array<String, 2>>(4)?;
     assert!(fixed.row_reader()?.get(1)?.is_none());
@@ -412,7 +426,7 @@ fn derived_writer_preserves_nulls_and_copies_strings() -> Result<()> {
 }
 
 #[test]
-fn derived_writer_supports_nested_fields_and_growth() -> Result<()> {
+fn derived_writer_supports_nested_fields() -> Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
     let logical_type = LogicalType::from_text(
@@ -421,21 +435,24 @@ fn derived_writer_supports_nested_fields_and_growth() -> Result<()> {
     )?;
     let mut chunk = DataChunk::create(&conn, &[logical_type], true)?;
     let mut vector = chunk.get_vector_at_mut::<Nested>(0)?;
-    vector.set_size(1)?;
-    vector.row_writer()?.set(
-        0,
-        &Nested {
-            row: Some(Row {
-                name: Some("nested".to_owned()),
-                value: Some(9),
-            }),
-            items: Some(List(vec![Some(4), None, Some(8)])),
-        },
-    )?;
-    // Resizing the parent drops its cached child views, but not the list offset.
     vector.set_size(3)?;
+    vector
+        .children_mut()
+        .unwrap()
+        .get_vector_at_mut::<List<i32>>(1)?
+        .set_child_size(5)?;
     {
         let mut writer = vector.row_writer()?;
+        writer.set(
+            0,
+            &Nested {
+                row: Some(Row {
+                    name: Some("nested".to_owned()),
+                    value: Some(9),
+                }),
+                items: Some(List(vec![Some(4), None, Some(8)])),
+            },
+        )?;
         writer.set_null(1)?;
         writer.set(
             2,
@@ -792,34 +809,17 @@ fn matrix(items: &[i32], inner: &[i32]) -> Matrix {
     }
 }
 
-#[test]
-fn nested_lists_append_across_writers_and_wrappers() -> Result<()> {
-    let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
-    let mut chunk = DataChunk::create(&conn, &[Matrix::logical_type(&conn)?], true)?;
-    {
-        let mut vector = chunk.get_vector_at_mut::<Matrix>(0)?;
-        vector.set_size(3)?;
-        vector.row_writer()?.set(0, &matrix(&[1, 2], &[3, 4]))?;
-        // Resizing keeps the rows written so far, and a new writer appends after them.
-        vector.set_size(3)?;
-        vector.row_writer()?.set(1, &matrix(&[5, 6], &[7, 8]))?;
-    }
-    {
-        let mut vector = chunk.get_vector_at_mut::<Matrix>(0)?;
-        vector.row_writer()?.set(2, &matrix(&[9, 10], &[11, 12]))?;
-    }
-    let vector = chunk.get_vector_at::<Matrix>(0)?;
-    for (index, (items, inner)) in [([1, 2], [3, 4]), ([5, 6], [7, 8]), ([9, 10], [11, 12])]
-        .into_iter()
-        .enumerate()
-    {
-        assert_eq!(
-            vector.get_value_slow(index)?.get::<Matrix>()?,
-            Some(matrix(&items, &inner)),
-            "row {index}"
-        );
-    }
-    Ok(())
+/// Size a `Matrix` vector's list fields for `rows` rows of `matrix(&[_; 2], &[_; 2])`.
+fn size_matrix(vector: &mut duckdb_neo::vector::Vector<'_, Matrix>, rows: usize) -> Result<()> {
+    let mut fields = vector.children_mut().unwrap();
+    fields.get_vector_at_mut::<List<i32>>(0)?.set_child_size(2 * rows)?;
+    let mut matrix = fields.get_vector_at_mut::<List<List<i32>>>(1)?;
+    matrix.set_child_size(rows)?;
+    matrix
+        .children_mut()
+        .unwrap()
+        .get_vector_at_mut::<List<i32>>(0)?
+        .set_child_size(2 * rows)
 }
 
 #[test]
@@ -829,11 +829,13 @@ fn clearing_a_chunk_restarts_nested_lists() -> Result<()> {
     {
         let mut vector = chunk.get_vector_at_mut::<Matrix>(0)?;
         vector.set_size(1)?;
+        size_matrix(&mut vector, 1)?;
         vector.row_writer()?.set(0, &matrix(&[1, 2], &[3, 4]))?;
     }
     chunk.clear()?;
     let mut vector = chunk.get_vector_at_mut::<Matrix>(0)?;
     vector.set_size(1)?;
+    size_matrix(&mut vector, 1)?;
     {
         let mut writer = vector.row_writer()?;
         assert_eq!(writer.items.child_offset(), 0);

@@ -9,7 +9,7 @@ use duckdb_neo::{
     logical_type::LogicalType,
     scalar::{ScalarCallbacks, ScalarFunctionBuilder},
     signature::{FunctionParameter, SignatureBuilder},
-    types::{Decimal, Map, Struct, UncheckedString, Union},
+    types::{Decimal, ListIndex, Map, Struct, UncheckedString, Union},
     vector::{ChildVector, ReadableNativeElement, Unknown, Vector, WritableNativeElement},
 };
 
@@ -99,22 +99,26 @@ fn copy_maps(
     super::ensure(parent.len() == rows, || {
         "MAP row count differs from the input chunk".to_owned()
     })?;
+    field.set_child_size(entries)?;
     let mut writer = field.map_writer()?;
-    writer.reserve(entries)?;
+    let mut next = writer.child_offset();
     for row in 0..parent.len() {
         let Some(entry) = parent.get(row)? else {
             writer.set_null(row)?;
             continue;
         };
+        let start = next;
         for index in entry.offset() as usize..(entry.offset() + entry.length()) as usize {
             let key = keys
                 .get(index)?
                 .ok_or_else(|| Error::invalid_input("MAP key is NULL"))?;
-            writer.push(key, values.get(index)?)?;
+            writer.keys().set(next, key)?;
+            writer.values().set_option(next, values.get(index)?)?;
+            next += 1;
         }
-        writer.finish_row(row)?;
+        writer.set_entry(row, ListIndex::new(start as u64, (next - start) as u64))?;
     }
-    writer.finish()
+    Ok(())
 }
 
 #[inline(never)]
