@@ -234,10 +234,15 @@ unsafe impl ReadableNativeElement for Unknown {
 /// [`VectorWriter::write_slice_as`](crate::vector::VectorWriter::write_slice_as) and
 /// [`VectorWriter::copy_from`](crate::vector::VectorWriter::copy_from).
 ///
+/// These writes copy values unchecked, so a value can lie outside its logical type's range: a
+/// `DECIMAL` value with more digits than the width, or a `TIME` past midnight. Checking every
+/// value would defeat the bulk copy; the caller keeps values in range, and DuckDB's results for
+/// out-of-range values, such as decimal arithmetic that overflows, are undefined.
+///
 /// # Safety
 ///
 /// `Self` must have the size and alignment of one physical slot, and every value of `Self` must be
-/// a valid row of every logical type DuckDB stores in the same physical type.
+/// a row of every logical type DuckDB stores in the same physical type that is safe to read.
 pub unsafe trait PlainNative:
     slot::PlainSlot + WritableNativeElement<Write = Self> + ReadableNativeElement + Copy
 {
@@ -268,7 +273,7 @@ mod slot {
     }
 }
 
-/// Return the physical type of `logical_type`'s slots when every value of that type is a valid row.
+/// Return the physical type of `logical_type`'s slots when every value of that type is safe to read.
 pub(crate) fn plain_slot(logical_type: &LogicalType) -> Result<Option<slot::Slot>> {
     use LogicalTypeID::*;
     use slot::Slot;
@@ -289,6 +294,12 @@ pub(crate) fn plain_slot(logical_type: &LogicalType) -> Result<Option<slot::Slot
         Float => Slot::F32,
         Double => Slot::F64,
         Interval => Slot::Interval,
+        Decimal => match crate::types::DecimalSignature::from_logical_type(logical_type)?.width {
+            ..=4 => Slot::I16,
+            5..=9 => Slot::I32,
+            10..=18 => Slot::I64,
+            _ => Slot::I128,
+        },
         _ => return Ok(None),
     }))
 }
@@ -330,4 +341,8 @@ plain_native!(
     crate::types::TimestampTzValue => I64,
     crate::types::TimestampTzNsValue => I64,
     crate::types::IntervalValue => Interval,
+    crate::types::ShortDecimal => I16,
+    crate::types::WordDecimal => I32,
+    crate::types::LongDecimal => I64,
+    crate::types::HugeDecimal => I128,
 );

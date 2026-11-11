@@ -459,7 +459,8 @@ impl<T: NativeElement> VectorWriter<'_, T> {
     }
 
     /// Copy `values` into rows `offset..offset + values.len()` and mark those rows valid, when DuckDB
-    /// stores this vector's rows as `U`: e.g. `i64` into `BIGINT` or `TIMESTAMP`.
+    /// stores this vector's rows as `U`: e.g. `i64` into `BIGINT`, `TIMESTAMP` or `DECIMAL(18, 3)`.
+    /// Values are not checked against the logical type's range; see [`PlainNative`].
     pub fn write_slice_as<U: PlainNative>(&mut self, offset: usize, values: &[U]) -> Result<()> {
         let logical_type = self.vector().logical_type();
         if super::element::plain_slot(logical_type)? != Some(U::SLOT) {

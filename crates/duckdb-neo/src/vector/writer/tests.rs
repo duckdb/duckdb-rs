@@ -886,16 +886,13 @@ fn writer_writes_slices_as_the_physical_type() -> Result<()> {
     for column in 0..types.len() {
         chunk.get_vector_at_mut::<Unknown>(column)?.set_size(2)?;
     }
-    for column in 0..3 {
+    for column in 0..4 {
         let mut vector = chunk.get_vector_at_mut::<Unknown>(column)?;
         let mut writer = vector.writer()?;
         writer.write_slice_as(0, &[1_000_i64, 2_000])?;
         assert!(writer.write_slice_as(1, &[1_i64, 2]).is_err());
         assert!(writer.write_slice_as(0, &[1_i32]).is_err());
     }
-    // An `i64` can exceed the width of a `DECIMAL(18, 3)`.
-    let mut decimal = chunk.get_vector_at_mut::<Unknown>(3)?;
-    assert!(decimal.writer()?.write_slice_as(0, &[1_i64]).is_err());
     let mut integer = chunk.get_vector_at_mut::<Unknown>(4)?;
     let error = integer.writer()?.write_slice_as(0, &[1_i64]).unwrap_err();
     assert!(error.message.contains("INTEGER rows are not stored as i64"), "{error}");
@@ -921,7 +918,7 @@ fn writer_writes_slices_as_the_physical_type() -> Result<()> {
             "1000",
             "1970-01-01 00:00:00.001",
             "00:00:00.001",
-            "0.000",
+            "1.000",
             "0",
             "00000000-0000-0000-0000-000000000000",
             "a",
