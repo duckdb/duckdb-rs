@@ -363,12 +363,13 @@ fn test_copy_return_stats_requires_statistics() -> crate::Result<()> {
 
 struct RangeSource {
     total_rows: usize,
+    thread_limit: crate::Result<Option<NonZeroUsize>>,
 }
 
 impl CopyFromFunctionCallbacks for RangeSource {
     type BindData = ();
     type LocalState = usize;
-    type GlobalState = ();
+    type GlobalState = usize;
 
     fn bind(
         &self,
@@ -392,17 +393,24 @@ impl CopyFromFunctionCallbacks for RangeSource {
     fn init_global_state(
         &self,
         _bind_data: &Self::BindData,
-        _context: &Context,
-    ) -> crate::Result<(Option<Self::GlobalState>, Option<NonZeroUsize>)> {
-        Ok((None, NonZeroUsize::new(1)))
+        context: &Context,
+    ) -> crate::Result<Option<Self::GlobalState>> {
+        context.config()?;
+        Ok(Some(self.total_rows))
+    }
+
+    fn set_thread_limit(&self, _bind_data: &Self::BindData, context: &Context) -> crate::Result<Option<NonZeroUsize>> {
+        context.config()?;
+        self.thread_limit.clone()
     }
 
     fn init_local_state(
         &self,
         _bind_data: &Self::BindData,
         _context: &Context,
-        _global_state: Option<&Self::GlobalState>,
+        global_state: Option<&Self::GlobalState>,
     ) -> crate::Result<Option<Self::LocalState>> {
+        assert_eq!(global_state, Some(&self.total_rows));
         Ok(Some(0))
     }
 
@@ -438,9 +446,15 @@ pub fn test_copy_from_function() -> crate::Result<()> {
         .expect("Failed to open in-memory database");
     let conn = instance.connect().expect("Failed to connect to database");
 
-    CopyFunctionBuilder::new("rangesource", RangeSource { total_rows: 7 })
-        .register_from(&conn)
-        .expect("Failed to register copy-from function");
+    CopyFunctionBuilder::new(
+        "rangesource",
+        RangeSource {
+            total_rows: 7,
+            thread_limit: Ok(NonZeroUsize::new(1)),
+        },
+    )
+    .register_from(&conn)
+    .expect("Failed to register copy-from function");
 
     conn.execute("CREATE TABLE t(i BIGINT)", Parameters::None)
         .expect("Failed to create table");
@@ -465,6 +479,28 @@ pub fn test_copy_from_function() -> crate::Result<()> {
 
     assert_eq!(values, vec![0, 1, 2, 3, 4, 5, 6]);
 
+    Ok(())
+}
+
+#[test]
+fn test_copy_from_thread_limit_error() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    CopyFunctionBuilder::new(
+        "thread_limit_error",
+        RangeSource {
+            total_rows: 7,
+            thread_limit: Err(crate::Error::invalid_input("thread limit unavailable")),
+        },
+    )
+    .register_from(&conn)?;
+    conn.execute("CREATE TABLE t(i BIGINT)", Parameters::None)?;
+
+    let error = conn
+        .execute("COPY t FROM 'unused.txt' (FORMAT thread_limit_error)", Parameters::None)
+        .unwrap_err();
+    assert_eq!(error.code, crate::error::DuckDBError::InputInvalid);
+    assert!(error.message.contains("thread limit unavailable"), "{error}");
     Ok(())
 }
 

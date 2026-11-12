@@ -19,8 +19,8 @@ use crate::{
     Error, Result,
     bind_arguments::{BindArgument, BindArguments},
     builder_helpers::{
-        OpaqueHandle, ffi_enum_redeclaration, get_bind_data, get_global_state, get_local_state, get_user_data,
-        handle_unwind, into_opaque,
+        CallbackRegistration, OpaqueHandle, ffi_enum_redeclaration, get_bind_data, get_global_state, get_local_state,
+        get_user_data, into_opaque, register_callback,
     },
     check_api_call,
     connection::{Context, FFILink},
@@ -28,7 +28,7 @@ use crate::{
     expression::Expression,
     handles::{TableFunctionBuilderHandle, TableFunctionBuilderLink},
     logical_type::LogicalType,
-    raw::{FromRaw, RawExt},
+    raw::RawExt,
     signature::SignatureBuilder,
     table_function::InitColumnHandle::{Global, Local},
     value::Value,
@@ -78,33 +78,22 @@ impl<'a> BindFunctionHandle<'a> {
     }
 }
 
-unsafe extern "C" fn bind_callback<T: TableFunctionCallbacks>(
+fn bind_callback<T: TableFunctionCallbacks>(
     info: ffi::duckdb_v2_function_bind_info_handle,
     result: ffi::duckdb_v2_table_function_bind_info_handle,
-    context: ffi::duckdb_v2_context_handle,
-    err: *mut ffi::duckdb_v2_error_info_handle,
-) {
-    handle_unwind(
-        || {
-            let user_data = get_user_data!(ffi::duckdb_v2_function_bind_get_user_data, info);
+    context: &Context,
+) -> Result<()> {
+    let user_data = get_user_data!(ffi::duckdb_v2_function_bind_get_user_data, info);
 
-            let arguments = BindArguments { handle: &info };
+    let arguments = BindArguments { handle: &info };
 
-            let bind_data = T::bind(
-                user_data,
-                &unsafe { Context::from_raw(context) },
-                arguments.collect()?,
-                BindFunctionHandle(&result),
-            )?;
+    let bind_data = T::bind(user_data, context, arguments.collect()?, BindFunctionHandle(&result))?;
 
-            check_api_call!(
-                ffi::duckdb_v2_function_bind_set_bind_data,
-                info,
-                &mut into_opaque(bind_data)
-            )
-        },
-        err,
-    );
+    check_api_call!(
+        ffi::duckdb_v2_function_bind_set_bind_data,
+        info,
+        &mut into_opaque(bind_data)
+    )
 }
 
 /// Column layout of the scan's output during the exec callback.
@@ -136,39 +125,33 @@ impl<'a> ExecColumnInfo<'a> {
     }
 }
 
-unsafe extern "C" fn exec_callback<T: TableFunctionCallbacks>(
+fn exec_callback<T: TableFunctionCallbacks>(
     info: ffi::duckdb_v2_table_function_exec_info_handle,
-    context: ffi::duckdb_v2_context_handle,
-    err: *mut ffi::duckdb_v2_error_info_handle,
-) {
-    handle_unwind(
-        || {
-            let user_data = get_user_data!(ffi::duckdb_v2_table_function_exec_get_user_data, info);
-            let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_exec_get_bind_data, info)
-                .ok_or_else(|| Error::api_error("Table function bind data not set"))?;
+    context: &Context,
+) -> Result<()> {
+    let user_data = get_user_data!(ffi::duckdb_v2_table_function_exec_get_user_data, info);
+    let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_exec_get_bind_data, info)
+        .ok_or_else(|| Error::api_error("Table function bind data not set"))?;
 
-            let global_state = get_global_state!(ffi::duckdb_v2_table_function_exec_get_global_state, info);
-            let local_state = get_local_state!(ffi::duckdb_v2_table_function_exec_get_local_state, info);
+    let global_state = get_global_state!(ffi::duckdb_v2_table_function_exec_get_global_state, info);
+    let local_state = get_local_state!(ffi::duckdb_v2_table_function_exec_get_local_state, info);
 
-            let output_chunk = DataChunkRef::new(
-                check_api_call!(ffi::duckdb_v2_table_function_exec_get_output_chunk, info, RET)?,
-                true,
-            )?;
+    let output_chunk = DataChunkRef::new(
+        check_api_call!(ffi::duckdb_v2_table_function_exec_get_output_chunk, info, RET)?,
+        true,
+    )?;
 
-            T::exec(
-                user_data,
-                bind_data,
-                global_state,
-                local_state,
-                &unsafe { Context::from_raw(context) },
-                output_chunk,
-                ExecColumnInfo { handle: &info },
-            )?;
+    T::exec(
+        user_data,
+        bind_data,
+        global_state,
+        local_state,
+        context,
+        output_chunk,
+        ExecColumnInfo { handle: &info },
+    )?;
 
-            Ok(())
-        },
-        err,
-    );
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -280,169 +263,115 @@ impl<'a> PushdownData<'a> {
     }
 }
 
-unsafe extern "C" fn init_global_callback<T: TableFunctionCallbacks>(
+fn init_global_callback<T: TableFunctionCallbacks>(
     info: ffi::duckdb_v2_table_function_init_global_info_handle,
-    context: ffi::duckdb_v2_context_handle,
-    err: *mut ffi::duckdb_v2_error_info_handle,
-) {
-    handle_unwind(
-        || {
-            let user_data = get_user_data!(ffi::duckdb_v2_table_function_init_global_get_user_data, info);
-            let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_init_global_get_bind_data, info)
-                .ok_or_else(|| Error::api_error("Table function bind data not set"))?;
+    context: &Context,
+) -> Result<()> {
+    let user_data = get_user_data!(ffi::duckdb_v2_table_function_init_global_get_user_data, info);
+    let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_init_global_get_bind_data, info)
+        .ok_or_else(|| Error::api_error("Table function bind data not set"))?;
 
-            let (global_state, max_threads) = T::init_global_state(
-                user_data,
-                bind_data,
-                &unsafe { Context::from_raw(context) },
-                InitColumnData { handle: Global(&info) },
-            )?;
+    let (global_state, max_threads) =
+        T::init_global_state(user_data, bind_data, context, InitColumnData { handle: Global(&info) })?;
 
-            if let Some(global_state) = global_state {
-                check_api_call!(
-                    ffi::duckdb_v2_table_function_init_global_set_global_state,
-                    info,
-                    &mut into_opaque(global_state)
-                )?;
-            }
+    if let Some(global_state) = global_state {
+        check_api_call!(
+            ffi::duckdb_v2_table_function_init_global_set_global_state,
+            info,
+            &mut into_opaque(global_state)
+        )?;
+    }
 
-            if let Some(max_threads) = max_threads {
-                check_api_call!(
-                    ffi::duckdb_v2_table_function_init_global_set_max_threads,
-                    info,
-                    max_threads as u64
-                )?;
-            }
+    if let Some(max_threads) = max_threads {
+        check_api_call!(
+            ffi::duckdb_v2_table_function_init_global_set_max_threads,
+            info,
+            max_threads as u64
+        )?;
+    }
 
-            Ok(())
-        },
-        err,
-    );
+    Ok(())
 }
 
-unsafe extern "C" fn init_local_callback<T: TableFunctionCallbacks>(
+fn init_local_callback<T: TableFunctionCallbacks>(
     info: ffi::duckdb_v2_table_function_init_local_info_handle,
-    context: ffi::duckdb_v2_context_handle,
-    err: *mut ffi::duckdb_v2_error_info_handle,
-) {
-    handle_unwind(
-        || {
-            let user_data = get_user_data!(ffi::duckdb_v2_table_function_init_local_get_user_data, info);
-            let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_init_local_get_bind_data, info)
-                .ok_or_else(|| Error::api_error("Table function bind data not set"))?;
-            let global_state = get_global_state!(ffi::duckdb_v2_table_function_init_local_get_global_state, info);
+    context: &Context,
+) -> Result<()> {
+    let user_data = get_user_data!(ffi::duckdb_v2_table_function_init_local_get_user_data, info);
+    let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_init_local_get_bind_data, info)
+        .ok_or_else(|| Error::api_error("Table function bind data not set"))?;
+    let global_state = get_global_state!(ffi::duckdb_v2_table_function_init_local_get_global_state, info);
 
-            let local_state = T::init_local_state(
-                user_data,
-                bind_data,
-                global_state,
-                &unsafe { Context::from_raw(context) },
-                InitColumnData { handle: Local(&info) },
-            )?;
+    let local_state = T::init_local_state(
+        user_data,
+        bind_data,
+        global_state,
+        context,
+        InitColumnData { handle: Local(&info) },
+    )?;
 
-            if let Some(local_state) = local_state {
-                check_api_call!(
-                    ffi::duckdb_v2_table_function_init_local_set_local_state,
-                    info,
-                    &mut into_opaque(local_state)
-                )?;
-            }
+    if let Some(local_state) = local_state {
+        check_api_call!(
+            ffi::duckdb_v2_table_function_init_local_set_local_state,
+            info,
+            &mut into_opaque(local_state)
+        )?;
+    }
 
-            Ok(())
-        },
-        err,
-    );
+    Ok(())
 }
 
-unsafe extern "C" fn progress_callback<T: TableFunctionCallbacks>(
+fn progress_callback<T: TableFunctionCallbacks>(
     info: ffi::duckdb_v2_table_function_progress_info_handle,
-    context: ffi::duckdb_v2_context_handle,
-    err: *mut ffi::duckdb_v2_error_info_handle,
-) {
-    handle_unwind(
-        || {
-            let user_data = get_user_data!(ffi::duckdb_v2_table_function_progress_get_user_data, info);
-            let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_progress_get_bind_data, info)
-                .ok_or_else(|| Error::api_error("Table function bind data not set"))?;
-            let global_state = get_global_state!(ffi::duckdb_v2_table_function_progress_get_global_state, info);
+    context: &Context,
+) -> Result<()> {
+    let user_data = get_user_data!(ffi::duckdb_v2_table_function_progress_get_user_data, info);
+    let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_progress_get_bind_data, info)
+        .ok_or_else(|| Error::api_error("Table function bind data not set"))?;
+    let global_state = get_global_state!(ffi::duckdb_v2_table_function_progress_get_global_state, info);
 
-            if let Some(progress) = T::progress(user_data, bind_data, global_state, &unsafe {
-                Context::from_raw(context)
-            })? {
-                check_api_call!(ffi::duckdb_v2_table_function_progress_set_progress, info, progress)?
-            }
+    if let Some(progress) = T::progress(user_data, bind_data, global_state, context)? {
+        check_api_call!(ffi::duckdb_v2_table_function_progress_set_progress, info, progress)?
+    }
 
-            Ok(())
-        },
-        err,
-    );
+    Ok(())
 }
 
-unsafe extern "C" fn filter_pushdown_callback<T: TableFilterPushdownCallbacks>(
+fn filter_pushdown_callback<T: TableFilterPushdownCallbacks>(
     info: ffi::duckdb_v2_table_function_filter_pushdown_info_handle,
-    context: ffi::duckdb_v2_context_handle,
-    err: *mut ffi::duckdb_v2_error_info_handle,
-) {
-    handle_unwind(
-        || {
-            let user_data = get_user_data!(ffi::duckdb_v2_table_function_filter_pushdown_get_user_data, info);
-            let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_filter_pushdown_get_bind_data, info)
-                .ok_or_else(|| Error::api_error("Table function bind data not set"))?;
+    context: &Context,
+) -> Result<()> {
+    let user_data = get_user_data!(ffi::duckdb_v2_table_function_filter_pushdown_get_user_data, info);
+    let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_filter_pushdown_get_bind_data, info)
+        .ok_or_else(|| Error::api_error("Table function bind data not set"))?;
 
-            T::pushdown_filter(
-                user_data,
-                bind_data,
-                &unsafe { Context::from_raw(context) },
-                PushdownData { handle: &info },
-            )
-        },
-        err,
-    );
+    T::pushdown_filter(user_data, bind_data, context, PushdownData { handle: &info })
 }
 
-unsafe extern "C" fn get_bind_info_callback<T: TableGetBindInfoCallbacks>(
+fn get_bind_info_callback<T: TableGetBindInfoCallbacks>(
     info: ffi::duckdb_v2_table_function_get_bind_info_info_handle,
-    context: ffi::duckdb_v2_context_handle,
-    err: *mut ffi::duckdb_v2_error_info_handle,
-) {
-    handle_unwind(
-        || {
-            let user_data = get_user_data!(ffi::duckdb_v2_table_function_get_bind_info_get_user_data, info);
-            let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_get_bind_info_get_bind_data, info)
-                .ok_or_else(|| Error::api_error("Table function bind data not set"))?;
+    context: &Context,
+) -> Result<()> {
+    let user_data = get_user_data!(ffi::duckdb_v2_table_function_get_bind_info_get_user_data, info);
+    let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_get_bind_info_get_bind_data, info)
+        .ok_or_else(|| Error::api_error("Table function bind data not set"))?;
 
-            T::bind_info(
-                user_data,
-                bind_data,
-                &unsafe { Context::from_raw(context) },
-                BindInfoApi { handle: &info },
-            )
-        },
-        err,
-    );
+    T::bind_info(user_data, bind_data, context, BindInfoApi { handle: &info })
 }
 
-unsafe extern "C" fn claim_batch_callback<T: TableClaimBatchCallbacks>(
+fn claim_batch_callback<T: TableClaimBatchCallbacks>(
     info: ffi::duckdb_v2_table_function_claim_batch_info_handle,
-    context: ffi::duckdb_v2_context_handle,
-    err: *mut ffi::duckdb_v2_error_info_handle,
-) {
-    handle_unwind(
-        || {
-            let user_data = get_user_data!(ffi::duckdb_v2_table_function_claim_batch_get_user_data, info);
-            let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_claim_batch_get_bind_data, info)
-                .ok_or_else(|| Error::api_error("Table function bind data not set"))?;
-            let local_state = get_local_state!(ffi::duckdb_v2_table_function_claim_batch_get_local_state, info);
-            let global_state = get_global_state!(ffi::duckdb_v2_table_function_claim_batch_get_global_state, info);
+    context: &Context,
+) -> Result<()> {
+    let user_data = get_user_data!(ffi::duckdb_v2_table_function_claim_batch_get_user_data, info);
+    let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_claim_batch_get_bind_data, info)
+        .ok_or_else(|| Error::api_error("Table function bind data not set"))?;
+    let local_state = get_local_state!(ffi::duckdb_v2_table_function_claim_batch_get_local_state, info);
+    let global_state = get_global_state!(ffi::duckdb_v2_table_function_claim_batch_get_global_state, info);
 
-            let result = T::claim_batch(user_data, bind_data, global_state, local_state, &unsafe {
-                Context::from_raw(context)
-            })?;
+    let result = T::claim_batch(user_data, bind_data, global_state, local_state, context)?;
 
-            check_api_call!(ffi::duckdb_v2_table_function_claim_batch_set_claimed, info, result)
-        },
-        err,
-    );
+    check_api_call!(ffi::duckdb_v2_table_function_claim_batch_set_claimed, info, result)
 }
 
 ffi_enum_redeclaration! {
@@ -560,66 +489,49 @@ impl<'a> PartitioningData<'a> {
     }
 }
 
-unsafe extern "C" fn partition_data_callback<T: TablePartitioningCallbacks>(
+fn partition_data_callback<T: TablePartitioningCallbacks>(
     info: ffi::duckdb_v2_table_function_partition_data_info_handle,
-    context: ffi::duckdb_v2_context_handle,
-    err: *mut ffi::duckdb_v2_error_info_handle,
-) {
-    handle_unwind(
-        || {
-            let user_data = get_user_data!(ffi::duckdb_v2_table_function_partition_data_get_user_data, info);
-            let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_partition_data_get_bind_data, info)
-                .ok_or_else(|| Error::api_error("Table function bind data not set"))?;
-            let global_state = get_global_state!(ffi::duckdb_v2_table_function_partition_data_get_global_state, info);
-            let local_state = get_local_state!(ffi::duckdb_v2_table_function_partition_data_get_local_state, info);
+    context: &Context,
+) -> Result<()> {
+    let user_data = get_user_data!(ffi::duckdb_v2_table_function_partition_data_get_user_data, info);
+    let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_partition_data_get_bind_data, info)
+        .ok_or_else(|| Error::api_error("Table function bind data not set"))?;
+    let global_state = get_global_state!(ffi::duckdb_v2_table_function_partition_data_get_global_state, info);
+    let local_state = get_local_state!(ffi::duckdb_v2_table_function_partition_data_get_local_state, info);
 
-            let batch_index = T::partition_data(
-                user_data,
-                bind_data,
-                global_state,
-                local_state,
-                &unsafe { Context::from_raw(context) },
-                PartitionData { handle: &info },
-            )?;
+    let batch_index = T::partition_data(
+        user_data,
+        bind_data,
+        global_state,
+        local_state,
+        context,
+        PartitionData { handle: &info },
+    )?;
 
-            // DuckDB validates the batch index on every call, whether or not a
-            // downstream operator ends up using it.
-            check_api_call!(
-                ffi::duckdb_v2_table_function_partition_data_set_batch_index,
-                info,
-                batch_index as u64
-            )
-        },
-        err,
-    );
+    // DuckDB validates the batch index on every call, whether or not a
+    // downstream operator ends up using it.
+    check_api_call!(
+        ffi::duckdb_v2_table_function_partition_data_set_batch_index,
+        info,
+        batch_index as u64
+    )
 }
 
-unsafe extern "C" fn partitioning_callback<T: TablePartitioningCallbacks>(
+fn partitioning_callback<T: TablePartitioningCallbacks>(
     info: ffi::duckdb_v2_table_function_partitioning_info_handle,
-    context: ffi::duckdb_v2_context_handle,
-    err: *mut ffi::duckdb_v2_error_info_handle,
-) {
-    handle_unwind(
-        || {
-            let user_data = get_user_data!(ffi::duckdb_v2_table_function_partitioning_get_user_data, info);
-            let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_partitioning_get_bind_data, info)
-                .ok_or_else(|| Error::api_error("Table function bind data not set"))?;
+    context: &Context,
+) -> Result<()> {
+    let user_data = get_user_data!(ffi::duckdb_v2_table_function_partitioning_get_user_data, info);
+    let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_partitioning_get_bind_data, info)
+        .ok_or_else(|| Error::api_error("Table function bind data not set"))?;
 
-            let partition_info = T::partitioning(
-                user_data,
-                bind_data,
-                &unsafe { Context::from_raw(context) },
-                PartitioningData { handle: &info },
-            )?;
+    let partition_info = T::partitioning(user_data, bind_data, context, PartitioningData { handle: &info })?;
 
-            check_api_call!(
-                ffi::duckdb_v2_table_function_partitioning_set_partition_info,
-                info,
-                partition_info.into()
-            )
-        },
-        err,
-    );
+    check_api_call!(
+        ffi::duckdb_v2_table_function_partitioning_set_partition_info,
+        info,
+        partition_info.into()
+    )
 }
 
 /// Builds and registers a user-defined table function.
@@ -629,12 +541,12 @@ pub struct TableFunctionBuilder<T: TableFunctionCallbacks> {
     signature: SignatureBuilder,
     user_data: OpaqueHandle<T>,
     projection_pushdown: bool,
-    progress_callback: ffi::duckdb_v2_table_function_progress_callback_fn,
-    filter_pushdown_callback: ffi::duckdb_v2_table_function_filter_pushdown_callback_fn,
-    partition_data_callback: ffi::duckdb_v2_table_function_partition_data_callback_fn,
-    partitioning_callback: ffi::duckdb_v2_table_function_partitioning_callback_fn,
-    claim_batch_callback: ffi::duckdb_v2_table_function_claim_batch_callback_fn,
-    get_bind_info_callback: ffi::duckdb_v2_table_function_get_bind_info_callback_fn,
+    progress_callback: Option<CallbackRegistration<TableFunctionBuilderHandle>>,
+    filter_pushdown_callback: Option<CallbackRegistration<TableFunctionBuilderHandle>>,
+    partition_data_callback: Option<CallbackRegistration<TableFunctionBuilderHandle>>,
+    partitioning_callback: Option<CallbackRegistration<TableFunctionBuilderHandle>>,
+    claim_batch_callback: Option<CallbackRegistration<TableFunctionBuilderHandle>>,
+    get_bind_info_callback: Option<CallbackRegistration<TableFunctionBuilderHandle>>,
 }
 
 impl<T: TableFilterPushdownCallbacks> TableFunctionBuilder<T> {
@@ -643,7 +555,15 @@ impl<T: TableFilterPushdownCallbacks> TableFunctionBuilder<T> {
     /// Without this DuckDB never offers the function its filters and applies
     /// all of them itself.
     pub fn with_filter_pushdown(mut self) -> Self {
-        self.filter_pushdown_callback = Some(filter_pushdown_callback::<T>);
+        self.filter_pushdown_callback = Some(|handle| {
+            register_callback! {
+                T = TableFilterPushdownCallbacks,
+                cb = ffi::duckdb_v2_table_function_set_filter_pushdown_callback,
+                handle = handle.raw(),
+                args = (info: ffi::duckdb_v2_table_function_filter_pushdown_info_handle),
+                exec = filter_pushdown_callback,
+            }
+        });
         self
     }
 }
@@ -652,7 +572,15 @@ impl<T: TableGetBindInfoCallbacks> TableFunctionBuilder<T> {
     /// Enable column identifiers and reader metadata through [`TableGetBindInfoCallbacks`].
     /// Without this callback, multi-file readers match columns by name only.
     pub fn with_get_bind_info(mut self) -> Self {
-        self.get_bind_info_callback = Some(get_bind_info_callback::<T>);
+        self.get_bind_info_callback = Some(|handle| {
+            register_callback! {
+                T = TableGetBindInfoCallbacks,
+                cb = ffi::duckdb_v2_table_function_set_get_bind_info_callback,
+                handle = handle.raw(),
+                args = (info: ffi::duckdb_v2_table_function_get_bind_info_info_handle),
+                exec = get_bind_info_callback,
+            }
+        });
         self
     }
 }
@@ -660,7 +588,15 @@ impl<T: TableGetBindInfoCallbacks> TableFunctionBuilder<T> {
 impl<T: TableClaimBatchCallbacks> TableFunctionBuilder<T> {
     /// Enable batch-based scanning through [`TableClaimBatchCallbacks`].
     pub fn with_claim_batch(mut self) -> Self {
-        self.claim_batch_callback = Some(claim_batch_callback::<T>);
+        self.claim_batch_callback = Some(|handle| {
+            register_callback! {
+                T = TableClaimBatchCallbacks,
+                cb = ffi::duckdb_v2_table_function_set_claim_batch_callback,
+                handle = handle.raw(),
+                args = (info: ffi::duckdb_v2_table_function_claim_batch_info_handle),
+                exec = claim_batch_callback,
+            }
+        });
         self
     }
 }
@@ -669,8 +605,24 @@ impl<T: TablePartitioningCallbacks> TableFunctionBuilder<T> {
     /// Register both callbacks; DuckDB requires partition data when partitioning is set.
     /// Batch indices preserve insertion order; single-value partitions can optimize aggregation.
     pub fn with_partitioning(mut self) -> Self {
-        self.partition_data_callback = Some(partition_data_callback::<T>);
-        self.partitioning_callback = Some(partitioning_callback::<T>);
+        self.partition_data_callback = Some(|handle| {
+            register_callback! {
+                T = TablePartitioningCallbacks,
+                cb = ffi::duckdb_v2_table_function_set_partition_data_callback,
+                handle = handle.raw(),
+                args = (info: ffi::duckdb_v2_table_function_partition_data_info_handle),
+                exec = partition_data_callback,
+            }
+        });
+        self.partitioning_callback = Some(|handle| {
+            register_callback! {
+                T = TablePartitioningCallbacks,
+                cb = ffi::duckdb_v2_table_function_set_partitioning_callback,
+                handle = handle.raw(),
+                args = (info: ffi::duckdb_v2_table_function_partitioning_info_handle),
+                exec = partitioning_callback,
+            }
+        });
         self
     }
 }
@@ -706,7 +658,15 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
     ///
     /// Without this DuckDB treats the function's progress as unknown.
     pub fn with_progress(mut self) -> Self {
-        self.progress_callback = Some(progress_callback::<T>);
+        self.progress_callback = Some(|handle| {
+            register_callback! {
+                T = TableFunctionCallbacks,
+                cb = ffi::duckdb_v2_table_function_set_progress_callback,
+                handle = handle.raw(),
+                args = (info: ffi::duckdb_v2_table_function_progress_info_handle),
+                exec = progress_callback,
+            }
+        });
         self
     }
 
@@ -735,81 +695,69 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
             &mut self.user_data.to_handle()
         )?;
 
-        check_api_call!(
-            ffi::duckdb_v2_table_function_set_init_local_callback,
-            handle.raw(),
-            Some(init_local_callback::<T>)
-        )?;
+        register_callback! {
+            T = TableFunctionCallbacks,
+            cb = ffi::duckdb_v2_table_function_set_init_local_callback,
+            handle = handle.raw(),
+            args = (info: ffi::duckdb_v2_table_function_init_local_info_handle),
+            exec = init_local_callback,
+        }?;
 
-        check_api_call!(
-            ffi::duckdb_v2_table_function_set_init_global_callback,
-            handle.raw(),
-            Some(init_global_callback::<T>)
-        )?;
+        register_callback! {
+            T = TableFunctionCallbacks,
+            cb = ffi::duckdb_v2_table_function_set_init_global_callback,
+            handle = handle.raw(),
+            args = (info: ffi::duckdb_v2_table_function_init_global_info_handle),
+            exec = init_global_callback,
+        }?;
 
         // Only registered through `with_progress`: once a callback is set,
         // DuckDB reports 0% instead of unknown progress when it sets no value.
-        if self.progress_callback.is_some() {
-            check_api_call!(
-                ffi::duckdb_v2_table_function_set_progress_callback,
-                handle.raw(),
-                self.progress_callback
-            )?;
+        if let Some(register) = self.progress_callback {
+            register(handle)?;
         }
 
         // Only registered through `with_filter_pushdown`, so that DuckDB does
         // not ask a function that cannot claim any filter.
-        if self.filter_pushdown_callback.is_some() {
-            check_api_call!(
-                ffi::duckdb_v2_table_function_set_filter_pushdown_callback,
-                handle.raw(),
-                self.filter_pushdown_callback
-            )?;
+        if let Some(register) = self.filter_pushdown_callback {
+            register(handle)?;
         }
 
         // Partitioning requires partition data; register both only when requested.
         // The partition data callback also controls batch ordering.
-        if self.partition_data_callback.is_some() {
-            check_api_call!(
-                ffi::duckdb_v2_table_function_set_partition_data_callback,
-                handle.raw(),
-                self.partition_data_callback
-            )?;
-
-            check_api_call!(
-                ffi::duckdb_v2_table_function_set_partitioning_callback,
-                handle.raw(),
-                self.partitioning_callback
-            )?;
+        if let Some(register) = self.partition_data_callback {
+            register(handle)?;
+        }
+        if let Some(register) = self.partitioning_callback {
+            register(handle)?;
         }
 
-        if self.claim_batch_callback.is_some() {
-            check_api_call!(
-                ffi::duckdb_v2_table_function_set_claim_batch_callback,
-                handle.raw(),
-                self.claim_batch_callback
-            )?;
+        if let Some(register) = self.claim_batch_callback {
+            register(handle)?;
         }
 
-        if self.get_bind_info_callback.is_some() {
-            check_api_call!(
-                ffi::duckdb_v2_table_function_set_get_bind_info_callback,
-                handle.raw(),
-                self.get_bind_info_callback
-            )?;
+        if let Some(register) = self.get_bind_info_callback {
+            register(handle)?;
         }
 
-        check_api_call!(
-            ffi::duckdb_v2_table_function_set_bind_callback,
-            handle.raw(),
-            Some(bind_callback::<T>)
-        )?;
+        register_callback! {
+            T = TableFunctionCallbacks,
+            cb = ffi::duckdb_v2_table_function_set_bind_callback,
+            handle = handle.raw(),
+            args = (
+                info: ffi::duckdb_v2_function_bind_info_handle,
+                result: ffi::duckdb_v2_table_function_bind_info_handle,
+            ),
+            exec = bind_callback,
+        }?;
 
-        check_api_call!(
-            ffi::duckdb_v2_table_function_set_exec_callback,
-            handle.raw(),
-            Some(exec_callback::<T>)
-        )
+        register_callback! {
+            T = TableFunctionCallbacks,
+            cb = ffi::duckdb_v2_table_function_set_exec_callback,
+            handle = handle.raw(),
+            args = (info: ffi::duckdb_v2_table_function_exec_info_handle),
+            exec = exec_callback,
+        }
     }
 
     /// Register through a connection, consuming the builder.

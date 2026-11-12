@@ -1,8 +1,8 @@
 //! Register instance-wide settings with typed defaults and update callbacks.
 
 use crate::{
-    FromRaw, Result,
-    builder_helpers::{OpaqueHandle, get_user_data, handle_unwind},
+    Result,
+    builder_helpers::{OpaqueHandle, get_user_data, register_callback},
     connection::{Context, SettingScope},
     error::check_api_call,
     ffi,
@@ -12,33 +12,21 @@ use crate::{
     value::Value,
 };
 
-unsafe extern "C" fn update_callback<T: CustomOptionCallbacks>(
+fn update_callback<T: CustomOptionCallbacks>(
     info: ffi::duckdb_v2_custom_option_update_info_handle,
-    context: ffi::duckdb_v2_context_handle,
-    err: *mut ffi::duckdb_v2_error_info_handle,
-) {
-    handle_unwind(
-        || {
-            let user_data = get_user_data!(ffi::duckdb_v2_custom_option_update_get_user_data, info);
+    context: &Context,
+) -> Result<()> {
+    let user_data = get_user_data!(ffi::duckdb_v2_custom_option_update_get_user_data, info);
 
-            let scope = check_api_call!(ffi::duckdb_v2_custom_option_update_get_scope, info, RET)?;
+    let scope = check_api_call!(ffi::duckdb_v2_custom_option_update_get_scope, info, RET)?;
 
-            let value = check_api_call!(ffi::duckdb_v2_custom_option_update_get_value, info, RET)
-                .map(|handle| Value { handle })?;
+    let value =
+        check_api_call!(ffi::duckdb_v2_custom_option_update_get_value, info, RET).map(|handle| Value { handle })?;
 
-            let is_reset = check_api_call!(ffi::duckdb_v2_custom_option_update_is_reset, info, RET)?;
+    let is_reset = check_api_call!(ffi::duckdb_v2_custom_option_update_is_reset, info, RET)?;
 
-            let result = T::update(
-                user_data,
-                &unsafe { Context::from_raw(context) },
-                value,
-                scope.try_into()?,
-                is_reset,
-            )?;
-            check_api_call!(ffi::duckdb_v2_custom_option_update_set_value, info, result.raw())
-        },
-        err,
-    );
+    let result = T::update(user_data, context, value, scope.try_into()?, is_reset)?;
+    check_api_call!(ffi::duckdb_v2_custom_option_update_set_value, info, result.raw())
 }
 
 /// Builds a typed custom setting with GLOBAL and SESSION writes enabled by default.
@@ -153,11 +141,13 @@ impl<T: CustomOptionCallbacks> CustomOptionBuilder<T> {
             !self.no_session
         )?;
 
-        check_api_call!(
-            ffi::duckdb_v2_custom_option_set_update_callback,
-            handle.raw(),
-            Some(update_callback::<T>)
-        )
+        register_callback! {
+            T = CustomOptionCallbacks,
+            cb = ffi::duckdb_v2_custom_option_set_update_callback,
+            handle = handle.raw(),
+            args = (info: ffi::duckdb_v2_custom_option_update_info_handle),
+            exec = update_callback,
+        }
     }
 
     /// Registers the option instance-wide, transferring its callback state to DuckDB until the instance closes.

@@ -8,7 +8,6 @@
 //! digits, so encoding is linear and every encoded length decodes unambiguously.
 
 use std::{
-    num::NonZeroUsize,
     ops::Range,
     sync::{
         Mutex,
@@ -322,7 +321,7 @@ impl CopyFromFunctionCallbacks for Base56 {
         &self,
         (file_path, columns): &Self::BindData,
         context: &Context,
-    ) -> Result<(Option<Self::GlobalState>, Option<NonZeroUsize>)> {
+    ) -> Result<Option<Self::GlobalState>> {
         let fs = FileSystem::new(context)?;
         let file = FileBuilder::new(&fs, file_path)?.read().open()?;
         let mut data = vec![0; file.size()? as usize];
@@ -341,7 +340,7 @@ impl CopyFromFunctionCallbacks for Base56 {
             next_row: AtomicUsize::new(expected.len()),
             data,
         };
-        Ok((Some(reader), None))
+        Ok(Some(reader))
     }
 
     fn init_local_state(

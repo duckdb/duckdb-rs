@@ -540,6 +540,35 @@ impl ScalarCallbacks for OptionalLifecycle {
 }
 
 #[test]
+fn test_scalar_deferred_registration_error() -> Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let fail: CallbackRegistration<ScalarFunctionBuilderHandle> =
+        |_| Err(crate::Error::invalid_input("deferred registration failed"));
+
+    for phase in ["bind", "init", "resolve_types"] {
+        let mut builder = ScalarFunctionBuilder::new(
+            "deferred_failure",
+            SignatureBuilder::new().return_type(i32::logical_type(&conn)?),
+            OptionalLifecycle {
+                bind: false,
+                init: false,
+            },
+        );
+        match phase {
+            "bind" => builder.bind_callback = Some(fail),
+            "init" => builder.init_callback = Some(fail),
+            "resolve_types" => builder.resolve_types_callback = Some(fail),
+            _ => unreachable!(),
+        }
+        let error = builder.register(&conn).unwrap_err();
+        assert_eq!(error.code, crate::error::DuckDBError::InputInvalid);
+        assert_eq!(error.message, "deferred registration failed");
+    }
+    Ok(())
+}
+
+#[test]
 fn test_scalar_optional_bind_and_init() -> Result<()> {
     let env = Environment::new()?;
     let instance = env.open(StorageLocation::InMemory)?;
