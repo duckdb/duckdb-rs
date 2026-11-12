@@ -458,7 +458,6 @@ impl CopyToBindInfo {
     pub fn get_column(&self, index: usize) -> Result<(&str, LogicalType)> {
         let mut name = ffi::duckdb_v2_str::default();
 
-        // TODO: Update lifetime
         check_api_call!(
             ffi::duckdb_v2_copy_to_bind_get_column_name,
             self.handle,
@@ -466,14 +465,14 @@ impl CopyToBindInfo {
             &mut name
         )?;
 
-        let borrowed_type = check_api_call!(
+        let owned_type = check_api_call!(
             ffi::duckdb_v2_copy_to_bind_get_column_type,
             self.handle,
             index as u64,
             RET
         )?;
 
-        let logical_type = LogicalType { handle: borrowed_type };
+        let logical_type = LogicalType { handle: owned_type };
 
         Ok((DuckDBStr::from_raw(name).as_str().unwrap_or_default(), logical_type))
     }
