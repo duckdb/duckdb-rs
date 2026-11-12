@@ -534,12 +534,13 @@ fn bind_from_callback<T: CopyFromFunctionCallbacks>(
 
     let bind_info = CopyFromBindInfo { handle: info };
 
-    let (bind_data, cardinality) = T::bind(
+    let bind_data = T::bind(
         user_data,
         context,
         DuckDBStr::from_raw(file_path).as_str().unwrap_or_default(),
         &bind_info,
     )?;
+    let cardinality = T::cardinality(user_data, &bind_data, context)?;
 
     check_api_call!(
         ffi::duckdb_v2_copy_from_bind_set_bind_data,
@@ -766,12 +767,12 @@ pub trait CopyFromFunctionCallbacks: Send + Sync + 'static {
     type GlobalState: Any + Send + Sync;
 
     /// **Bind:** inspect the file path, target columns, and options; create shared bind data.
-    fn bind(
-        &self,
-        context: &Context,
-        file_path: &str,
-        bind_info: &CopyFromBindInfo,
-    ) -> Result<(Self::BindData, Option<CopyFromCardinality>)>;
+    fn bind(&self, context: &Context, file_path: &str, bind_info: &CopyFromBindInfo) -> Result<Self::BindData>;
+
+    /// **Cardinality:** optionally report the estimated or exact row count after binding.
+    fn cardinality(&self, _bind_data: &Self::BindData, _context: &Context) -> Result<Option<CopyFromCardinality>> {
+        Ok(None)
+    }
 
     /// **Execute:** produce one batch of rows in the output chunk.
     ///

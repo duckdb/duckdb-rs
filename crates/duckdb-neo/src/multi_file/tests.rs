@@ -96,8 +96,8 @@ impl TableFunctionCallbacks for KvReader {
         _bind_data: &Self::BindData,
         _context: &Context,
         _column_data: InitColumnData<'_>,
-    ) -> Result<(Option<Self::GlobalState>, Option<usize>)> {
-        Ok((Some(AtomicUsize::new(0)), None))
+    ) -> Result<Option<Self::GlobalState>> {
+        Ok(Some(AtomicUsize::new(0)))
     }
 
     fn init_local_state(

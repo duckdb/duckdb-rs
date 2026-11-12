@@ -363,11 +363,12 @@ fn test_copy_return_stats_requires_statistics() -> crate::Result<()> {
 
 struct RangeSource {
     total_rows: usize,
+    cardinality_error: bool,
     thread_limit: crate::Result<Option<NonZeroUsize>>,
 }
 
 impl CopyFromFunctionCallbacks for RangeSource {
-    type BindData = ();
+    type BindData = usize;
     type LocalState = usize;
     type GlobalState = usize;
 
@@ -376,18 +377,22 @@ impl CopyFromFunctionCallbacks for RangeSource {
         _context: &Context,
         _file_path: &str,
         bind_info: &super::CopyFromBindInfo,
-    ) -> crate::Result<(Self::BindData, Option<CopyFromCardinality>)> {
+    ) -> crate::Result<Self::BindData> {
         assert_eq!(bind_info.column_count()?, 1);
         assert_eq!(bind_info.get_column(0)?.0, "i");
         assert_eq!(bind_info.get_column(0)?.1.id()?, LogicalTypeID::BigInt);
+        Ok(self.total_rows)
+    }
 
-        Ok((
-            (),
-            Some(CopyFromCardinality {
-                cardinality: self.total_rows,
-                is_exact: true,
-            }),
-        ))
+    fn cardinality(&self, bind_data: &Self::BindData, context: &Context) -> crate::Result<Option<CopyFromCardinality>> {
+        context.config()?;
+        if self.cardinality_error {
+            return Err(crate::Error::invalid_input("cardinality unavailable"));
+        }
+        Ok(Some(CopyFromCardinality {
+            cardinality: *bind_data,
+            is_exact: true,
+        }))
     }
 
     fn init_global_state(
@@ -450,6 +455,7 @@ pub fn test_copy_from_function() -> crate::Result<()> {
         "rangesource",
         RangeSource {
             total_rows: 7,
+            cardinality_error: false,
             thread_limit: Ok(NonZeroUsize::new(1)),
         },
     )
@@ -483,24 +489,27 @@ pub fn test_copy_from_function() -> crate::Result<()> {
 }
 
 #[test]
-fn test_copy_from_thread_limit_error() -> crate::Result<()> {
-    let env = Environment::new()?;
-    let conn = env.open(StorageLocation::InMemory)?.connect()?;
-    CopyFunctionBuilder::new(
-        "thread_limit_error",
-        RangeSource {
-            total_rows: 7,
-            thread_limit: Err(crate::Error::invalid_input("thread limit unavailable")),
-        },
-    )
-    .register_from(&conn)?;
-    conn.execute("CREATE TABLE t(i BIGINT)", Parameters::None)?;
+fn test_copy_from_callback_errors() -> crate::Result<()> {
+    for (cardinality_error, message) in [(true, "cardinality unavailable"), (false, "thread limit unavailable")] {
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+        CopyFunctionBuilder::new(
+            "callback_error",
+            RangeSource {
+                total_rows: 7,
+                cardinality_error,
+                thread_limit: Err(crate::Error::invalid_input("thread limit unavailable")),
+            },
+        )
+        .register_from(&conn)?;
+        conn.execute("CREATE TABLE t(i BIGINT)", Parameters::None)?;
 
-    let error = conn
-        .execute("COPY t FROM 'unused.txt' (FORMAT thread_limit_error)", Parameters::None)
-        .unwrap_err();
-    assert_eq!(error.code, crate::error::DuckDBError::InputInvalid);
-    assert!(error.message.contains("thread limit unavailable"), "{error}");
+        let error = conn
+            .execute("COPY t FROM 'unused.txt' (FORMAT callback_error)", Parameters::None)
+            .unwrap_err();
+        assert_eq!(error.code, crate::error::DuckDBError::InputInvalid);
+        assert!(error.message.contains(message), "{error}");
+    }
     Ok(())
 }
 
@@ -588,7 +597,7 @@ impl CopyFromFunctionCallbacks for EchoFormat {
         _context: &Context,
         file_path: &str,
         bind_info: &super::CopyFromBindInfo,
-    ) -> crate::Result<(Self::BindData, Option<CopyFromCardinality>)> {
+    ) -> crate::Result<Self::BindData> {
         assert_eq!(bind_info.file_path()?, file_path);
         assert_eq!(bind_info.column_count()?, 1);
         assert_eq!(bind_info.get_column(0)?.0, "i");
@@ -596,7 +605,7 @@ impl CopyFromFunctionCallbacks for EchoFormat {
         let (name, value) = bind_info.get_option(0)?;
         assert_eq!(name, "custom_option");
         assert_eq!(String::from_value(&value)?, Some("roundtrip".to_string()));
-        Ok(((), None))
+        Ok(())
     }
 
     fn init_local_state(

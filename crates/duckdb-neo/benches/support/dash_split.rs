@@ -70,14 +70,20 @@ impl TableFunctionCallbacks for DashSplit {
         bind_data: &Self::BindData,
         _context: &Context,
         _column_data: InitColumnData<'_>,
-    ) -> Result<(Option<Self::GlobalState>, Option<usize>)> {
+    ) -> Result<Option<Self::GlobalState>> {
         let cursor = (bind_data.limit > 0).then_some((0, 0));
-        Ok((
-            Some(SplitScan {
-                cursor: Mutex::new(cursor),
-            }),
-            Some(1),
-        ))
+        Ok(Some(SplitScan {
+            cursor: Mutex::new(cursor),
+        }))
+    }
+
+    fn set_thread_limit(
+        &self,
+        _bind_data: &Self::BindData,
+        _context: &Context,
+        _column_data: InitColumnData<'_>,
+    ) -> Result<Option<usize>> {
+        Ok(Some(1))
     }
 
     fn init_local_state(

@@ -271,8 +271,8 @@ fn init_global_callback<T: TableFunctionCallbacks>(
     let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_init_global_get_bind_data, info)
         .ok_or_else(|| Error::api_error("Table function bind data not set"))?;
 
-    let (global_state, max_threads) =
-        T::init_global_state(user_data, bind_data, context, InitColumnData { handle: Global(&info) })?;
+    let global_state = T::init_global_state(user_data, bind_data, context, InitColumnData { handle: Global(&info) })?;
+    let max_threads = T::set_thread_limit(user_data, bind_data, context, InitColumnData { handle: Global(&info) })?;
 
     if let Some(global_state) = global_state {
         check_api_call!(
@@ -823,14 +823,24 @@ pub trait TableFunctionCallbacks: Send + Sync + 'static {
         Ok(None)
     }
 
-    /// **Initialize global:** create shared scan state and an optional thread limit.
+    /// **Thread limit:** optionally cap the number of execution workers; zero is rejected.
+    fn set_thread_limit(
+        &self,
+        _bind_data: &Self::BindData,
+        _context: &Context,
+        _column_data: InitColumnData<'_>,
+    ) -> Result<Option<usize>> {
+        Ok(None)
+    }
+
+    /// **Initialize global:** create shared scan state.
     fn init_global_state(
         &self,
         _bind_data: &Self::BindData,
         _context: &Context,
         _column_data: InitColumnData<'_>,
-    ) -> Result<(Option<Self::GlobalState>, Option<usize>)> {
-        Ok((None, None))
+    ) -> Result<Option<Self::GlobalState>> {
+        Ok(None)
     }
 }
 

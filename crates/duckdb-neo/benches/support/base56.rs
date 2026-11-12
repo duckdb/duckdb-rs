@@ -20,8 +20,7 @@ use duckdb_neo::{
     column_data_collection::ColumnDataCollection,
     connection::{Connection, Context},
     copy_function::{
-        CopyFromBindInfo, CopyFromCardinality, CopyFromFunctionCallbacks, CopyFunctionBuilder, CopyToBindInfo,
-        CopyToFunctionCallbacks,
+        CopyFromBindInfo, CopyFromFunctionCallbacks, CopyFunctionBuilder, CopyToBindInfo, CopyToFunctionCallbacks,
     },
     data_chunk::DataChunkRef,
     file::{File, FileBuilder, FileSystem},
@@ -305,16 +304,11 @@ impl CopyFromFunctionCallbacks for Base56 {
     type LocalState = Base56Batch;
     type GlobalState = Base56Reader;
 
-    fn bind(
-        &self,
-        _context: &Context,
-        file_path: &str,
-        bind_info: &CopyFromBindInfo,
-    ) -> Result<(Self::BindData, Option<CopyFromCardinality>)> {
+    fn bind(&self, _context: &Context, file_path: &str, bind_info: &CopyFromBindInfo) -> Result<Self::BindData> {
         let columns = (0..bind_info.column_count()?)
             .map(|index| Column::from_logical_type(&bind_info.get_column(index)?.1))
             .collect::<Result<_>>()?;
-        Ok(((file_path.to_owned(), columns), None))
+        Ok((file_path.to_owned(), columns))
     }
 
     fn init_global_state(
