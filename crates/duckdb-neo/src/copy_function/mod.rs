@@ -15,7 +15,7 @@ use crate::ffi_str::DuckDBStr;
 use crate::{
     Error, Result,
     builder_helpers::{
-        CallbackRegistration, OpaqueHandle, get_bind_data, get_global_state, get_init_data, get_local_state,
+        OpaqueHandle, callback_trampoline, get_bind_data, get_global_state, get_init_data, get_local_state,
         get_opaque_data_ref, get_opaque_data_ref_mut, get_user_data, into_opaque, register_callback,
     },
     check_api_call,
@@ -204,7 +204,7 @@ pub struct CopyFunctionBuilder<T> {
     name: String,
     progress: bool,
     fallback_file_extension: Option<String>,
-    statistics_callback: Option<CallbackRegistration<CopyFunctionBuilderHandle>>,
+    statistics_callback: ffi::duckdb_v2_copy_to_statistics_callback_fn,
 }
 
 impl<T> CopyFunctionBuilder<T> {
@@ -257,15 +257,11 @@ impl<T: CopyToStatisticsCallbacks> CopyFunctionBuilder<T> {
     ///
     /// Without this DuckDB rejects `COPY ... TO` statements that ask for `RETURN_STATS`.
     pub fn with_statistics(mut self) -> Self {
-        self.statistics_callback = Some(|handle| {
-            register_callback! {
-                T = CopyToStatisticsCallbacks,
-                cb = ffi::duckdb_v2_copy_to_set_statistics_callback,
-                handle = handle.raw(),
-                args = (info: ffi::duckdb_v2_copy_to_statistics_info_handle),
-                exec = statistics_callback,
-            }
-        });
+        self.statistics_callback = callback_trampoline! {
+            T = CopyToStatisticsCallbacks,
+            args = (info: ffi::duckdb_v2_copy_to_statistics_info_handle),
+            exec = statistics_callback,
+        };
         self
     }
 }
@@ -314,8 +310,12 @@ impl<T: CopyToFunctionCallbacks> CopyFunctionBuilder<T> {
             exec = batch_size_callback,
         }?;
 
-        if let Some(register) = self.statistics_callback {
-            register(handle)?;
+        if self.statistics_callback.is_some() {
+            check_api_call!(
+                ffi::duckdb_v2_copy_to_set_statistics_callback,
+                handle.raw(),
+                self.statistics_callback
+            )?;
         }
 
         register_callback! {
@@ -568,7 +568,7 @@ fn init_global_from_callback<T: CopyFromFunctionCallbacks>(
         .ok_or_else(|| Error::api_error("COPY FROM bind data not set"))?;
 
     let global_state = T::init_global_state(user_data, context, bind_data)?;
-    let max_threads = T::set_thread_limit(user_data, context, bind_data)?;
+    let max_threads = T::max_threads(user_data, context, bind_data, global_state.as_ref())?;
 
     if let Some(global_state) = global_state {
         check_api_call!(
@@ -785,13 +785,19 @@ pub trait CopyFromFunctionCallbacks: Send + Sync + 'static {
         output: DataChunkRef<'_>,
     ) -> Result<()>;
 
-    /// **Thread limit:** optionally cap the number of execution workers.
-    fn set_thread_limit(&self, _context: &Context, _bind_data: &Self::BindData) -> Result<Option<NonZeroUsize>> {
+    /// **Initialize global:** create shared read state.
+    fn init_global_state(&self, _context: &Context, _bind_data: &Self::BindData) -> Result<Option<Self::GlobalState>> {
         Ok(None)
     }
 
-    /// **Initialize global:** create shared read state.
-    fn init_global_state(&self, _context: &Context, _bind_data: &Self::BindData) -> Result<Option<Self::GlobalState>> {
+    /// **Max threads:** maximum parallel workers, called after `init_global_state`.
+    /// `None` keeps DuckDB's default of 1.
+    fn max_threads(
+        &self,
+        _context: &Context,
+        _bind_data: &Self::BindData,
+        _global_state: Option<&Self::GlobalState>,
+    ) -> Result<Option<NonZeroUsize>> {
         Ok(None)
     }
 

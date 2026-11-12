@@ -14,7 +14,7 @@ use crate::ffi;
 
 use crate::bind_arguments::BindArguments;
 use crate::builder_helpers::{
-    ArgCount, CallbackRegistration, OpaqueHandle, get_bind_data, get_opaque_data_ref_mut, get_user_data, into_opaque,
+    ArgCount, OpaqueHandle, callback_trampoline, get_bind_data, get_opaque_data_ref_mut, get_user_data, into_opaque,
     into_opaque_eq, register_callback,
 };
 use crate::data_chunk::{RowCount, VectorCollection};
@@ -117,26 +117,22 @@ pub struct ScalarFunctionBuilder<T: ScalarCallbacks> {
     signature: SignatureBuilder,
     properties: HashMap<ffi::DUCKDB_V2_FUNCTION_PROPERTY_KEY, ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE>,
     user_data: OpaqueHandle<T>,
-    bind_callback: Option<CallbackRegistration<ScalarFunctionBuilderHandle>>,
-    init_callback: Option<CallbackRegistration<ScalarFunctionBuilderHandle>>,
-    resolve_types_callback: Option<CallbackRegistration<ScalarFunctionBuilderHandle>>,
+    bind_callback: ffi::duckdb_v2_scalar_function_bind_callback_fn,
+    init_callback: ffi::duckdb_v2_scalar_function_init_callback_fn,
+    resolve_types_callback: ffi::duckdb_v2_scalar_function_resolve_types_callback_fn,
 }
 
 impl<T: ScalarBindCallbacks> ScalarFunctionBuilder<T> {
     /// Enable [`ScalarBindCallbacks::bind`] for each call site.
     pub fn with_bind(mut self) -> Self {
-        self.bind_callback = Some(|handle| {
-            register_callback! {
-                T = ScalarBindCallbacks,
-                cb = ffi::duckdb_v2_scalar_function_set_bind_callback,
-                handle = handle.raw(),
-                args = (
-                    info: ffi::duckdb_v2_function_bind_info_handle,
-                    result: ffi::duckdb_v2_scalar_function_bind_info_handle,
-                ),
-                exec = bind_callback,
-            }
-        });
+        self.bind_callback = callback_trampoline! {
+            T = ScalarBindCallbacks,
+            args = (
+                info: ffi::duckdb_v2_function_bind_info_handle,
+                result: ffi::duckdb_v2_scalar_function_bind_info_handle,
+            ),
+            exec = bind_callback,
+        };
         self
     }
 }
@@ -144,15 +140,11 @@ impl<T: ScalarBindCallbacks> ScalarFunctionBuilder<T> {
 impl<T: ScalarInitCallbacks> ScalarFunctionBuilder<T> {
     /// Enable [`ScalarInitCallbacks::init`] for each executing worker.
     pub fn with_init(mut self) -> Self {
-        self.init_callback = Some(|handle| {
-            register_callback! {
-                T = ScalarInitCallbacks,
-                cb = ffi::duckdb_v2_scalar_function_set_init_callback,
-                handle = handle.raw(),
-                args = (info: ffi::duckdb_v2_scalar_function_init_info_handle),
-                exec = init_callback,
-            }
-        });
+        self.init_callback = callback_trampoline! {
+            T = ScalarInitCallbacks,
+            args = (info: ffi::duckdb_v2_scalar_function_init_info_handle),
+            exec = init_callback,
+        };
         self
     }
 }
@@ -163,18 +155,14 @@ impl<T: ScalarResolveTypesCallbacks> ScalarFunctionBuilder<T> {
     /// Required when the signature declares an ANY return type: DuckDB rejects
     /// the registration without it.
     pub fn with_resolve_types(mut self) -> Self {
-        self.resolve_types_callback = Some(|handle| {
-            register_callback! {
-                T = ScalarResolveTypesCallbacks,
-                cb = ffi::duckdb_v2_scalar_function_set_resolve_types_callback,
-                handle = handle.raw(),
-                args = (
-                    info: ffi::duckdb_v2_function_bind_info_handle,
-                    result: ffi::duckdb_v2_scalar_function_resolve_types_info_handle,
-                ),
-                exec = resolve_types_callback,
-            }
-        });
+        self.resolve_types_callback = callback_trampoline! {
+            T = ScalarResolveTypesCallbacks,
+            args = (
+                info: ffi::duckdb_v2_function_bind_info_handle,
+                result: ffi::duckdb_v2_scalar_function_resolve_types_info_handle,
+            ),
+            exec = resolve_types_callback,
+        };
         self
     }
 }
@@ -223,11 +211,19 @@ impl<T: ScalarCallbacks> ScalarFunctionBuilder<T> {
             &mut self.user_data.to_handle()
         )?;
 
-        if let Some(register) = self.bind_callback {
-            register(handle)?;
+        if self.bind_callback.is_some() {
+            check_api_call!(
+                ffi::duckdb_v2_scalar_function_set_bind_callback,
+                handle.raw(),
+                self.bind_callback
+            )?;
         }
-        if let Some(register) = self.init_callback {
-            register(handle)?;
+        if self.init_callback.is_some() {
+            check_api_call!(
+                ffi::duckdb_v2_scalar_function_set_init_callback,
+                handle.raw(),
+                self.init_callback
+            )?;
         }
 
         register_callback! {
@@ -240,8 +236,12 @@ impl<T: ScalarCallbacks> ScalarFunctionBuilder<T> {
 
         // Only registered through `with_resolve_types`, so that DuckDB rejects
         // an ANY return type no callback resolves.
-        if let Some(register) = self.resolve_types_callback {
-            register(handle)?;
+        if self.resolve_types_callback.is_some() {
+            check_api_call!(
+                ffi::duckdb_v2_scalar_function_set_resolve_types_callback,
+                handle.raw(),
+                self.resolve_types_callback
+            )?;
         }
 
         Ok(())

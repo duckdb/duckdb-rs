@@ -16,7 +16,7 @@ use crate::ffi;
 use crate::{
     Result,
     bind_arguments::BindArguments,
-    builder_helpers::{CallbackRegistration, OpaqueHandle, get_user_data, register_callback},
+    builder_helpers::{OpaqueHandle, callback_trampoline, get_user_data},
     check_api_call,
     connection::{Context, FFILink},
     handles::{PragmaFunctionBuilderHandle, PragmaFunctionBuilderLink},
@@ -45,6 +45,12 @@ fn exec_callback<T: PragmaExecCallbacks>(
     T::exec(user_data, context, BindArguments { handle: &info })
 }
 
+#[derive(Debug)]
+enum PragmaCallback {
+    Query(ffi::duckdb_v2_pragma_function_query_callback_fn),
+    Exec(ffi::duckdb_v2_pragma_function_exec_callback_fn),
+}
+
 /// Builds and registers a user-defined pragma.
 ///
 /// Create a query pragma with [`Self::query`] or an exec pragma with
@@ -53,7 +59,7 @@ fn exec_callback<T: PragmaExecCallbacks>(
 pub struct PragmaFunctionBuilder<T: Send + Sync + 'static> {
     name: String,
     signature: SignatureBuilder,
-    callback: CallbackRegistration<PragmaFunctionBuilderHandle>,
+    callback: PragmaCallback,
     user_data: OpaqueHandle<T>,
 }
 
@@ -63,18 +69,14 @@ impl<T: PragmaQueryCallbacks> PragmaFunctionBuilder<T> {
         Self::new(
             name,
             signature,
-            |handle| {
-                register_callback! {
-                    T = PragmaQueryCallbacks,
-                    cb = ffi::duckdb_v2_pragma_function_set_query_callback,
-                    handle = handle.raw(),
-                    args = (
-                        info: ffi::duckdb_v2_function_bind_info_handle,
-                        result: ffi::duckdb_v2_pragma_function_query_info_handle,
-                    ),
-                    exec = query_callback,
-                }
-            },
+            PragmaCallback::Query(callback_trampoline! {
+                T = PragmaQueryCallbacks,
+                args = (
+                    info: ffi::duckdb_v2_function_bind_info_handle,
+                    result: ffi::duckdb_v2_pragma_function_query_info_handle,
+                ),
+                exec = query_callback,
+            }),
             implementation,
         )
     }
@@ -86,27 +88,18 @@ impl<T: PragmaExecCallbacks> PragmaFunctionBuilder<T> {
         Self::new(
             name,
             signature,
-            |handle| {
-                register_callback! {
-                    T = PragmaExecCallbacks,
-                    cb = ffi::duckdb_v2_pragma_function_set_exec_callback,
-                    handle = handle.raw(),
-                    args = (info: ffi::duckdb_v2_function_bind_info_handle),
-                    exec = exec_callback,
-                }
-            },
+            PragmaCallback::Exec(callback_trampoline! {
+                T = PragmaExecCallbacks,
+                args = (info: ffi::duckdb_v2_function_bind_info_handle),
+                exec = exec_callback,
+            }),
             implementation,
         )
     }
 }
 
 impl<T: Send + Sync + 'static> PragmaFunctionBuilder<T> {
-    fn new(
-        name: impl Into<String>,
-        signature: SignatureBuilder,
-        callback: CallbackRegistration<PragmaFunctionBuilderHandle>,
-        implementation: T,
-    ) -> Self {
+    fn new(name: impl Into<String>, signature: SignatureBuilder, callback: PragmaCallback, implementation: T) -> Self {
         Self {
             name: name.into(),
             signature,
@@ -134,7 +127,18 @@ impl<T: Send + Sync + 'static> PragmaFunctionBuilder<T> {
             &mut self.user_data.to_handle()
         )?;
 
-        (self.callback)(handle)
+        match self.callback {
+            PragmaCallback::Query(callback) => {
+                check_api_call!(
+                    ffi::duckdb_v2_pragma_function_set_query_callback,
+                    handle.raw(),
+                    callback
+                )
+            }
+            PragmaCallback::Exec(callback) => {
+                check_api_call!(ffi::duckdb_v2_pragma_function_set_exec_callback, handle.raw(), callback)
+            }
+        }
     }
 
     /// Register through a [`Connection`](crate::connection::Connection),

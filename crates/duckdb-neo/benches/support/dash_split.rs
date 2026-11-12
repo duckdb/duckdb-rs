@@ -77,15 +77,6 @@ impl TableFunctionCallbacks for DashSplit {
         }))
     }
 
-    fn set_thread_limit(
-        &self,
-        _context: &Context,
-        _bind_data: &Self::BindData,
-        _column_data: InitColumnData<'_>,
-    ) -> Result<Option<usize>> {
-        Ok(Some(1))
-    }
-
     fn init_local_state(
         &self,
         _context: &Context,

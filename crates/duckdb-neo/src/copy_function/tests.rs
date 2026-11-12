@@ -364,7 +364,7 @@ fn test_copy_return_stats_requires_statistics() -> crate::Result<()> {
 struct RangeSource {
     total_rows: usize,
     cardinality_error: bool,
-    thread_limit: crate::Result<Option<NonZeroUsize>>,
+    max_threads: crate::Result<Option<NonZeroUsize>>,
 }
 
 impl CopyFromFunctionCallbacks for RangeSource {
@@ -404,9 +404,15 @@ impl CopyFromFunctionCallbacks for RangeSource {
         Ok(Some(self.total_rows))
     }
 
-    fn set_thread_limit(&self, context: &Context, _bind_data: &Self::BindData) -> crate::Result<Option<NonZeroUsize>> {
+    fn max_threads(
+        &self,
+        context: &Context,
+        _bind_data: &Self::BindData,
+        global_state: Option<&Self::GlobalState>,
+    ) -> crate::Result<Option<NonZeroUsize>> {
         context.config()?;
-        self.thread_limit.clone()
+        assert_eq!(global_state, Some(&self.total_rows));
+        self.max_threads.clone()
     }
 
     fn init_local_state(
@@ -456,7 +462,7 @@ pub fn test_copy_from_function() -> crate::Result<()> {
         RangeSource {
             total_rows: 7,
             cardinality_error: false,
-            thread_limit: Ok(NonZeroUsize::new(1)),
+            max_threads: Ok(NonZeroUsize::new(1)),
         },
     )
     .register_from(&conn)
@@ -490,7 +496,7 @@ pub fn test_copy_from_function() -> crate::Result<()> {
 
 #[test]
 fn test_copy_from_callback_errors() -> crate::Result<()> {
-    for (cardinality_error, message) in [(true, "cardinality unavailable"), (false, "thread limit unavailable")] {
+    for (cardinality_error, message) in [(true, "cardinality unavailable"), (false, "max threads unavailable")] {
         let env = Environment::new()?;
         let conn = env.open(StorageLocation::InMemory)?.connect()?;
         CopyFunctionBuilder::new(
@@ -498,7 +504,7 @@ fn test_copy_from_callback_errors() -> crate::Result<()> {
             RangeSource {
                 total_rows: 7,
                 cardinality_error,
-                thread_limit: Err(crate::Error::invalid_input("thread limit unavailable")),
+                max_threads: Err(crate::Error::invalid_input("max threads unavailable")),
             },
         )
         .register_from(&conn)?;

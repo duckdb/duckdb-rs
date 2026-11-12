@@ -11,7 +11,7 @@
 //! by a [`MultiFileFunctionBuilder`](crate::multi_file::MultiFileFunctionBuilder)
 //! can also implement [`TableGetBindInfoCallbacks`] and [`TableClaimBatchCallbacks`].
 
-use std::any::Any;
+use std::{any::Any, num::NonZeroUsize};
 
 use crate::ffi;
 
@@ -19,7 +19,7 @@ use crate::{
     Error, Result,
     bind_arguments::{BindArgument, BindArguments},
     builder_helpers::{
-        CallbackRegistration, OpaqueHandle, ffi_enum_redeclaration, get_bind_data, get_global_state, get_local_state,
+        OpaqueHandle, callback_trampoline, ffi_enum_redeclaration, get_bind_data, get_global_state, get_local_state,
         get_user_data, into_opaque, register_callback,
     },
     check_api_call,
@@ -272,7 +272,13 @@ fn init_global_callback<T: TableFunctionCallbacks>(
         .ok_or_else(|| Error::api_error("Table function bind data not set"))?;
 
     let global_state = T::init_global_state(user_data, context, bind_data, InitColumnData { handle: Global(&info) })?;
-    let max_threads = T::set_thread_limit(user_data, context, bind_data, InitColumnData { handle: Global(&info) })?;
+    let max_threads = T::max_threads(
+        user_data,
+        context,
+        bind_data,
+        global_state.as_ref(),
+        InitColumnData { handle: Global(&info) },
+    )?;
 
     if let Some(global_state) = global_state {
         check_api_call!(
@@ -286,7 +292,7 @@ fn init_global_callback<T: TableFunctionCallbacks>(
         check_api_call!(
             ffi::duckdb_v2_table_function_init_global_set_max_threads,
             info,
-            max_threads as u64
+            max_threads.get() as u64
         )?;
     }
 
@@ -541,12 +547,12 @@ pub struct TableFunctionBuilder<T: TableFunctionCallbacks> {
     signature: SignatureBuilder,
     user_data: OpaqueHandle<T>,
     projection_pushdown: bool,
-    progress_callback: Option<CallbackRegistration<TableFunctionBuilderHandle>>,
-    filter_pushdown_callback: Option<CallbackRegistration<TableFunctionBuilderHandle>>,
-    partition_data_callback: Option<CallbackRegistration<TableFunctionBuilderHandle>>,
-    partitioning_callback: Option<CallbackRegistration<TableFunctionBuilderHandle>>,
-    claim_batch_callback: Option<CallbackRegistration<TableFunctionBuilderHandle>>,
-    get_bind_info_callback: Option<CallbackRegistration<TableFunctionBuilderHandle>>,
+    progress_callback: ffi::duckdb_v2_table_function_progress_callback_fn,
+    filter_pushdown_callback: ffi::duckdb_v2_table_function_filter_pushdown_callback_fn,
+    partition_data_callback: ffi::duckdb_v2_table_function_partition_data_callback_fn,
+    partitioning_callback: ffi::duckdb_v2_table_function_partitioning_callback_fn,
+    claim_batch_callback: ffi::duckdb_v2_table_function_claim_batch_callback_fn,
+    get_bind_info_callback: ffi::duckdb_v2_table_function_get_bind_info_callback_fn,
 }
 
 impl<T: TableFilterPushdownCallbacks> TableFunctionBuilder<T> {
@@ -555,15 +561,11 @@ impl<T: TableFilterPushdownCallbacks> TableFunctionBuilder<T> {
     /// Without this DuckDB never offers the function its filters and applies
     /// all of them itself.
     pub fn with_filter_pushdown(mut self) -> Self {
-        self.filter_pushdown_callback = Some(|handle| {
-            register_callback! {
-                T = TableFilterPushdownCallbacks,
-                cb = ffi::duckdb_v2_table_function_set_filter_pushdown_callback,
-                handle = handle.raw(),
-                args = (info: ffi::duckdb_v2_table_function_filter_pushdown_info_handle),
-                exec = filter_pushdown_callback,
-            }
-        });
+        self.filter_pushdown_callback = callback_trampoline! {
+            T = TableFilterPushdownCallbacks,
+            args = (info: ffi::duckdb_v2_table_function_filter_pushdown_info_handle),
+            exec = filter_pushdown_callback,
+        };
         self
     }
 }
@@ -572,15 +574,11 @@ impl<T: TableGetBindInfoCallbacks> TableFunctionBuilder<T> {
     /// Enable column identifiers and reader metadata through [`TableGetBindInfoCallbacks`].
     /// Without this callback, multi-file readers match columns by name only.
     pub fn with_get_bind_info(mut self) -> Self {
-        self.get_bind_info_callback = Some(|handle| {
-            register_callback! {
-                T = TableGetBindInfoCallbacks,
-                cb = ffi::duckdb_v2_table_function_set_get_bind_info_callback,
-                handle = handle.raw(),
-                args = (info: ffi::duckdb_v2_table_function_get_bind_info_info_handle),
-                exec = get_bind_info_callback,
-            }
-        });
+        self.get_bind_info_callback = callback_trampoline! {
+            T = TableGetBindInfoCallbacks,
+            args = (info: ffi::duckdb_v2_table_function_get_bind_info_info_handle),
+            exec = get_bind_info_callback,
+        };
         self
     }
 }
@@ -588,15 +586,11 @@ impl<T: TableGetBindInfoCallbacks> TableFunctionBuilder<T> {
 impl<T: TableClaimBatchCallbacks> TableFunctionBuilder<T> {
     /// Enable batch-based scanning through [`TableClaimBatchCallbacks`].
     pub fn with_claim_batch(mut self) -> Self {
-        self.claim_batch_callback = Some(|handle| {
-            register_callback! {
-                T = TableClaimBatchCallbacks,
-                cb = ffi::duckdb_v2_table_function_set_claim_batch_callback,
-                handle = handle.raw(),
-                args = (info: ffi::duckdb_v2_table_function_claim_batch_info_handle),
-                exec = claim_batch_callback,
-            }
-        });
+        self.claim_batch_callback = callback_trampoline! {
+            T = TableClaimBatchCallbacks,
+            args = (info: ffi::duckdb_v2_table_function_claim_batch_info_handle),
+            exec = claim_batch_callback,
+        };
         self
     }
 }
@@ -605,24 +599,16 @@ impl<T: TablePartitioningCallbacks> TableFunctionBuilder<T> {
     /// Register both callbacks; DuckDB requires partition data when partitioning is set.
     /// Batch indices preserve insertion order; single-value partitions can optimize aggregation.
     pub fn with_partitioning(mut self) -> Self {
-        self.partition_data_callback = Some(|handle| {
-            register_callback! {
-                T = TablePartitioningCallbacks,
-                cb = ffi::duckdb_v2_table_function_set_partition_data_callback,
-                handle = handle.raw(),
-                args = (info: ffi::duckdb_v2_table_function_partition_data_info_handle),
-                exec = partition_data_callback,
-            }
-        });
-        self.partitioning_callback = Some(|handle| {
-            register_callback! {
-                T = TablePartitioningCallbacks,
-                cb = ffi::duckdb_v2_table_function_set_partitioning_callback,
-                handle = handle.raw(),
-                args = (info: ffi::duckdb_v2_table_function_partitioning_info_handle),
-                exec = partitioning_callback,
-            }
-        });
+        self.partition_data_callback = callback_trampoline! {
+            T = TablePartitioningCallbacks,
+            args = (info: ffi::duckdb_v2_table_function_partition_data_info_handle),
+            exec = partition_data_callback,
+        };
+        self.partitioning_callback = callback_trampoline! {
+            T = TablePartitioningCallbacks,
+            args = (info: ffi::duckdb_v2_table_function_partitioning_info_handle),
+            exec = partitioning_callback,
+        };
         self
     }
 }
@@ -658,15 +644,11 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
     ///
     /// Without this DuckDB treats the function's progress as unknown.
     pub fn with_progress(mut self) -> Self {
-        self.progress_callback = Some(|handle| {
-            register_callback! {
-                T = TableFunctionCallbacks,
-                cb = ffi::duckdb_v2_table_function_set_progress_callback,
-                handle = handle.raw(),
-                args = (info: ffi::duckdb_v2_table_function_progress_info_handle),
-                exec = progress_callback,
-            }
-        });
+        self.progress_callback = callback_trampoline! {
+            T = TableFunctionCallbacks,
+            args = (info: ffi::duckdb_v2_table_function_progress_info_handle),
+            exec = progress_callback,
+        };
         self
     }
 
@@ -713,31 +695,54 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
 
         // Only registered through `with_progress`: once a callback is set,
         // DuckDB reports 0% instead of unknown progress when it sets no value.
-        if let Some(register) = self.progress_callback {
-            register(handle)?;
+        if self.progress_callback.is_some() {
+            check_api_call!(
+                ffi::duckdb_v2_table_function_set_progress_callback,
+                handle.raw(),
+                self.progress_callback
+            )?;
         }
 
         // Only registered through `with_filter_pushdown`, so that DuckDB does
         // not ask a function that cannot claim any filter.
-        if let Some(register) = self.filter_pushdown_callback {
-            register(handle)?;
+        if self.filter_pushdown_callback.is_some() {
+            check_api_call!(
+                ffi::duckdb_v2_table_function_set_filter_pushdown_callback,
+                handle.raw(),
+                self.filter_pushdown_callback
+            )?;
         }
 
         // Partitioning requires partition data; register both only when requested.
         // The partition data callback also controls batch ordering.
-        if let Some(register) = self.partition_data_callback {
-            register(handle)?;
-        }
-        if let Some(register) = self.partitioning_callback {
-            register(handle)?;
+        if self.partition_data_callback.is_some() {
+            check_api_call!(
+                ffi::duckdb_v2_table_function_set_partition_data_callback,
+                handle.raw(),
+                self.partition_data_callback
+            )?;
+
+            check_api_call!(
+                ffi::duckdb_v2_table_function_set_partitioning_callback,
+                handle.raw(),
+                self.partitioning_callback
+            )?;
         }
 
-        if let Some(register) = self.claim_batch_callback {
-            register(handle)?;
+        if self.claim_batch_callback.is_some() {
+            check_api_call!(
+                ffi::duckdb_v2_table_function_set_claim_batch_callback,
+                handle.raw(),
+                self.claim_batch_callback
+            )?;
         }
 
-        if let Some(register) = self.get_bind_info_callback {
-            register(handle)?;
+        if self.get_bind_info_callback.is_some() {
+            check_api_call!(
+                ffi::duckdb_v2_table_function_set_get_bind_info_callback,
+                handle.raw(),
+                self.get_bind_info_callback
+            )?;
         }
 
         register_callback! {
@@ -823,16 +828,6 @@ pub trait TableFunctionCallbacks: Send + Sync + 'static {
         Ok(None)
     }
 
-    /// **Thread limit:** optionally cap the number of execution workers; zero is rejected.
-    fn set_thread_limit(
-        &self,
-        _context: &Context,
-        _bind_data: &Self::BindData,
-        _column_data: InitColumnData<'_>,
-    ) -> Result<Option<usize>> {
-        Ok(None)
-    }
-
     /// **Initialize global:** create shared scan state.
     fn init_global_state(
         &self,
@@ -840,6 +835,18 @@ pub trait TableFunctionCallbacks: Send + Sync + 'static {
         _bind_data: &Self::BindData,
         _column_data: InitColumnData<'_>,
     ) -> Result<Option<Self::GlobalState>> {
+        Ok(None)
+    }
+
+    /// **Max threads:** maximum parallel workers, called after `init_global_state`.
+    /// `None` keeps DuckDB's default of 1.
+    fn max_threads(
+        &self,
+        _context: &Context,
+        _bind_data: &Self::BindData,
+        _global_state: Option<&Self::GlobalState>,
+        _column_data: InitColumnData<'_>,
+    ) -> Result<Option<NonZeroUsize>> {
         Ok(None)
     }
 }

@@ -1,6 +1,9 @@
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicBool, AtomicUsize, Ordering},
+use std::{
+    num::NonZeroUsize,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    },
 };
 
 use crate::{
@@ -83,16 +86,18 @@ fn test_table_function() -> Result<()> {
             }))
         }
 
-        fn set_thread_limit(
+        fn max_threads(
             &self,
             context: &Context,
             bind_data: &Self::BindData,
+            global_state: Option<&Self::GlobalState>,
             column_data: InitColumnData<'_>,
-        ) -> Result<Option<usize>> {
+        ) -> Result<Option<NonZeroUsize>> {
             assert_eq!(bind_data.size, 10);
+            assert_eq!(global_state.map(|state| state.max_rounds), Some(1_000));
             assert_eq!(column_data.count()?, 1);
             context.config()?;
-            Ok(Some(12))
+            Ok(NonZeroUsize::new(12))
         }
 
         fn init_local_state(
@@ -306,13 +311,14 @@ fn test_table_function_partitioning() -> Result<()> {
             Ok(Some(AtomicUsize::new(0)))
         }
 
-        fn set_thread_limit(
+        fn max_threads(
             &self,
             _context: &Context,
             _bind_data: &Self::BindData,
+            _global_state: Option<&Self::GlobalState>,
             _column_data: InitColumnData<'_>,
-        ) -> Result<Option<usize>> {
-            Ok(Some(4))
+        ) -> Result<Option<NonZeroUsize>> {
+            Ok(NonZeroUsize::new(4))
         }
 
         fn init_local_state(
@@ -547,7 +553,7 @@ struct ProjectionBindData {
 
 struct ProjectionScan {
     states: bool,
-    thread_limit: Result<Option<usize>>,
+    max_threads: Result<Option<NonZeroUsize>>,
     counters: [Arc<TableLifecycleCounter>; 4],
     mappings: Arc<Mutex<Vec<Vec<usize>>>>,
     _lifetime: TableLifecycleToken,
@@ -589,13 +595,15 @@ impl TableFunctionCallbacks for ProjectionScan {
         Ok(self.states.then(|| TableLifecycleToken::new(&self.counters[2])))
     }
 
-    fn set_thread_limit(
+    fn max_threads(
         &self,
         _context: &Context,
         _bind_data: &Self::BindData,
+        global_state: Option<&Self::GlobalState>,
         _column_data: InitColumnData<'_>,
-    ) -> Result<Option<usize>> {
-        self.thread_limit.clone()
+    ) -> Result<Option<NonZeroUsize>> {
+        assert_eq!(global_state.is_some(), self.states);
+        self.max_threads.clone()
     }
 
     fn init_local_state(
@@ -650,7 +658,7 @@ fn test_table_function_projection_lifecycle() -> Result<()> {
                 SignatureBuilder::new().param(FunctionParameter::new::<i32>("rows")),
                 ProjectionScan {
                     states,
-                    thread_limit: Ok(None),
+                    max_threads: Ok(None),
                     counters: counters.clone(),
                     mappings: mappings.clone(),
                     _lifetime: TableLifecycleToken::new(&counters[0]),
@@ -689,45 +697,37 @@ fn test_table_function_projection_lifecycle() -> Result<()> {
 }
 
 #[test]
-fn test_table_function_thread_limit_errors() -> Result<()> {
-    for (thread_limit, message) in [
-        (Ok(Some(0)), "maximum number of threads must be at least 1"),
-        (
-            Err(Error::invalid_input("thread limit unavailable")),
-            "thread limit unavailable",
-        ),
-    ] {
-        let counters = std::array::from_fn(|_| Arc::new(TableLifecycleCounter::default()));
-        {
-            let env = Environment::new()?;
-            let instance = env.open(StorageLocation::InMemory)?;
-            let conn = instance.connect()?;
-            TableFunctionBuilder::new(
-                "thread_limit_error",
-                SignatureBuilder::new().param(FunctionParameter::new::<i32>("rows")),
-                ProjectionScan {
-                    states: true,
-                    thread_limit,
-                    counters: counters.clone(),
-                    mappings: Arc::new(Mutex::new(Vec::new())),
-                    _lifetime: TableLifecycleToken::new(&counters[0]),
-                },
-            )
-            .register(&conn)?;
-            let error = conn
-                .query("SELECT * FROM thread_limit_error(1)", Parameters::None)
-                .and_then(|mut result| result.drain())
-                .expect_err("invalid thread limit must fail");
-            assert!(error.message.contains(message), "{error}");
-        }
-        for counter in &counters {
-            assert_eq!(
-                counter.created.load(Ordering::SeqCst),
-                counter.dropped.load(Ordering::SeqCst)
-            );
-        }
-        assert!(counters[2].created.load(Ordering::SeqCst) > 0);
+fn test_table_function_max_threads_error() -> Result<()> {
+    let counters = std::array::from_fn(|_| Arc::new(TableLifecycleCounter::default()));
+    {
+        let env = Environment::new()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
+        TableFunctionBuilder::new(
+            "max_threads_error",
+            SignatureBuilder::new().param(FunctionParameter::new::<i32>("rows")),
+            ProjectionScan {
+                states: true,
+                max_threads: Err(Error::invalid_input("max threads unavailable")),
+                counters: counters.clone(),
+                mappings: Arc::new(Mutex::new(Vec::new())),
+                _lifetime: TableLifecycleToken::new(&counters[0]),
+            },
+        )
+        .register(&conn)?;
+        let error = conn
+            .query("SELECT * FROM max_threads_error(1)", Parameters::None)
+            .and_then(|mut result| result.drain())
+            .expect_err("max_threads error must fail the scan");
+        assert!(error.message.contains("max threads unavailable"), "{error}");
     }
+    for counter in &counters {
+        assert_eq!(
+            counter.created.load(Ordering::SeqCst),
+            counter.dropped.load(Ordering::SeqCst)
+        );
+    }
+    assert!(counters[2].created.load(Ordering::SeqCst) > 0);
     Ok(())
 }
 
@@ -771,13 +771,14 @@ impl TableFunctionCallbacks for BatchedRange {
         Ok(Some(AtomicUsize::new(0)))
     }
 
-    fn set_thread_limit(
+    fn max_threads(
         &self,
         _context: &Context,
         _bind_data: &Self::BindData,
+        _global_state: Option<&Self::GlobalState>,
         _column_data: InitColumnData<'_>,
-    ) -> Result<Option<usize>> {
-        Ok(Some(4))
+    ) -> Result<Option<NonZeroUsize>> {
+        Ok(NonZeroUsize::new(4))
     }
 
     fn init_local_state(
@@ -906,8 +907,14 @@ fn test_table_function_list_output_child_starts_empty() -> Result<()> {
             Ok(Some(AtomicUsize::new(0)))
         }
 
-        fn set_thread_limit(&self, _: &Context, _: &(), _: InitColumnData<'_>) -> Result<Option<usize>> {
-            Ok(Some(1))
+        fn max_threads(
+            &self,
+            _: &Context,
+            _: &(),
+            _: Option<&AtomicUsize>,
+            _: InitColumnData<'_>,
+        ) -> Result<Option<NonZeroUsize>> {
+            Ok(NonZeroUsize::new(1))
         }
 
         fn exec(
