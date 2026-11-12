@@ -24,8 +24,8 @@ ffi_enum_redeclaration! {
 }
 
 fn exec_callback<T: CastFunctionCallbacks>(
-    info: ffi::duckdb_v2_cast_function_exec_info_handle,
     context: &Context,
+    info: ffi::duckdb_v2_cast_function_exec_info_handle,
 ) -> Result<()> {
     let user_data = get_user_data!(ffi::duckdb_v2_cast_function_exec_get_user_data, info);
 

@@ -313,8 +313,8 @@ impl CopyFromFunctionCallbacks for Base56 {
 
     fn init_global_state(
         &self,
-        (file_path, columns): &Self::BindData,
         context: &Context,
+        (file_path, columns): &Self::BindData,
     ) -> Result<Option<Self::GlobalState>> {
         let fs = FileSystem::new(context)?;
         let file = FileBuilder::new(&fs, file_path)?.read().open()?;
@@ -339,8 +339,8 @@ impl CopyFromFunctionCallbacks for Base56 {
 
     fn init_local_state(
         &self,
-        _bind_data: &Self::BindData,
         _context: &Context,
+        _bind_data: &Self::BindData,
         _reader: Option<&Self::GlobalState>,
     ) -> Result<Option<Self::LocalState>> {
         Ok(Some(Base56Batch::default()))
@@ -348,10 +348,10 @@ impl CopyFromFunctionCallbacks for Base56 {
 
     fn exec(
         &self,
-        (_, columns): &Self::BindData,
-        reader: Option<&Self::GlobalState>,
-        batch: Option<&mut Self::LocalState>,
         _context: &Context,
+        (_, columns): &Self::BindData,
+        batch: Option<&mut Self::LocalState>,
+        reader: Option<&Self::GlobalState>,
         mut output: DataChunkRef<'_>,
     ) -> Result<()> {
         let reader = reader.expect("init_global_state sets the reader");

@@ -129,8 +129,8 @@ struct ReplacementScanData<'conn, T> {
 }
 
 fn replacement_callback<T: ReplacementScanCallbacks>(
-    info: ffi::duckdb_v2_replacement_scan_info_handle,
     context: &Context,
+    info: ffi::duckdb_v2_replacement_scan_info_handle,
 ) -> Result<()> {
     let user_data = check_api_call!(ffi::duckdb_v2_replacement_scan_get_user_data, info, RET)?;
     let data = unsafe { get_opaque_data_ref::<ReplacementScanData<'_, T>>(user_data) }.unwrap();

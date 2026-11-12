@@ -33,9 +33,9 @@ mod micro;
 pub use micro::MicroScalar;
 
 fn resolve_types_callback<T: ScalarResolveTypesCallbacks>(
+    context: &Context,
     info: ffi::duckdb_v2_function_bind_info_handle,
     result: ffi::duckdb_v2_scalar_function_resolve_types_info_handle,
-    context: &Context,
 ) -> Result<()> {
     let user_data = get_user_data!(ffi::duckdb_v2_function_bind_get_user_data, info);
     let arguments = BindArguments { handle: &info };
@@ -49,9 +49,9 @@ fn resolve_types_callback<T: ScalarResolveTypesCallbacks>(
 }
 
 fn bind_callback<T: ScalarBindCallbacks>(
+    context: &Context,
     info: ffi::duckdb_v2_function_bind_info_handle,
     result: ffi::duckdb_v2_scalar_function_bind_info_handle,
-    context: &Context,
 ) -> Result<()> {
     let user_data = get_user_data!(ffi::duckdb_v2_function_bind_get_user_data, info);
     let arguments = BindArguments { handle: &info };
@@ -65,12 +65,12 @@ fn bind_callback<T: ScalarBindCallbacks>(
 }
 
 fn init_callback<T: ScalarInitCallbacks>(
-    info: ffi::duckdb_v2_scalar_function_init_info_handle,
     context: &Context,
+    info: ffi::duckdb_v2_scalar_function_init_info_handle,
 ) -> Result<()> {
     let user_data = get_user_data!(ffi::duckdb_v2_scalar_function_init_get_user_data, info);
     let bind_data = get_bind_data!(ffi::duckdb_v2_scalar_function_init_get_bind_data, info);
-    let result = T::init(user_data, bind_data, context)?;
+    let result = T::init(user_data, context, bind_data)?;
 
     check_api_call!(
         ffi::duckdb_v2_scalar_function_init_set_init_data,
@@ -80,8 +80,8 @@ fn init_callback<T: ScalarInitCallbacks>(
 }
 
 fn exec_callback<T: ScalarCallbacks>(
-    info: ffi::duckdb_v2_scalar_function_exec_info_handle,
     context: &Context,
+    info: ffi::duckdb_v2_scalar_function_exec_info_handle,
 ) -> Result<()> {
     let user_data = get_user_data!(ffi::duckdb_v2_scalar_function_exec_get_user_data, info);
     let bind_data = get_bind_data!(ffi::duckdb_v2_scalar_function_exec_get_bind_data, info);
@@ -105,7 +105,7 @@ fn exec_callback<T: ScalarCallbacks>(
 
     let mut collection = VectorCollection::new(handles, Access::Exclusive, RowCount::Fixed(row_count));
 
-    T::exec(user_data, bind_data, init_data, context, &mut collection, result_vec)?;
+    T::exec(user_data, context, bind_data, init_data, &mut collection, result_vec)?;
 
     Ok(())
 }
@@ -271,9 +271,9 @@ pub trait ScalarCallbacks: Send + Sync + 'static {
     /// Data is `None` when its bind or init callback was not enabled.
     fn exec(
         &self,
+        context: &Context,
         bind_data: Option<&Self::BindData>,
         init_data: Option<&mut Self::InitData>,
-        context: &Context,
         vectors: &mut VectorCollection,
         output: Vector<'_, Unknown>,
     ) -> Result<()>;
@@ -288,7 +288,7 @@ pub trait ScalarBindCallbacks: ScalarCallbacks {
 /// Creates worker-local data when enabled with [`ScalarFunctionBuilder::with_init`].
 pub trait ScalarInitCallbacks: ScalarCallbacks {
     /// **Initialize:** create worker-local data; bind data is `None` without `with_bind`.
-    fn init(&self, bind_data: Option<&Self::BindData>, context: &Context) -> Result<Self::InitData>;
+    fn init(&self, context: &Context, bind_data: Option<&Self::BindData>) -> Result<Self::InitData>;
 }
 
 /// Chooses the return type of each call site of a scalar function.

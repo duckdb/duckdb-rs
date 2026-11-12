@@ -35,9 +35,9 @@ impl ScalarCallbacks for MergeStruct {
 
     fn exec(
         &self,
+        _context: &Context,
         _bind_data: Option<&()>,
         _init_data: Option<&mut ()>,
-        _context: &Context,
         input: &mut VectorCollection,
         output: Vector<'_, Unknown>,
     ) -> Result<()> {

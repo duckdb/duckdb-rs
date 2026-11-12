@@ -70,8 +70,8 @@ fn test_table_function() -> Result<()> {
 
         fn init_global_state(
             &self,
-            bind_data: &Self::BindData,
             _context: &Context,
+            bind_data: &Self::BindData,
             column_data: InitColumnData<'_>,
         ) -> Result<Option<Self::GlobalState>> {
             assert_eq!(bind_data.size, 10);
@@ -85,8 +85,8 @@ fn test_table_function() -> Result<()> {
 
         fn set_thread_limit(
             &self,
-            bind_data: &Self::BindData,
             context: &Context,
+            bind_data: &Self::BindData,
             column_data: InitColumnData<'_>,
         ) -> Result<Option<usize>> {
             assert_eq!(bind_data.size, 10);
@@ -97,9 +97,9 @@ fn test_table_function() -> Result<()> {
 
         fn init_local_state(
             &self,
+            _context: &Context,
             bind_data: &Self::BindData,
             _global_state: Option<&Self::GlobalState>,
-            _context: &Context,
             _column_data: InitColumnData<'_>,
         ) -> Result<Option<Self::LocalState>> {
             assert_eq!(bind_data.size, 10);
@@ -108,9 +108,9 @@ fn test_table_function() -> Result<()> {
 
         fn progress(
             &self,
+            _context: &Context,
             bind_data: &Self::BindData,
             global_state: Option<&Self::GlobalState>,
-            _context: &Context,
         ) -> Result<Option<f64>> {
             assert_eq!(bind_data.size, 10);
             let global_state = global_state.unwrap();
@@ -127,10 +127,10 @@ fn test_table_function() -> Result<()> {
 
         fn exec(
             &self,
-            bind_data: &Self::BindData,
-            global_state: Option<&Self::GlobalState>,
-            local_state: Option<&mut Self::LocalState>,
             _context: &Context,
+            bind_data: &Self::BindData,
+            local_state: Option<&mut Self::LocalState>,
+            global_state: Option<&Self::GlobalState>,
             mut output: DataChunkRef<'_>,
             _column_info: ExecColumnInfo<'_>,
         ) -> Result<()> {
@@ -170,8 +170,8 @@ fn test_table_function() -> Result<()> {
     impl TableFilterPushdownCallbacks for MyTableFunction {
         fn pushdown_filter(
             &self,
-            bind_data: &Self::BindData,
             context: &Context,
+            bind_data: &Self::BindData,
             pushdown_data: PushdownData<'_>,
         ) -> Result<()> {
             self.pushdown_called.store(true, Ordering::SeqCst);
@@ -299,8 +299,8 @@ fn test_table_function_partitioning() -> Result<()> {
 
         fn init_global_state(
             &self,
-            _bind_data: &Self::BindData,
             _context: &Context,
+            _bind_data: &Self::BindData,
             _column_data: InitColumnData<'_>,
         ) -> Result<Option<Self::GlobalState>> {
             Ok(Some(AtomicUsize::new(0)))
@@ -308,8 +308,8 @@ fn test_table_function_partitioning() -> Result<()> {
 
         fn set_thread_limit(
             &self,
-            _bind_data: &Self::BindData,
             _context: &Context,
+            _bind_data: &Self::BindData,
             _column_data: InitColumnData<'_>,
         ) -> Result<Option<usize>> {
             Ok(Some(4))
@@ -317,9 +317,9 @@ fn test_table_function_partitioning() -> Result<()> {
 
         fn init_local_state(
             &self,
+            _context: &Context,
             _bind_data: &Self::BindData,
             _global_state: Option<&Self::GlobalState>,
-            _context: &Context,
             _column_data: InitColumnData<'_>,
         ) -> Result<Option<Self::LocalState>> {
             self.local_init_calls.fetch_add(1, Ordering::SeqCst);
@@ -328,10 +328,10 @@ fn test_table_function_partitioning() -> Result<()> {
 
         fn exec(
             &self,
-            _bind_data: &Self::BindData,
-            global_state: Option<&Self::GlobalState>,
-            local_state: Option<&mut Self::LocalState>,
             _context: &Context,
+            _bind_data: &Self::BindData,
+            local_state: Option<&mut Self::LocalState>,
+            global_state: Option<&Self::GlobalState>,
             mut output: DataChunkRef<'_>,
             _column_info: ExecColumnInfo<'_>,
         ) -> Result<()> {
@@ -365,8 +365,8 @@ fn test_table_function_partitioning() -> Result<()> {
     impl TablePartitioningCallbacks for PartitionedFunction {
         fn partitioning(
             &self,
-            _bind_data: &Self::BindData,
             _context: &Context,
+            _bind_data: &Self::BindData,
             partitioning_data: PartitioningData<'_>,
         ) -> Result<TablePartitionInfo> {
             self.partitioning_calls.fetch_add(1, Ordering::SeqCst);
@@ -385,10 +385,10 @@ fn test_table_function_partitioning() -> Result<()> {
 
         fn partition_data(
             &self,
-            _bind_data: &Self::BindData,
-            _global_state: Option<&Self::GlobalState>,
-            local_state: Option<&mut Self::LocalState>,
             context: &Context,
+            _bind_data: &Self::BindData,
+            local_state: Option<&mut Self::LocalState>,
+            _global_state: Option<&Self::GlobalState>,
             partition_data: PartitionData<'_>,
         ) -> Result<usize> {
             self.partition_data_calls.fetch_add(1, Ordering::SeqCst);
@@ -577,8 +577,8 @@ impl TableFunctionCallbacks for ProjectionScan {
 
     fn init_global_state(
         &self,
-        _bind_data: &Self::BindData,
         _context: &Context,
+        _bind_data: &Self::BindData,
         columns: InitColumnData<'_>,
     ) -> Result<Option<Self::GlobalState>> {
         let mapping = (0..columns.count()?)
@@ -591,8 +591,8 @@ impl TableFunctionCallbacks for ProjectionScan {
 
     fn set_thread_limit(
         &self,
-        _bind_data: &Self::BindData,
         _context: &Context,
+        _bind_data: &Self::BindData,
         _column_data: InitColumnData<'_>,
     ) -> Result<Option<usize>> {
         self.thread_limit.clone()
@@ -600,9 +600,9 @@ impl TableFunctionCallbacks for ProjectionScan {
 
     fn init_local_state(
         &self,
+        _context: &Context,
         _bind_data: &Self::BindData,
         global_state: Option<&Self::GlobalState>,
-        _context: &Context,
         columns: InitColumnData<'_>,
     ) -> Result<Option<Self::LocalState>> {
         assert_eq!(global_state.is_some(), self.states);
@@ -612,10 +612,10 @@ impl TableFunctionCallbacks for ProjectionScan {
 
     fn exec(
         &self,
-        bind_data: &Self::BindData,
-        global_state: Option<&Self::GlobalState>,
-        local_state: Option<&mut Self::LocalState>,
         _context: &Context,
+        bind_data: &Self::BindData,
+        local_state: Option<&mut Self::LocalState>,
+        global_state: Option<&Self::GlobalState>,
         mut output: DataChunkRef<'_>,
         columns: ExecColumnInfo<'_>,
     ) -> Result<()> {
@@ -764,8 +764,8 @@ impl TableFunctionCallbacks for BatchedRange {
 
     fn init_global_state(
         &self,
-        _bind_data: &Self::BindData,
         _context: &Context,
+        _bind_data: &Self::BindData,
         _column_data: InitColumnData<'_>,
     ) -> Result<Option<Self::GlobalState>> {
         Ok(Some(AtomicUsize::new(0)))
@@ -773,8 +773,8 @@ impl TableFunctionCallbacks for BatchedRange {
 
     fn set_thread_limit(
         &self,
-        _bind_data: &Self::BindData,
         _context: &Context,
+        _bind_data: &Self::BindData,
         _column_data: InitColumnData<'_>,
     ) -> Result<Option<usize>> {
         Ok(Some(4))
@@ -782,9 +782,9 @@ impl TableFunctionCallbacks for BatchedRange {
 
     fn init_local_state(
         &self,
+        _context: &Context,
         _bind_data: &Self::BindData,
         _global_state: Option<&Self::GlobalState>,
-        _context: &Context,
         _column_data: InitColumnData<'_>,
     ) -> Result<Option<Self::LocalState>> {
         Ok(Some(None))
@@ -792,10 +792,10 @@ impl TableFunctionCallbacks for BatchedRange {
 
     fn exec(
         &self,
-        _bind_data: &Self::BindData,
-        _global_state: Option<&Self::GlobalState>,
-        local_state: Option<&mut Self::LocalState>,
         _context: &Context,
+        _bind_data: &Self::BindData,
+        local_state: Option<&mut Self::LocalState>,
+        _global_state: Option<&Self::GlobalState>,
         mut output: DataChunkRef<'_>,
         _column_info: ExecColumnInfo<'_>,
     ) -> Result<()> {
@@ -818,10 +818,10 @@ impl TableFunctionCallbacks for BatchedRange {
 impl TableClaimBatchCallbacks for BatchedRange {
     fn claim_batch(
         &self,
-        &(rows, fail_at): &Self::BindData,
-        global_state: Option<&Self::GlobalState>,
-        local_state: Option<&mut Self::LocalState>,
         _context: &Context,
+        &(rows, fail_at): &Self::BindData,
+        local_state: Option<&mut Self::LocalState>,
+        global_state: Option<&Self::GlobalState>,
     ) -> Result<bool> {
         let batch = global_state.unwrap().fetch_add(1, Ordering::SeqCst);
         if fail_at == Some(batch) {
@@ -902,20 +902,20 @@ fn test_table_function_list_output_child_starts_empty() -> Result<()> {
             Ok(())
         }
 
-        fn init_global_state(&self, _: &(), _: &Context, _: InitColumnData<'_>) -> Result<Option<AtomicUsize>> {
+        fn init_global_state(&self, _: &Context, _: &(), _: InitColumnData<'_>) -> Result<Option<AtomicUsize>> {
             Ok(Some(AtomicUsize::new(0)))
         }
 
-        fn set_thread_limit(&self, _: &(), _: &Context, _: InitColumnData<'_>) -> Result<Option<usize>> {
+        fn set_thread_limit(&self, _: &Context, _: &(), _: InitColumnData<'_>) -> Result<Option<usize>> {
             Ok(Some(1))
         }
 
         fn exec(
             &self,
-            _: &(),
-            global_state: Option<&AtomicUsize>,
-            _: Option<&mut ()>,
             _: &Context,
+            _: &(),
+            _: Option<&mut ()>,
+            global_state: Option<&AtomicUsize>,
             mut output: DataChunkRef<'_>,
             _: ExecColumnInfo<'_>,
         ) -> Result<()> {

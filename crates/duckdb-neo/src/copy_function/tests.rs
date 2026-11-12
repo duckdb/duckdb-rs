@@ -384,7 +384,7 @@ impl CopyFromFunctionCallbacks for RangeSource {
         Ok(self.total_rows)
     }
 
-    fn cardinality(&self, bind_data: &Self::BindData, context: &Context) -> crate::Result<Option<CopyFromCardinality>> {
+    fn cardinality(&self, context: &Context, bind_data: &Self::BindData) -> crate::Result<Option<CopyFromCardinality>> {
         context.config()?;
         if self.cardinality_error {
             return Err(crate::Error::invalid_input("cardinality unavailable"));
@@ -397,22 +397,22 @@ impl CopyFromFunctionCallbacks for RangeSource {
 
     fn init_global_state(
         &self,
-        _bind_data: &Self::BindData,
         context: &Context,
+        _bind_data: &Self::BindData,
     ) -> crate::Result<Option<Self::GlobalState>> {
         context.config()?;
         Ok(Some(self.total_rows))
     }
 
-    fn set_thread_limit(&self, _bind_data: &Self::BindData, context: &Context) -> crate::Result<Option<NonZeroUsize>> {
+    fn set_thread_limit(&self, context: &Context, _bind_data: &Self::BindData) -> crate::Result<Option<NonZeroUsize>> {
         context.config()?;
         self.thread_limit.clone()
     }
 
     fn init_local_state(
         &self,
-        _bind_data: &Self::BindData,
         _context: &Context,
+        _bind_data: &Self::BindData,
         global_state: Option<&Self::GlobalState>,
     ) -> crate::Result<Option<Self::LocalState>> {
         assert_eq!(global_state, Some(&self.total_rows));
@@ -421,10 +421,10 @@ impl CopyFromFunctionCallbacks for RangeSource {
 
     fn exec(
         &self,
-        _bind_data: &Self::BindData,
-        _global_state: Option<&Self::GlobalState>,
-        local_state: Option<&mut Self::LocalState>,
         _context: &Context,
+        _bind_data: &Self::BindData,
+        local_state: Option<&mut Self::LocalState>,
+        _global_state: Option<&Self::GlobalState>,
         mut output: DataChunkRef<'_>,
     ) -> crate::Result<()> {
         let produced = local_state.expect("local state must be set");
@@ -610,8 +610,8 @@ impl CopyFromFunctionCallbacks for EchoFormat {
 
     fn init_local_state(
         &self,
-        _bind_data: &Self::BindData,
         _context: &Context,
+        _bind_data: &Self::BindData,
         _global_state: Option<&Self::GlobalState>,
     ) -> crate::Result<Option<Self::LocalState>> {
         Ok(Some(0))
@@ -619,10 +619,10 @@ impl CopyFromFunctionCallbacks for EchoFormat {
 
     fn exec(
         &self,
-        _bind_data: &Self::BindData,
-        _global_state: Option<&Self::GlobalState>,
-        local_state: Option<&mut Self::LocalState>,
         _context: &Context,
+        _bind_data: &Self::BindData,
+        local_state: Option<&mut Self::LocalState>,
+        _global_state: Option<&Self::GlobalState>,
         mut output: DataChunkRef<'_>,
     ) -> crate::Result<()> {
         let produced = local_state.expect("local state must be set");

@@ -202,9 +202,9 @@ impl ScalarCallbacks for RowProbe {
 
     fn exec(
         &self,
+        _context: &Context,
         _bind: Option<&()>,
         _init: Option<&mut ()>,
-        _context: &Context,
         input: &mut VectorCollection,
         output: Vector<'_, Unknown>,
     ) -> Result<()> {

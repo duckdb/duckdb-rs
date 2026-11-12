@@ -93,8 +93,8 @@ impl TableFunctionCallbacks for KvReader {
 
     fn init_global_state(
         &self,
-        _bind_data: &Self::BindData,
         _context: &Context,
+        _bind_data: &Self::BindData,
         _column_data: InitColumnData<'_>,
     ) -> Result<Option<Self::GlobalState>> {
         Ok(Some(AtomicUsize::new(0)))
@@ -102,9 +102,9 @@ impl TableFunctionCallbacks for KvReader {
 
     fn init_local_state(
         &self,
+        _context: &Context,
         _bind_data: &Self::BindData,
         _global_state: Option<&Self::GlobalState>,
-        _context: &Context,
         _column_data: InitColumnData<'_>,
     ) -> Result<Option<Self::LocalState>> {
         Ok(Some(None))
@@ -112,10 +112,10 @@ impl TableFunctionCallbacks for KvReader {
 
     fn exec(
         &self,
-        bind_data: &Self::BindData,
-        _global_state: Option<&Self::GlobalState>,
-        local_state: Option<&mut Self::LocalState>,
         _context: &Context,
+        bind_data: &Self::BindData,
+        local_state: Option<&mut Self::LocalState>,
+        _global_state: Option<&Self::GlobalState>,
         mut output: DataChunkRef<'_>,
         column_info: ExecColumnInfo<'_>,
     ) -> Result<()> {
@@ -138,7 +138,7 @@ impl TableFunctionCallbacks for KvReader {
 }
 
 impl TableGetBindInfoCallbacks for KvReader {
-    fn bind_info(&self, bind_data: &Self::BindData, context: &Context, api: BindInfoApi<'_>) -> Result<()> {
+    fn bind_info(&self, context: &Context, bind_data: &Self::BindData, api: BindInfoApi<'_>) -> Result<()> {
         self.bind_info_calls.fetch_add(1, Ordering::SeqCst);
 
         for (index, (_, field_id)) in bind_data.columns.iter().enumerate() {
@@ -154,10 +154,10 @@ impl TableGetBindInfoCallbacks for KvReader {
 impl TableClaimBatchCallbacks for KvReader {
     fn claim_batch(
         &self,
-        bind_data: &Self::BindData,
-        global_state: Option<&Self::GlobalState>,
-        local_state: Option<&mut Self::LocalState>,
         _context: &Context,
+        bind_data: &Self::BindData,
+        local_state: Option<&mut Self::LocalState>,
+        global_state: Option<&Self::GlobalState>,
     ) -> Result<bool> {
         let batch = global_state.unwrap().fetch_add(1, Ordering::SeqCst);
         if batch >= bind_data.batch_count() {

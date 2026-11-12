@@ -155,9 +155,9 @@ unsafe fn state_slice<'a, T>(ptr: *const T, count: usize) -> &'a [T] {
 }
 
 fn bind_callback<T: AggregateCallbacks>(
+    context: &Context,
     info: ffi::duckdb_v2_function_bind_info_handle,
     result: ffi::duckdb_v2_aggregate_function_bind_info_handle,
-    context: &Context,
 ) -> Result<()> {
     let arguments = BindArguments { handle: &info };
 

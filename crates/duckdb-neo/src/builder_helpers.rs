@@ -207,7 +207,7 @@ macro_rules! register_callback {
                     let context = unsafe {
                         <$crate::connection::Context as $crate::raw::FromRaw>::from_raw(context)
                     };
-                    $exec::<$generic>($($arg,)* &context)
+                    $exec::<$generic>(&context, $($arg),*)
                 },
                 err,
             );

@@ -13,8 +13,8 @@ use crate::{
 };
 
 fn update_callback<T: CustomOptionCallbacks>(
-    info: ffi::duckdb_v2_custom_option_update_info_handle,
     context: &Context,
+    info: ffi::duckdb_v2_custom_option_update_info_handle,
 ) -> Result<()> {
     let user_data = get_user_data!(ffi::duckdb_v2_custom_option_update_get_user_data, info);
 

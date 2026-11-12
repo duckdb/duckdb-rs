@@ -28,7 +28,7 @@ impl ScalarBindCallbacks for ScalarWithData {
 }
 
 impl ScalarInitCallbacks for ScalarWithData {
-    fn init(&self, bind_data: Option<&Self::BindData>, _context: &Context) -> Result<Self::InitData> {
+    fn init(&self, _context: &Context, bind_data: Option<&Self::BindData>) -> Result<Self::InitData> {
         let bind_data = bind_data.expect("bind callback must provide data");
         assert_eq!(self.base_data, [1, 2, 3]);
         assert_eq!(bind_data, &[10, 20]);
@@ -42,9 +42,9 @@ impl ScalarCallbacks for ScalarWithData {
 
     fn exec(
         &self,
+        _context: &Context,
         bind_data: Option<&Self::BindData>,
         init_data: Option<&mut Self::InitData>,
-        _context: &Context,
 
         input: &mut VectorCollection,
         output: Vector<'_, Unknown>,
@@ -81,9 +81,9 @@ impl ScalarCallbacks for BasicScalarFunction {
 
     fn exec(
         &self,
+        _context: &Context,
         _bind_data: Option<&Self::BindData>,
         _init_data: Option<&mut Self::InitData>,
-        _context: &Context,
         _input: &mut VectorCollection,
         output: Vector<'_, Unknown>,
     ) -> Result<()> {
@@ -103,9 +103,9 @@ impl ScalarCallbacks for BasicScalarPanicFunction {
 
     fn exec(
         &self,
+        _context: &Context,
         _bind_data: Option<&Self::BindData>,
         _init_data: Option<&mut Self::InitData>,
-        _context: &Context,
         _input: &mut VectorCollection,
         _output: Vector<'_, Unknown>,
     ) -> Result<()> {
@@ -288,9 +288,9 @@ impl ScalarCallbacks for FoldProbe {
 
     fn exec(
         &self,
+        _context: &Context,
         _bind_data: Option<&Self::BindData>,
         _init_data: Option<&mut Self::InitData>,
-        _context: &Context,
         input: &mut VectorCollection,
         output: Vector<'_, Unknown>,
     ) -> Result<()> {
@@ -351,9 +351,9 @@ impl ScalarCallbacks for Identity {
 
     fn exec(
         &self,
+        _context: &Context,
         _bind_data: Option<&Self::BindData>,
         _init_data: Option<&mut Self::InitData>,
-        _context: &Context,
         input: &mut VectorCollection,
         output: Vector<'_, Unknown>,
     ) -> Result<()> {
@@ -412,9 +412,9 @@ impl ScalarCallbacks for DynamicResolve {
 
     fn exec(
         &self,
+        _context: &Context,
         _bind_data: Option<&Self::BindData>,
         _init_data: Option<&mut Self::InitData>,
-        _context: &Context,
         vectors: &mut VectorCollection,
         output: Vector<'_, Unknown>,
     ) -> Result<()> {
@@ -509,7 +509,7 @@ impl ScalarBindCallbacks for OptionalLifecycle {
 }
 
 impl ScalarInitCallbacks for OptionalLifecycle {
-    fn init(&self, bind_data: Option<&Self::BindData>, _context: &Context) -> Result<Self::InitData> {
+    fn init(&self, _context: &Context, bind_data: Option<&Self::BindData>) -> Result<Self::InitData> {
         assert!(self.init);
         assert_eq!(bind_data.map(|data| data.0), self.bind.then_some(10));
         Ok(NonDefaultState(20))
@@ -522,9 +522,9 @@ impl ScalarCallbacks for OptionalLifecycle {
 
     fn exec(
         &self,
+        _context: &Context,
         bind_data: Option<&Self::BindData>,
         init_data: Option<&mut Self::InitData>,
-        _context: &Context,
         input: &mut VectorCollection,
         output: Vector<'_, Unknown>,
     ) -> Result<()> {

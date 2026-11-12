@@ -563,9 +563,9 @@ mod tests {
 
             fn exec(
                 &self,
+                context: &Context,
                 _bind_data: Option<&()>,
                 _init_data: Option<&mut ()>,
-                context: &Context,
                 _input: &mut VectorCollection,
                 output: Vector<'_, Unknown>,
             ) -> crate::Result<()> {

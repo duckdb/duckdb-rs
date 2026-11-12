@@ -25,9 +25,9 @@ use crate::{
 };
 
 fn query_callback<T: PragmaQueryCallbacks>(
+    context: &Context,
     info: ffi::duckdb_v2_function_bind_info_handle,
     result: ffi::duckdb_v2_pragma_function_query_info_handle,
-    context: &Context,
 ) -> Result<()> {
     let user_data = get_user_data!(ffi::duckdb_v2_function_bind_get_user_data, info);
 
@@ -37,8 +37,8 @@ fn query_callback<T: PragmaQueryCallbacks>(
 }
 
 fn exec_callback<T: PragmaExecCallbacks>(
-    info: ffi::duckdb_v2_function_bind_info_handle,
     context: &Context,
+    info: ffi::duckdb_v2_function_bind_info_handle,
 ) -> Result<()> {
     let user_data = get_user_data!(ffi::duckdb_v2_function_bind_get_user_data, info);
 
