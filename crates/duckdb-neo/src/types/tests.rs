@@ -3,21 +3,19 @@ use crate::logical_type::LogicalTypeID;
 
 use super::*;
 
-struct TestUnion;
+#[derive(crate::AsDuckDBUnion)]
+#[allow(dead_code)]
+enum TestUnion {
+    #[duckdb(rename = "number")]
+    Number(i32),
+    #[duckdb(rename = "text")]
+    Text(String),
+}
 
 #[derive(crate::AsDuckDB)]
 struct TestStruct {
     id: i32,
     name: String,
-}
-
-impl UnionSchema for TestUnion {
-    fn members<C: FFILink + ?Sized>(link: &C) -> Result<Vec<(&'static str, LogicalType)>> {
-        Ok(vec![
-            ("number", i32::logical_type(link)?),
-            ("text", String::logical_type(link)?),
-        ])
-    }
 }
 
 #[test]
@@ -385,16 +383,8 @@ fn test_nested_value_getters() -> crate::Result<()> {
     assert!(array.value(&conn)?.get::<Array<i32, 2>>().is_err());
     assert_eq!(array.value(&conn)?.get::<Array<i32, 3>>()?, Some(array));
 
-    let map = MapValue {
-        entries: vec![("a".to_string(), Some(1_i32)), ("b".to_string(), None)],
-    };
-    assert_eq!(
-        map.value(&conn)?
-            .get::<MapValue<String, Option<i32>>>()?
-            .unwrap()
-            .entries,
-        map.entries
-    );
+    let map = Map(vec![("a".to_string(), Some(1_i32)), ("b".to_string(), None)]);
+    assert_eq!(map.value(&conn)?.get::<Map<String, i32>>()?, Some(map));
 
     let tuple = (42_i32, "duck".to_string(), Some(true));
     assert_eq!(
@@ -429,10 +419,7 @@ fn test_complex_values() -> crate::Result<()> {
     .value(&conn)?;
     assert_eq!(bignum.dbg_string()?, "-16909060");
 
-    let map = MapValue {
-        entries: vec![("a".to_string(), 1_i32), ("b".to_string(), 2_i32)],
-    }
-    .value(&conn)?;
+    let map = Map(vec![("a".to_string(), Some(1_i32)), ("b".to_string(), Some(2_i32))]).value(&conn)?;
     assert_eq!(map.dbg_string()?, "{a=1, b=2}");
 
     let struct_value = TestStruct {
@@ -443,8 +430,9 @@ fn test_complex_values() -> crate::Result<()> {
     assert_eq!(struct_value.dbg_string()?, "{'id': 42, 'name': duck}");
     assert_eq!(struct_value.logical_type()?, TestStruct::logical_type(&conn)?);
 
-    let union = UnionValue::<TestUnion, _>::new(42_i32).value(&conn)?;
-    assert_eq!(union.logical_type()?.id()?, LogicalTypeID::Union);
+    let union = TestUnion::Number(42).value(&conn)?;
+    assert_eq!(union.logical_type()?, TestUnion::logical_type(&conn)?);
+    assert_eq!(union.dbg_string()?, "42");
     assert_eq!(union.child_count()?, 2);
 
     let variant = VariantValue(42_i32).value(&conn)?;

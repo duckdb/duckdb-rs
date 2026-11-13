@@ -2,15 +2,17 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "v*.*-*"]
     paths-ignore:
       - "**/*.md"
       - "LICENSE"
   pull_request:
-    branches: [main]
+    branches: [main, "v*.*-*"]
     paths-ignore:
       - "**/*.md"
       - "LICENSE"
+  # Release runs CI on the tagged commit before publishing.
+  workflow_call:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: full
@@ -43,8 +45,6 @@ jobs:
       - name: run cargo clippy
         # `bundled-cmake` is checkout-only and covered in the dedicated CMake job below.
         # extensions-full pulls in the bundled (cc) backend; wrap CC/CXX for sccache.
-        # That also makes buildtime_bindgen read duckdb_v2.h from the bundled tree,
-        # which the pinned download archive may not ship yet.
         env:
           CC: "sccache cc"
           CXX: "sccache c++"
@@ -141,7 +141,7 @@ jobs:
           # httpfs is only supported on Linux and macOS.
           - { name: Windows, os: windows-latest, features: "autocomplete icu tpch tpcds", neo_features: "bundled-cmake-autocomplete bundled-cmake-icu bundled-cmake-tpch bundled-cmake-tpcds" }
     runs-on: ${{ matrix.os }}
-    env:
+    env: &cmake-env
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: sccache
       CMAKE_C_COMPILER_LAUNCHER: sccache
@@ -149,7 +149,7 @@ jobs:
       DUCKDB_DISABLE_EXTENSION_LOAD: "1"
       CMAKE_FEATURES: ${{ matrix.features }}
       NEO_CMAKE_FEATURES: ${{ matrix.neo_features }}
-    steps:
+    steps: &cmake-steps
       - uses: actions/checkout@v5
         with:
           submodules: recursive
@@ -230,6 +230,20 @@ jobs:
 
       - name: "duckdb-neo: Test with bundled extensions"
         run: cargo test -p duckdb-neo --features "$NEO_CMAKE_FEATURES" --locked
+
+  cmake-arm64:
+    # GNU ld (the arm64 Linux default) is single-pass and catches link-order bugs that lld hides.
+    # Skipped on PRs to main to keep regular CI fast; pushes to main still catch regressions.
+    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/v') || startsWith(github.base_ref, 'v')
+    needs: test
+    name: Bundled CMake ${{ matrix.name }}
+    strategy:
+      matrix:
+        include:
+          - { name: Linux arm64, os: ubuntu-24.04-arm, features: "autocomplete httpfs icu tpch tpcds", neo_features: "bundled-cmake-autocomplete bundled-cmake-httpfs bundled-cmake-icu bundled-cmake-tpch bundled-cmake-tpcds" }
+    runs-on: ${{ matrix.os }}
+    env: *cmake-env
+    steps: *cmake-steps
 
   msrv:
     name: MSRV

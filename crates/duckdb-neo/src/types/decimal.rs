@@ -22,7 +22,7 @@ use crate::{
     logical_type::{LogicalType, LogicalTypeID},
     raw::RawExt,
     value::{Value, ValueInput},
-    vector::{VectorElement, WritableVectorElement},
+    vector::{NativeElement, ReadableNativeElement, WritableNativeElement},
 };
 
 /// The widest `DECIMAL` DuckDB supports.
@@ -44,13 +44,15 @@ macro_rules! decimal_storage {
             }
 
             $(#[$doc])*
-            #[repr(transparent)]
+            ///
+            /// Vector slots are at most 8-byte aligned, so the field can be copied but not borrowed.
+            #[repr(C, packed(8))]
             #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
             pub struct $name(pub $type);
 
             impl DecimalContainer for $name {
                 fn to_i128(&self) -> i128 {
-                    self.0.to_i128()
+                    { self.0 }.to_i128()
                 }
             }
 
@@ -60,13 +62,11 @@ macro_rules! decimal_storage {
                 }
             }
 
-            // SAFETY: `validate` accepts only the widths DuckDB stores as `$type`.
-            unsafe impl VectorElement for $name {
+            // SAFETY: `validate` accepts only the widths DuckDB stores as `$type`, which `$name` wraps.
+            unsafe impl NativeElement for $name {
                 const TYPE_ID: LogicalTypeID = LogicalTypeID::Decimal;
 
-                type Internal<'a> = $type;
-
-                type Ref<'a> = &'a $name;
+                type Native<'a> = $name;
 
                 fn validate(other: &LogicalType, _children: Option<&VectorCollection>) -> Result<bool> {
                     if other.id()? != Self::TYPE_ID {
@@ -74,8 +74,15 @@ macro_rules! decimal_storage {
                     }
                     Ok(matches!(DecimalSignature::from_logical_type(other)?.width, $min..=$max))
                 }
+            }
 
-                unsafe fn get<'a, U: VectorElement>(vector: &crate::vector::VectorReader<'a, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+            // SAFETY: `get` reads the validated physical slot.
+            unsafe impl ReadableNativeElement for $name {
+
+                type Ref<'a> = &'a $name;
+
+                #[inline]
+                unsafe fn get<'a, U: NativeElement>(vector: &crate::vector::VectorReader<'a, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
                 where
                     Self: 'a,
                 {
@@ -85,16 +92,15 @@ macro_rules! decimal_storage {
             }
 
             // SAFETY: the vector stores `$type`, the value's own storage type.
-            unsafe impl WritableVectorElement for $name {
-                type Write<'a> = $name;
+            unsafe impl WritableNativeElement for $name {
+                type Write = $name;
 
-                unsafe fn write(vector: &mut crate::vector::VectorWriter<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+                #[inline]
+                unsafe fn write(vector: &mut crate::vector::VectorWriter<'_, Self>, index: usize, value: &Self::Write,) -> Result<()> {
                     // SAFETY: The caller guarantees a writable, flat, in-bounds row.
-                    unsafe { vector.write_internal(index, value) }
+                    unsafe { vector.write_internal(index, Some(*value)) }
                 }
             }
-
-            crate::vector::owned_by_copy!($name);
         )+
     };
 }
@@ -154,7 +160,9 @@ decimal_widths! {
 /// ```compile_fail
 /// let _ = duckdb_neo::types::Decimal::<2, 3>::new(1);
 /// ```
-#[repr(transparent)]
+///
+/// Vector slots are at most 8-byte aligned, so the field can be copied but not borrowed.
+#[repr(C, packed(8))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Decimal<const WIDTH: u8, const SCALE: u8>(pub <Width<WIDTH> as DecimalWidth>::Storage)
 where
@@ -235,16 +243,14 @@ where
     }
 }
 
-// SAFETY: `validate` accepts only `DECIMAL(WIDTH, SCALE)`, which DuckDB stores as `Internal`.
-unsafe impl<const WIDTH: u8, const SCALE: u8> VectorElement for Decimal<WIDTH, SCALE>
+// SAFETY: `validate` accepts only `DECIMAL(WIDTH, SCALE)`, which DuckDB stores as the wrapped `Storage`.
+unsafe impl<const WIDTH: u8, const SCALE: u8> NativeElement for Decimal<WIDTH, SCALE>
 where
     Width<WIDTH>: DecimalWidth,
 {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Decimal;
 
-    type Internal<'a> = <Width<WIDTH> as DecimalWidth>::Storage;
-
-    type Ref<'a> = &'a Self;
+    type Native<'a> = Self;
 
     fn validate(other: &LogicalType, _children: Option<&VectorCollection>) -> Result<bool> {
         if other.id()? != Self::TYPE_ID {
@@ -256,8 +262,17 @@ where
                 scale: SCALE,
             })
     }
+}
 
-    unsafe fn get<'a, U: VectorElement>(
+// SAFETY: `get` reads the validated physical slot.
+unsafe impl<const WIDTH: u8, const SCALE: u8> ReadableNativeElement for Decimal<WIDTH, SCALE>
+where
+    Width<WIDTH>: DecimalWidth,
+{
+    type Ref<'a> = &'a Self;
+
+    #[inline]
+    unsafe fn get<'a, U: NativeElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
         _logical: usize,
@@ -270,35 +285,20 @@ where
     }
 }
 
-// SAFETY: the vector stores `Internal`, the value's own storage type.
-unsafe impl<const WIDTH: u8, const SCALE: u8> WritableVectorElement for Decimal<WIDTH, SCALE>
+// SAFETY: the vector stores `Native`, the value's own storage type.
+unsafe impl<const WIDTH: u8, const SCALE: u8> WritableNativeElement for Decimal<WIDTH, SCALE>
 where
     Width<WIDTH>: DecimalWidth,
 {
-    type Write<'a> = Self;
+    type Write = Self;
 
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<Self::Write<'_>>,
+        value: &Self::Write,
     ) -> Result<()> {
         // SAFETY: The caller guarantees a writable, flat, in-bounds row.
-        unsafe { vector.write_internal(index, value) }
-    }
-}
-
-// SAFETY: the native writer receives a copy and maintains its validity.
-unsafe impl<const WIDTH: u8, const SCALE: u8> crate::vector::OwnedVectorElement for Decimal<WIDTH, SCALE>
-where
-    Width<WIDTH>: DecimalWidth,
-{
-    #[inline]
-    unsafe fn write_ref(
-        writer: &mut crate::vector::VectorWriter<'_, Self>,
-        index: usize,
-        value: Option<&Self>,
-    ) -> Result<()> {
-        unsafe { writer.set_unchecked(index, value.copied()) }
+        unsafe { vector.write_internal(index, Some(*value)) }
     }
 }
 
@@ -523,8 +523,8 @@ mod tests {
         let mut chunk = DataChunk::create(&conn, &[Decimal::<9, 2>::logical_type(&conn)?], true)?;
         let mut vector = chunk.get_vector_at_mut::<Decimal<9, 2>>(0)?;
         vector.set_size(2)?;
-        vector.writer()?.set(0, Some(Decimal::new(-1)))?;
-        vector.writer()?.set(1, None)?;
+        vector.writer()?.set(0, &Decimal::new(-1))?;
+        vector.writer()?.set_null(1)?;
         assert_eq!(vector.reader()?.get(0)?, Some(&Decimal::new(-1)));
         assert_eq!(vector.reader()?.get(1)?, None);
 

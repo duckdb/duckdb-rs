@@ -71,6 +71,7 @@ impl Schema {
     }
 
     /// Return a field's borrowed name and owned logical type; out-of-range indices return an error.
+    #[inline]
     pub fn get(&self, index: usize) -> Result<(&str, LogicalType)> {
         let (name, mut logical_type) = self.field(index)?;
         Ok((name, LogicalType::copy_handle(&mut logical_type)?))

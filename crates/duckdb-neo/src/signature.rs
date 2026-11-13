@@ -57,25 +57,30 @@ ffi_enum_redeclaration! {
 
 type LogicalTypeFn = fn(&dyn FFILink) -> Result<LogicalType>;
 
-enum ParameterType {
+pub(crate) enum TypeDeclaration {
     Rust(LogicalTypeFn),
     Resolved(LogicalType),
 }
 
-impl ParameterType {
+impl TypeDeclaration {
+    pub(crate) fn rust_type<T: DuckDBType>() -> Self {
+        // A non-capturing closure, since `T::logical_type::<dyn FFILink>` would require `'static`.
+        Self::Rust(|link| T::logical_type(link))
+    }
+
     fn resolve(self, link: &dyn FFILink) -> Result<LogicalType> {
         match self {
-            ParameterType::Rust(create) => create(link),
-            ParameterType::Resolved(logical_type) => Ok(logical_type),
+            Self::Rust(create) => create(link),
+            Self::Resolved(logical_type) => Ok(logical_type),
         }
     }
 }
 
-impl fmt::Debug for ParameterType {
+impl fmt::Debug for TypeDeclaration {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ParameterType::Rust(_) => f.write_str("Rust"),
-            ParameterType::Resolved(logical_type) => f.debug_tuple("Resolved").field(logical_type).finish(),
+            Self::Rust(_) => f.write_str("Rust"),
+            Self::Resolved(logical_type) => f.debug_tuple("Resolved").field(logical_type).finish(),
         }
     }
 }
@@ -98,19 +103,19 @@ impl<T: ToValue> ErasedToValue for T {
 pub struct FunctionParameter {
     name: String,
     kind: FunctionParameterKind,
-    logical_type: ParameterType,
+    logical_type: TypeDeclaration,
     default_value: Option<Box<dyn ErasedToValue>>,
 }
 
 impl FunctionParameter {
     /// Declare a required parameter whose type is the Rust type `T`.
     pub fn new<T: DuckDBType>(name: impl Into<String>) -> Self {
-        Self::declare(name.into(), Self::rust_type::<T>(), None)
+        Self::declare(name.into(), TypeDeclaration::rust_type::<T>(), None)
     }
 
     /// Declare a parameter that callers may omit, using `value` in its place.
     pub fn with_default<T: DuckDBType + ToValue + 'static>(name: impl Into<String>, value: T) -> Self {
-        Self::declare(name.into(), Self::rust_type::<T>(), Some(Box::new(value)))
+        Self::declare(name.into(), TypeDeclaration::rust_type::<T>(), Some(Box::new(value)))
     }
 
     /// Declare a variadic tail accepting zero or more arguments of type `T`.
@@ -120,7 +125,7 @@ impl FunctionParameter {
 
     /// Declare a required parameter with an explicit logical type.
     pub fn with_type(name: impl Into<String>, logical_type: LogicalType) -> Self {
-        Self::declare(name.into(), ParameterType::Resolved(logical_type), None)
+        Self::declare(name.into(), TypeDeclaration::Resolved(logical_type), None)
     }
 
     /// Set the default value while preserving the declared logical type.
@@ -135,12 +140,7 @@ impl FunctionParameter {
         self
     }
 
-    fn rust_type<T: DuckDBType>() -> ParameterType {
-        // A non-capturing closure, since `T::logical_type::<dyn FFILink>` would require `'static`.
-        ParameterType::Rust(|link| T::logical_type(link))
-    }
-
-    fn declare(name: String, logical_type: ParameterType, default_value: Option<Box<dyn ErasedToValue>>) -> Self {
+    fn declare(name: String, logical_type: TypeDeclaration, default_value: Option<Box<dyn ErasedToValue>>) -> Self {
         FunctionParameter {
             name,
             kind: FunctionParameterKind::Standard,
@@ -231,7 +231,7 @@ impl FunctionDocumentationBuilder {
 #[derive(Debug, Default)]
 pub struct SignatureBuilder {
     parameters: Vec<FunctionParameter>,
-    return_type: Option<LogicalType>,
+    pub(crate) return_type: Option<TypeDeclaration>,
     documentation: Option<FunctionDocumentationBuilder>,
 }
 
@@ -253,7 +253,7 @@ impl SignatureBuilder {
     /// Scalar and aggregate functions require one. Table functions leave it
     /// unset and declare their result columns when binding.
     pub fn return_type(mut self, logical_type: LogicalType) -> Self {
-        self.return_type = Some(logical_type);
+        self.return_type = Some(TypeDeclaration::Resolved(logical_type));
         self
     }
 
@@ -271,7 +271,8 @@ impl SignatureBuilder {
         handle: &ffi::duckdb_v2_function_signature_handle,
         docs_handle: &ffi::duckdb_v2_function_docs_handle,
     ) -> Result<()> {
-        if let Some(return_type) = self.return_type.as_ref() {
+        if let Some(return_type) = self.return_type {
+            let return_type = return_type.resolve(link)?;
             check_api_call!(
                 ffi::duckdb_v2_function_signature_set_return_type,
                 *handle,
@@ -303,32 +304,29 @@ impl SignatureBuilder {
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod test {
     use crate::Parameters;
-    use crate::builder_helpers::scalar_callback;
-    use crate::connection::Connection;
+    use crate::connection::{Connection, Context};
+    use crate::data_chunk::VectorCollection;
     use crate::environment::{Environment, StorageLocation};
-    use crate::scalar::ScalarFunctionBuilder;
+    use crate::scalar::MicroScalar;
+    use crate::vector::Vector;
 
     use super::*;
 
-    scalar_callback!(DefaultParameterScalar, u64, |input, result, _ctx, _user_data| {
+    fn default_parameter(_ctx: &Context, input: &mut VectorCollection, mut result: Vector<'_, u64>) -> Result<()> {
         let vectors_len = input.col_count();
         let vector = input.get_vector_at::<i32>(2)?;
-        let mut result = result;
-        result.set_size(1)?;
         result.writer()?.set(
             0,
-            Some(*vector.reader()?.get(0).unwrap().unwrap() as u64 + vectors_len as u64),
+            &(*vector.reader()?.get(0).unwrap().unwrap() as u64 + vectors_len as u64),
         )?;
         Ok(())
-    });
+    }
 
-    scalar_callback!(VarargScalar, u64, |input, result, _ctx, _user_data| {
+    fn vararg(_ctx: &Context, input: &mut VectorCollection, mut result: Vector<'_, u64>) -> Result<()> {
         let vectors_len = input.col_count();
-        let mut result = result;
-        result.set_size(1)?;
-        result.writer()?.set(0, Some(vectors_len as u64))?;
+        result.writer()?.set(0, &(vectors_len as u64))?;
         Ok(())
-    });
+    }
 
     fn query_u64(conn: &crate::connection::Connection, sql: &str) -> crate::Result<Option<u64>> {
         let mut result = conn.query(sql, Parameters::None)?;
@@ -350,7 +348,7 @@ mod test {
             ))
             .param(FunctionParameter::with_default("param3", 42_i32))
             .return_type(u64::logical_type(&conn)?);
-        ScalarFunctionBuilder::new("typed", sig, DefaultParameterScalar).register(&conn)?;
+        MicroScalar::with_signature("typed", sig, default_parameter).register(&conn)?;
 
         let mut result = conn.query(
             "SELECT parameter_types::VARCHAR, return_type FROM duckdb_functions() WHERE function_name = 'typed'",
@@ -367,6 +365,48 @@ mod test {
     }
 
     #[test]
+    fn test_return_type_replaces_previous_type() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+        for (name, return_type) in [
+            ("rust_return", TypeDeclaration::rust_type::<i32>()),
+            ("resolved_return", TypeDeclaration::Resolved(i32::logical_type(&conn)?)),
+        ] {
+            let signature = SignatureBuilder {
+                return_type: Some(return_type),
+                ..SignatureBuilder::new()
+            }
+            .return_type(u64::logical_type(&conn)?);
+            MicroScalar::with_signature(name, signature, vararg).register(&conn)?;
+            assert_eq!(query_u64(&conn, &format!("SELECT {name}()"))?, Some(0));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_inferred_return_type_defers_errors_to_registration() -> crate::Result<()> {
+        struct InvalidType;
+
+        impl DuckDBType for InvalidType {
+            fn logical_type<C: FFILink + ?Sized>(_link: &C) -> Result<LogicalType> {
+                Err(crate::Error::invalid_input("invalid return type"))
+            }
+        }
+
+        let signature = SignatureBuilder {
+            return_type: Some(TypeDeclaration::rust_type::<InvalidType>()),
+            ..SignatureBuilder::new()
+        };
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+        let error = MicroScalar::with_signature("invalid_return", signature, vararg)
+            .register(&conn)
+            .expect_err("logical type errors must propagate");
+        assert_eq!(error.message, "invalid return type");
+        Ok(())
+    }
+
+    #[test]
     fn test_signature_default_value() -> crate::Result<()> {
         let env = Environment::new()?;
         let instance = env.open(StorageLocation::InMemory)?;
@@ -378,7 +418,7 @@ mod test {
             .param(FunctionParameter::with_default("param3", 42_i32))
             .return_type(u64::logical_type(&conn)?);
 
-        ScalarFunctionBuilder::new("test", sig, DefaultParameterScalar).register(&conn)?;
+        MicroScalar::with_signature("test", sig, default_parameter).register(&conn)?;
 
         assert_eq!(query_u64(&conn, "SELECT test(10, 'AA')")?, Some(45));
         assert_eq!(query_u64(&conn, "SELECT test(10, 'AA', 7)")?, Some(10));
@@ -398,7 +438,7 @@ mod test {
             .param(FunctionParameter::with_default("param3", 42_i32).kind(FunctionParameterKind::Named))
             .return_type(u64::logical_type(&conn)?);
 
-        ScalarFunctionBuilder::new("test", sig, DefaultParameterScalar).register(&conn)?;
+        MicroScalar::with_signature("test", sig, default_parameter).register(&conn)?;
 
         assert_eq!(query_u64(&conn, "SELECT test(10, 'AA')")?, Some(45));
         assert_eq!(query_u64(&conn, "SELECT test(10, 'AA', param3 := 7)")?, Some(10));
@@ -419,7 +459,7 @@ mod test {
             .param(FunctionParameter::vararg::<i32>("param3"))
             .return_type(u64::logical_type(&conn)?);
 
-        ScalarFunctionBuilder::new("test", sig, VarargScalar).register(&conn)?;
+        MicroScalar::with_signature("test", sig, vararg).register(&conn)?;
 
         assert_eq!(
             query_u64(&conn, "SELECT test(10, 'AA', 1, 2, 3, 4, 5, 6, 7, 8, 9)")?,
@@ -429,15 +469,13 @@ mod test {
         Ok(())
     }
 
-    scalar_callback!(IdentityScalar, i32, |input, result, _ctx, _user_data| {
+    fn identity(_ctx: &Context, input: &mut VectorCollection, mut result: Vector<'_, i32>) -> Result<()> {
         let input = input.get_vector_at::<i32>(0)?;
-        let mut result = result;
-        result.set_size(input.len())?;
         for (i, value) in input.reader()?.iter().enumerate() {
-            result.writer()?.set(i, value.copied())?;
+            result.writer()?.set_option(i, value)?;
         }
         Ok(())
-    });
+    }
 
     #[test]
     fn test_signature_explicit_type_default_value() -> Result<()> {
@@ -446,7 +484,7 @@ mod test {
         let signature = SignatureBuilder::new()
             .param(FunctionParameter::with_type("x", LogicalType::from_text(&conn, "INTEGER")?).default_value(42_i64))
             .return_type(i32::logical_type(&conn)?);
-        ScalarFunctionBuilder::new("typed_default", signature, IdentityScalar).register(&conn)?;
+        MicroScalar::with_signature("typed_default", signature, identity).register(&conn)?;
 
         assert_eq!(query_u64(&conn, "SELECT typed_default()::UBIGINT")?, Some(42));
         assert_eq!(query_u64(&conn, "SELECT typed_default(7)::UBIGINT")?, Some(7));
@@ -460,7 +498,7 @@ mod test {
         if let Some(docs) = docs {
             signature = signature.documentation(docs);
         }
-        ScalarFunctionBuilder::new(name, signature, IdentityScalar).register(conn)
+        MicroScalar::with_signature(name, signature, identity).register(conn)
     }
 
     /// Returns `description`, `examples` and `categories` from `duckdb_functions()` as text.

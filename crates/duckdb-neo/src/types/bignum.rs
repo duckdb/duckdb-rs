@@ -13,7 +13,7 @@ use crate::{
     logical_type::{LogicalType, LogicalTypeID},
     raw::RawExt,
     value::{Value, ValueInput},
-    vector::{HasDuckDBBytes, VectorElement, WritableVectorElement},
+    vector::{HasDuckDBBytes, NativeElement, ReadableNativeElement, WritableNativeElement},
 };
 use std::fmt::Display;
 
@@ -39,9 +39,9 @@ impl BigNum {
     fn encoded(&self) -> &[u8] {
         let length = unsafe { self.0.value.inlined.length };
         let bytes = if length <= ffi::DUCKDB_V2_BYTES_INLINE_LENGTH {
-            unsafe { self.0.value.inlined.inlined.as_ptr() as *const u8 }
+            unsafe { self.0.value.inlined.inlined.as_ptr().cast::<u8>() }
         } else {
-            unsafe { self.0.value.pointer.ptr as *const u8 }
+            unsafe { self.0.value.pointer.ptr.cast::<u8>() }
         };
         unsafe { std::slice::from_raw_parts(bytes, length as usize) }
     }
@@ -76,14 +76,18 @@ impl HasDuckDBBytes for BigNum {}
 impl HasDuckDBBytes for BigNumValue {}
 
 // SAFETY: `BigNum` matches DuckDB's string storage for `BIGNUM`.
-unsafe impl VectorElement for BigNum {
+unsafe impl NativeElement for BigNum {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::BigNum;
 
-    type Internal<'a> = BigNum;
+    type Native<'a> = BigNum;
+}
 
+// SAFETY: `get` reads the validated physical slot.
+unsafe impl ReadableNativeElement for BigNum {
     type Ref<'a> = &'a BigNum;
 
-    unsafe fn get<'a, U: VectorElement>(
+    #[inline]
+    unsafe fn get<'a, U: NativeElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
         _logical: usize,
@@ -97,16 +101,17 @@ unsafe impl VectorElement for BigNum {
 }
 
 // SAFETY: a `BigNum` only borrows DuckDB-encoded bytes, which `write_bytes` copies into the vector's arena.
-unsafe impl WritableVectorElement for BigNum {
-    type Write<'a> = &'a BigNum;
+unsafe impl WritableNativeElement for BigNum {
+    type Write = BigNum;
 
+    #[inline]
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<Self::Write<'_>>,
+        value: &Self::Write,
     ) -> Result<()> {
         // SAFETY: The caller guarantees a writable, flat, in-bounds row.
-        unsafe { vector.write_bytes(index, value.map(BigNum::encoded)) }
+        unsafe { vector.write_bytes(index, Some(value.encoded())) }
     }
 }
 
@@ -149,14 +154,18 @@ impl FromValue for BigNumValue {
 
 // TODO: Review if needed..
 // SAFETY: same storage as `BigNum`.
-unsafe impl VectorElement for BigNumValue {
+unsafe impl NativeElement for BigNumValue {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::BigNum;
 
-    type Internal<'a> = BigNum;
+    type Native<'a> = BigNum;
+}
 
+// SAFETY: `get` reads the validated physical slot.
+unsafe impl ReadableNativeElement for BigNumValue {
     type Ref<'a> = &'a BigNum;
 
-    unsafe fn get<'a, U: VectorElement>(
+    #[inline]
+    unsafe fn get<'a, U: NativeElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
         logical: usize,
@@ -170,30 +179,18 @@ unsafe impl VectorElement for BigNumValue {
 }
 
 // SAFETY: `encode_bignum` produces valid bytes, which `write_bytes` copies into the vector's arena.
-unsafe impl WritableVectorElement for BigNumValue {
-    type Write<'a> = &'a BigNumValue;
+unsafe impl WritableNativeElement for BigNumValue {
+    type Write = BigNumValue;
 
+    #[inline]
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<Self::Write<'_>>,
+        value: &Self::Write,
     ) -> Result<()> {
-        let encoded = value
-            .map(|value| Value::encode_bignum(&value.magnitude, value.is_negative))
-            .transpose()?;
+        let encoded = Value::encode_bignum(&value.magnitude, value.is_negative)?;
         // SAFETY: The caller guarantees a writable, flat, in-bounds row.
-        unsafe { vector.write_bytes(index, encoded.as_deref()) }
-    }
-}
-
-// SAFETY: the native writer encodes the borrowed value and copies it into the vector's arena.
-unsafe impl crate::vector::OwnedVectorElement for BigNumValue {
-    unsafe fn write_ref(
-        writer: &mut crate::vector::VectorWriter<'_, Self>,
-        index: usize,
-        value: Option<&Self>,
-    ) -> Result<()> {
-        unsafe { writer.set_unchecked(index, value) }
+        unsafe { vector.write_bytes(index, Some(&encoded)) }
     }
 }
 

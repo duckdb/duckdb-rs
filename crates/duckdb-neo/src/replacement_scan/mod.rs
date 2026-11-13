@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use crate::{
     Result,
-    builder_helpers::{OpaqueHandle, get_opaque_data_ref, handle_unwind},
+    builder_helpers::{OpaqueHandle, get_opaque_data_ref, register_callback},
     check_api_call,
     column_data_collection::ColumnDataCollection,
     connection::Context,
@@ -13,7 +13,7 @@ use crate::{
     handles::ReplacementScanBuilderLink,
     links::ConnectionOrigin,
     qualified_name::QualifiedName,
-    raw::{FromRaw, RawExt},
+    raw::RawExt,
     value::Value,
 };
 
@@ -128,30 +128,23 @@ struct ReplacementScanData<'conn, T> {
     collections: HashMap<String, ColumnDataCollection<'conn>>,
 }
 
-unsafe extern "C" fn replacement_callback<T: ReplacementScanCallbacks>(
+fn replacement_callback<T: ReplacementScanCallbacks>(
+    context: &Context,
     info: ffi::duckdb_v2_replacement_scan_info_handle,
-    context: ffi::duckdb_v2_context_handle,
-    err: *mut ffi::duckdb_v2_error_info_handle,
-) {
-    handle_unwind(
-        || {
-            let user_data = check_api_call!(ffi::duckdb_v2_replacement_scan_get_user_data, info, RET)?;
-            let data = unsafe { get_opaque_data_ref::<ReplacementScanData<'_, T>>(user_data) }.unwrap();
+) -> Result<()> {
+    let user_data = check_api_call!(ffi::duckdb_v2_replacement_scan_get_user_data, info, RET)?;
+    let data = unsafe { get_opaque_data_ref::<ReplacementScanData<'_, T>>(user_data) }.unwrap();
 
-            let qname = QualifiedName {
-                handle: check_api_call!(ffi::duckdb_v2_replacement_scan_get_name, info, RET)?,
-            };
+    let qname = QualifiedName {
+        handle: check_api_call!(ffi::duckdb_v2_replacement_scan_get_name, info, RET)?,
+    };
 
-            let handle = ReplacementHandle {
-                info: &info,
-                collections: &data.collections,
-            };
+    let handle = ReplacementHandle {
+        info: &info,
+        collections: &data.collections,
+    };
 
-            data.implementation
-                .scan(&unsafe { Context::from_raw(context) }, &qname, handle)
-        },
-        err,
-    );
+    data.implementation.scan(context, &qname, handle)
 }
 
 /// Registers a replacement scan callback.
@@ -221,11 +214,13 @@ where
 
         let handle = link.create_replacement_scan_handle()?;
 
-        check_api_call!(
-            ffi::duckdb_v2_replacement_scan_set_callback,
-            handle.raw(),
-            Some(replacement_callback::<T>)
-        )?;
+        register_callback! {
+            T = ReplacementScanCallbacks,
+            cb = ffi::duckdb_v2_replacement_scan_set_callback,
+            handle = handle.raw(),
+            args = (info: ffi::duckdb_v2_replacement_scan_info_handle),
+            exec = replacement_callback,
+        }?;
 
         check_api_call!(
             ffi::duckdb_v2_replacement_scan_set_user_data,

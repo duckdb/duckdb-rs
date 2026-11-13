@@ -1,4 +1,4 @@
-use super::{DecimalSignature, DecimalValue};
+use super::{DecimalSignature, DecimalValue, HugeDecimal};
 use crate::{
     Result,
     connection::FFILink,
@@ -7,7 +7,7 @@ use crate::{
     logical_type::{LogicalType, LogicalTypeID},
     types::{FromValue, ToValue},
     value::Value,
-    vector::{VectorElement, WritableVectorElement},
+    vector::{NativeElement, ReadableNativeElement, WritableNativeElement},
 };
 
 /// Widest `DECIMAL` whose values all fit `rust_decimal`'s 96-bit mantissa.
@@ -50,22 +50,14 @@ impl FromValue for rust_decimal::Decimal {
     }
 }
 
-fn signature(metadata: crate::vector::TypeMetadata) -> DecimalSignature {
-    metadata
-        .decimal_signature()
-        .expect("validated DECIMAL vector has a signature")
-}
-
 /// # Panics
 /// Panics if a stored value exceeds `rust_decimal`'s 96-bit mantissa.
 // SAFETY: `get` reads the storage integer DuckDB uses for the vector's width.
-unsafe impl VectorElement for rust_decimal::Decimal {
+unsafe impl NativeElement for rust_decimal::Decimal {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Decimal;
 
     // The storage integer depends on the column's width.
-    type Internal<'a> = ();
-
-    type Ref<'a> = rust_decimal::Decimal;
+    type Native<'a> = ();
 
     fn validate(other: &LogicalType, _children: Option<&VectorCollection>) -> Result<bool> {
         if other.id()? != Self::TYPE_ID {
@@ -73,8 +65,14 @@ unsafe impl VectorElement for rust_decimal::Decimal {
         }
         Ok(DecimalSignature::from_logical_type(other)?.width <= MAX_RUST_DECIMAL_WIDTH)
     }
+}
 
-    unsafe fn get<'a, U: VectorElement>(
+// SAFETY: `get` reads the validated physical slot.
+unsafe impl ReadableNativeElement for rust_decimal::Decimal {
+    type Ref<'a> = rust_decimal::Decimal;
+
+    #[inline]
+    unsafe fn get<'a, U: NativeElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
         _logical: usize,
@@ -82,37 +80,35 @@ unsafe impl VectorElement for rust_decimal::Decimal {
     where
         Self: 'a,
     {
-        let DecimalSignature { width, scale } = signature(vector.metadata());
+        let DecimalSignature { width, scale } = vector
+            .vector()
+            .decimal_signature()
+            .expect("validated DECIMAL vector has a signature");
         let data = vector.as_ptr() as *const u8;
         let value = unsafe {
             match width {
                 1..=4 => i128::from(*(data as *const i16).add(physical)),
                 5..=9 => i128::from(*(data as *const i32).add(physical)),
                 10..=18 => i128::from(*(data as *const i64).add(physical)),
-                _ => *(data as *const i128).add(physical),
+                _ => (*(data as *const HugeDecimal).add(physical)).0,
             }
         };
         rust_decimal::Decimal::from_i128_with_scale(value, u32::from(scale))
     }
 }
 
-crate::vector::owned_by_copy!(rust_decimal::Decimal);
-
 /// Rescales to the column's scale; fails instead of rounding or overflowing.
 // SAFETY: `write` checks the digit range and writes the storage integer for the vector's width.
-unsafe impl WritableVectorElement for rust_decimal::Decimal {
-    type Write<'a> = rust_decimal::Decimal;
+unsafe impl WritableNativeElement for rust_decimal::Decimal {
+    type Write = rust_decimal::Decimal;
 
+    #[inline]
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<Self::Write<'_>>,
+        value: &Self::Write,
     ) -> Result<()> {
-        let Some(value) = value else {
-            // SAFETY: The caller guarantees a writable, flat, in-bounds row; no data is written.
-            return unsafe { vector.write_internal::<()>(index, None) };
-        };
-        let DecimalSignature { width, scale } = signature(vector.metadata());
+        let DecimalSignature { width, scale } = vector.vector().decimal_signature()?;
         let from_scale = value.scale();
         let to_scale = u32::from(scale);
         let scaled = if from_scale <= to_scale {
@@ -138,7 +134,7 @@ unsafe impl WritableVectorElement for rust_decimal::Decimal {
                 1..=4 => vector.write_internal(index, decimal.to_primitive::<i16>()),
                 5..=9 => vector.write_internal(index, decimal.to_primitive::<i32>()),
                 10..=18 => vector.write_internal(index, decimal.to_primitive::<i64>()),
-                _ => vector.write_internal(index, Some(decimal.value)),
+                _ => vector.write_internal(index, Some(HugeDecimal(decimal.value))),
             }
         }
     }
@@ -154,6 +150,7 @@ mod tests {
         data_chunk::DataChunk,
         environment::{Environment, StorageLocation},
         types::DuckDBType,
+        vector::RowReader,
     };
 
     fn dec(text: &str) -> rust_decimal::Decimal {
@@ -245,7 +242,7 @@ mod tests {
         assert!(chunk.get_vector_at::<rust_decimal::Decimal>(5).is_err());
 
         let map = chunk.get_vector_at::<crate::types::Map<i32, rust_decimal::Decimal>>(6)?;
-        assert_eq!(map.reader()?.get(0)?.unwrap().get(&1), Some(Some(dec("1.21"))));
+        assert_eq!(map.map_reader()?.get(0)?.unwrap().get(0), Some((&1, Some(dec("1.21")))));
 
         Ok(())
     }
@@ -261,20 +258,20 @@ mod tests {
             let mut chunk = DataChunk::create(&conn, &[logical_type], true)?;
             let mut vector = chunk.get_vector_at_mut::<rust_decimal::Decimal>(0)?;
             vector.set_size(4)?;
-            vector.writer()?.set(0, Some(dec("1.5")))?;
-            vector.writer()?.set(1, Some(dec("-12.300")))?;
-            vector.writer()?.set(2, None)?;
-            vector.writer()?.set(3, Some(dec("99.99")))?;
+            vector.writer()?.set(0, &dec("1.5"))?;
+            vector.writer()?.set(1, &dec("-12.300"))?;
+            vector.writer()?.set_null(2)?;
+            vector.writer()?.set(3, &dec("99.99"))?;
             assert_eq!(
                 vector.reader()?.iter().collect::<Vec<_>>(),
                 vec![Some(dec("1.50")), Some(dec("-12.30")), None, Some(dec("99.99"))]
             );
 
-            assert!(vector.writer()?.set(0, Some(dec("1.234"))).is_err());
+            assert!(vector.writer()?.set(0, &dec("1.234")).is_err());
             let too_big = 10i128.pow(u32::from(width) - 2);
             let error = vector
                 .writer()?
-                .set(0, Some(rust_decimal::Decimal::from_i128_with_scale(too_big, 0)))
+                .set(0, &rust_decimal::Decimal::from_i128_with_scale(too_big, 0))
                 .unwrap_err();
             assert!(
                 error

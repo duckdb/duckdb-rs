@@ -1,7 +1,7 @@
 [package]
 name = "duckdb-neo"
-description = "Ergonomic wrapper for DuckDB's v2 C API (experimental)"
-version = "0.20000.1"
+description = "Ergonomic wrapper for DuckDB's v2 C API (beta)"
+version = "0.20000.2"
 authors = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
@@ -63,6 +63,8 @@ uuid = { workspace = true, optional = true }
 
 [dev-dependencies]
 arrow-array = { workspace = true, features = ["ffi"] }
+divan = { workspace = true }
+memchr = "=2.8.3"
 tempfile = { workspace = true }
 
 [package.metadata.docs.rs]
@@ -71,6 +73,10 @@ all-features = false
 no-default-features = true
 default-target = "x86_64-unknown-linux-gnu"
 targets = []
+
+[[bench]]
+name = "functions"
+harness = false
 
 [[example]]
 name = "002-extension"

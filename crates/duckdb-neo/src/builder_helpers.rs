@@ -187,6 +187,65 @@ pub(crate) fn handle_unwind<T, F: FnOnce() -> Result<T>>(
     }
 }
 
+macro_rules! callback_trampoline {
+    (
+        $generic:ident = $bound:path,
+        args = ($($arg:ident: $arg_type:ty),* $(,)?),
+        exec = $exec:ident $(,)?
+    ) => {{
+        unsafe extern "C" fn trampoline<$generic: $bound>(
+            $($arg: $arg_type,)*
+            context: $crate::ffi::duckdb_v2_context_handle,
+            err: *mut $crate::ffi::duckdb_v2_error_info_handle,
+        ) {
+            $crate::builder_helpers::handle_unwind(
+                || -> $crate::Result<()> {
+                    let context = unsafe {
+                        <$crate::connection::Context as $crate::raw::FromRaw>::from_raw(context)
+                    };
+                    $exec::<$generic>(&context, $($arg),*)
+                },
+                err,
+            );
+        }
+
+        Some(trampoline::<$generic>)
+    }};
+    (
+        $generic:ident = $bound:path,
+        context = none,
+        args = ($($arg:ident: $arg_type:ty),* $(,)?),
+        exec = $exec:ident $(,)?
+    ) => {{
+        unsafe extern "C" fn trampoline<$generic: $bound>(
+            $($arg: $arg_type,)*
+            err: *mut $crate::ffi::duckdb_v2_error_info_handle,
+        ) {
+            $crate::builder_helpers::handle_unwind(
+                || -> $crate::Result<()> { $exec::<$generic>($($arg),*) },
+                err,
+            );
+        }
+
+        Some(trampoline::<$generic>)
+    }};
+}
+
+macro_rules! register_callback {
+    (
+        $generic:ident = $bound:path,
+        cb = $callback:path,
+        handle = $handle:expr,
+        $($rest:tt)*
+    ) => {
+        $crate::check_api_call!(
+            $callback,
+            $handle,
+            $crate::builder_helpers::callback_trampoline! { $generic = $bound, $($rest)* }
+        )
+    };
+}
+
 macro_rules! get_user_data {
     ($ffi_call:expr, $handle:expr) => {{
         let user_data = check_api_call!($ffi_call, $handle, RET)?;
@@ -266,40 +325,14 @@ macro_rules! ffi_enum_redeclaration {
 
 use std::{any::Any, cell::RefCell, ffi::c_void, panic::AssertUnwindSafe};
 
+pub(crate) use callback_trampoline;
 pub(crate) use ffi_enum_redeclaration;
-
 pub(crate) use get_bind_data;
 pub(crate) use get_global_state;
 pub(crate) use get_init_data;
 pub(crate) use get_local_state;
 pub(crate) use get_user_data;
-
-#[cfg(test)]
-macro_rules! scalar_callback {
-    ($name:ident, $result_type:ty, |$input:ident, $result:ident, $ctx:ident, $user_data:ident| $body:block) => {
-        struct $name;
-
-        impl $crate::scalar::ScalarCallbacks for $name {
-            type BindData = ();
-            type InitData = ();
-
-            fn exec(
-                &self,
-                _bind_data: Option<&Self::BindData>,
-                _init_data: Option<&mut Self::InitData>,
-                $ctx: &$crate::connection::Context,
-                $input: &mut $crate::data_chunk::VectorCollection,
-                $result: $crate::vector::Vector<'_, crate::vector::Unknown>,
-            ) -> $crate::Result<()> {
-                let $result = $result.cast::<$result_type>()?;
-                $body
-            }
-        }
-    };
-}
-
-#[cfg(test)]
-pub(crate) use scalar_callback;
+pub(crate) use register_callback;
 
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]

@@ -1,8 +1,8 @@
 //! The `LIST` logical type.
 //!
-//! [`List<T>`] holds a row's elements, each `None` for SQL NULL; vectors of `List<T>`
-//! read rows as [`ListRef`]. Writes never resize the element child; [`List`] describes
-//! how to size it.
+//! [`List<T>`] holds a row's elements, each `None` for SQL NULL. A `LIST` vector's own rows are
+//! [`ListIndex`] entries into its element child; read and write whole rows with a
+//! [`ListReader`](crate::vector::ListReader) and [`ListWriter`](crate::vector::ListWriter).
 
 use super::{DuckDBType, FromValue, ToValue};
 use crate::{
@@ -12,18 +12,23 @@ use crate::{
     error::Error,
     logical_type::{LogicalType, LogicalTypeID},
     value::{Value, ValueInput},
-    vector::{OwnedVectorElement, Vector, VectorElement, VectorWriter, WritableVectorElement},
+    vector::{NativeElement, ReadableNativeElement, Vector, VectorReader, VectorWriter, WritableNativeElement},
 };
 
 /// DuckDB's physical list entry: a range of elements in the child vector.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct ListIndex {
     pub(crate) offset: u64,
     pub(crate) length: u64,
 }
 
 impl ListIndex {
+    /// Create an entry covering `length` child elements from `offset`.
+    pub const fn new(offset: u64, length: u64) -> Self {
+        Self { offset, length }
+    }
+
     /// Return the starting index in the child vector.
     pub fn offset(&self) -> u64 {
         self.offset
@@ -33,40 +38,31 @@ impl ListIndex {
     pub fn length(&self) -> u64 {
         self.length
     }
+
+    /// Return one past the last child element, or `None` on overflow.
+    pub fn end(&self) -> Option<u64> {
+        self.offset.checked_add(self.length)
+    }
 }
 
 /// An owned `LIST` row; each `None` element is SQL NULL.
 ///
-/// # Writing `LIST` vectors
-///
-/// Writes never resize the element child. Size it with [`Vector::set_child_size`]; each row
-/// write then takes the next unwritten elements, in any row order, and fails without taking
-/// any when too few remain. Nested `LIST`s and `MAP`s keep their own offsets, so size each level.
-///
-/// DuckDB reads the whole child, so every element below its size must be written before the
-/// vector is read. When the total is unknown, size for an upper bound, write the rows, then trim
-/// to [`Vector::child_offset`] with another `set_child_size` call, which keeps written elements.
-/// A failed row write takes no elements, but skipping ahead with [`Vector::set_child_offset`]
-/// leaves a gap that must be written or trimmed away.
+/// A `LIST` vector reads and writes its rows natively as [`ListIndex`] entries, checked against the
+/// size of the element child, which [`Vector::set_child_size`] sets. A [`ListWriter`](crate::vector::ListWriter)
+/// writes whole rows into the sized child instead:
 ///
 /// ```
-/// use duckdb_neo::{DuckDBType, Result, data_chunk::DataChunk, environment::{Environment, StorageLocation}, types::List};
+/// use duckdb_neo::{DuckDBType, Result, data_chunk::DataChunk, environment::{Environment, StorageLocation}, types::List, vector::RowWriter};
 ///
 /// # fn main() -> Result<()> {
 /// let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
 /// let mut chunk = DataChunk::create(&conn, &[List::<i32>::logical_type(&conn)?], true)?;
 /// let mut vector = chunk.get_vector_at_mut::<List<i32>>(0)?;
 /// vector.set_size(2)?;
-/// // SAFETY: the vector is trimmed to the written elements before it is read.
-/// unsafe { vector.set_child_size(16)? };
-/// {
-///     let mut writer = vector.writer()?;
-///     writer.set(0, Some(List(vec![Some(1), Some(2)])))?;
-///     writer.set(1, Some(List(vec![Some(3)])))?;
-/// }
-/// let written = vector.child_offset();
-/// // SAFETY: every element below `written` was written above.
-/// unsafe { vector.set_child_size(written)? };
+/// vector.set_child_size(3)?;
+/// let mut writer = vector.list_writer()?;
+/// writer.set(0, &List(vec![Some(1), Some(2)]))?;
+/// writer.set(1, &List(vec![Some(3)]))?;
 /// assert_eq!(vector.children().unwrap().get_untyped_vector_at(0)?.len(), 3);
 /// assert_eq!(vector.get_value_slow(1)?.get::<List<i32>>()?, Some(List(vec![Some(3)])));
 /// # Ok(())
@@ -129,15 +125,10 @@ impl<T: FromValue> FromValue for List<T> {
 }
 
 // SAFETY: `ListIndex` matches DuckDB's list entry, and `validate` checks the child as `T`.
-unsafe impl<T: VectorElement> VectorElement for List<T> {
-    type Ref<'a>
-        = ListRef<'a, T>
-    where
-        T: 'a;
-
-    type Internal<'a> = ListIndex;
-
+unsafe impl<T: NativeElement> NativeElement for List<T> {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::List;
+
+    type Native<'a> = ListIndex;
 
     fn validate(other: &LogicalType, children: Option<&VectorCollection>) -> Result<bool> {
         if other.id()? != Self::TYPE_ID {
@@ -149,213 +140,74 @@ unsafe impl<T: VectorElement> VectorElement for List<T> {
         };
         children.get_untyped_vector_at(0)?.validate_as::<T>().map(|()| true)
     }
+}
 
-    unsafe fn get<'a, U: VectorElement>(
-        vector: &crate::vector::VectorReader<'a, U>,
-        physical: usize,
-        _logical: usize,
-    ) -> Self::Ref<'a>
+// SAFETY: LIST rows store list entries.
+unsafe impl<T: NativeElement> ReadableNativeElement for List<T> {
+    type Ref<'a>
+        = ListIndex
     where
-        Self: Sized + 'a,
+        T: 'a;
+
+    #[inline(always)]
+    unsafe fn get<'a, U: NativeElement>(reader: &VectorReader<'a, U>, physical: usize, _logical: usize) -> ListIndex
+    where
+        Self: 'a,
     {
-        let data_ptr = vector.as_ptr() as *const ListIndex;
-        let list = unsafe { &*data_ptr.add(physical) };
-        ListRef {
-            list,
-            // SAFETY: List<T>::validate checked the child as T.
-            child: unsafe { vector.child_reader::<T>(0) },
-        }
+        // SAFETY: the caller guarantees a valid row of LIST storage.
+        unsafe { *reader.as_ptr().cast::<ListIndex>().add(physical) }
     }
 }
 
-impl<T: VectorElement> Vector<'_, List<T>> {
-    /// Size the element child to exactly `elements` and restart writes at its first element.
+// SAFETY: entries are checked against the element child's size, whose rows are always initialized.
+unsafe impl<T: NativeElement> WritableNativeElement for List<T> {
+    type Write = ListIndex;
+
+    #[inline]
+    unsafe fn write(writer: &mut VectorWriter<'_, Self>, index: usize, value: &ListIndex) -> Result<()> {
+        check_entry(value, writer.vector().list_child_len()?, "LIST elements")?;
+        // SAFETY: the caller guarantees an in-bounds row, and the entry covers initialized elements.
+        unsafe { writer.write_internal(index, Some(*value)) }
+    }
+}
+
+/// Reject an entry past the `len` rows of the child.
+#[inline]
+pub(crate) fn check_entry(entry: &ListIndex, len: usize, what: &str) -> Result<()> {
+    match entry.end() {
+        Some(end) if end <= len as u64 => Ok(()),
+        _ => Err(Error::invalid_input(format!(
+            "entry {}..+{} is past the {len} {what}",
+            entry.offset, entry.length
+        ))),
+    }
+}
+
+impl<T: NativeElement> Vector<'_, List<T>> {
+    /// Resize the element child to `elements`; new elements are initialized like [`Vector::set_size`].
+    ///
+    /// Shrinking fails if a valid row's entry would reach past the new size.
+    pub fn set_child_size(&mut self, elements: usize) -> Result<()> {
+        self.resize_list_child(elements)
+    }
+
+    /// As [`Self::set_child_size`], leaving new elements uninitialized.
     ///
     /// # Safety
-    /// Every element below `elements` must be written before DuckDB reads this vector; see
-    /// [`List`] for sizing to an upper bound and trimming.
-    pub unsafe fn set_child_size(&mut self, elements: usize) -> Result<()> {
-        // SAFETY: the caller upholds the initialization contract.
-        unsafe { self.size_appended_child(elements) }
-    }
-
-    /// Return the first element the next list write uses.
-    pub fn child_offset(&self) -> usize {
-        self.child_offset_cell().get()
-    }
-
-    /// Continue list writes at `offset`, e.g. with a new wrapper for a partially written vector.
-    ///
-    /// Moving backwards makes later writes replace elements of rows that were already written.
-    pub fn set_child_offset(&mut self, offset: usize) -> Result<()> {
-        self.move_appended_child_offset(offset)
+    /// Every new element, and its descendants, must be written or marked NULL before anything reads
+    /// this vector.
+    pub unsafe fn set_child_size_uninit(&mut self, elements: usize) -> Result<()> {
+        // SAFETY: the caller initializes the new elements.
+        unsafe { self.resize_list_child_uninit(elements) }
     }
 }
 
-impl<T: VectorElement> VectorWriter<'_, List<T>> {
-    /// Return the first element the next list write uses.
-    pub fn child_offset(&self) -> usize {
-        self.child_offset_cell().get()
+impl<T: NativeElement> VectorWriter<'_, List<T>> {
+    /// Write `entries` into rows `offset..` and mark them valid, checked once against the child's size.
+    pub fn write_entries(&mut self, offset: usize, entries: &[ListIndex]) -> Result<()> {
+        Vector::write_list_entries(self, offset, entries, "LIST elements")
     }
 }
-
-/// # Safety
-/// `index` must be in bounds, and the child must be validated as `T`.
-#[inline]
-unsafe fn write_list<T: VectorElement, V>(
-    vector: &mut VectorWriter<'_, List<T>>,
-    index: usize,
-    values: Option<impl ExactSizeIterator<Item = V>>,
-    mut write: impl FnMut(&mut VectorWriter<'_, T>, usize, V) -> Result<()>,
-) -> Result<()> {
-    let Some(values) = values else { return Ok(()) };
-    let len = values.len();
-    let offset = vector.child_offset_cell().get();
-    // SAFETY: the caller guarantees that the child was validated as T.
-    let child = unsafe { vector.child_writer_unchecked::<T>(0)? };
-    let size = child.len();
-    let end = offset.checked_add(len).filter(|end| *end <= size).ok_or_else(|| {
-        Error::invalid_input(format!(
-            "LIST row needs {len} elements, but only {} of {size} remain; size the child with set_child_size",
-            size - offset.min(size)
-        ))
-    })?;
-    for (element, value) in (offset..end).zip(values) {
-        write(child, element, value)?;
-    }
-    vector.child_offset_cell().set(end);
-    // SAFETY: the caller guarantees an in-bounds row, and the entry covers the elements just written.
-    unsafe {
-        vector.write_internal(
-            index,
-            Some(ListIndex {
-                offset: offset as u64,
-                length: len as u64,
-            }),
-        )
-    }
-}
-
-// SAFETY: entries only cover elements written through the child's own writer.
-unsafe impl<T: WritableVectorElement> WritableVectorElement for List<T> {
-    type Write<'a> = List<T::Write<'a>>;
-
-    #[inline]
-    unsafe fn write(vector: &mut VectorWriter<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
-        // SAFETY: the caller guarantees an in-bounds row; validation checked the child as T.
-        unsafe {
-            write_list(
-                vector,
-                index,
-                value.map(|value| value.0.into_iter()),
-                |child, element, value| child.set_unchecked(element, value),
-            )
-        }
-    }
-}
-
-// SAFETY: entries only cover elements written through the child's own writer.
-unsafe impl<T: OwnedVectorElement> OwnedVectorElement for List<T> {
-    #[inline]
-    unsafe fn write_ref(vector: &mut VectorWriter<'_, Self>, index: usize, value: Option<&Self>) -> Result<()> {
-        // SAFETY: the caller guarantees an in-bounds row; validation checked the child as T.
-        unsafe {
-            write_list(
-                vector,
-                index,
-                value.map(|value| value.0.iter()),
-                |child, element, value| T::write_ref(child, element, value.as_ref()),
-            )?;
-            vector.set_validity_unchecked(index, value.is_some());
-        }
-        Ok(())
-    }
-}
-
-/// A borrowed list row backed by a range in its child vector.
-#[derive(Debug)]
-pub struct ListRef<'a, T: VectorElement> {
-    list: &'a ListIndex,
-    child: crate::vector::VectorReader<'a, T>,
-}
-
-impl<'a, T: VectorElement> ListRef<'a, T> {
-    /// Return an element; outer `None` means the index is out of bounds.
-    pub fn get(&self, index: usize) -> Option<Option<T::Ref<'a>>> {
-        // SAFETY: The parent reader cached all descendant views before constructing this row.
-        (index < self.len()).then(|| unsafe { self.child.get_unchecked(self.list.offset as usize + index) })
-    }
-    /// Iterate over the list's values.
-    pub fn iter(&self) -> ListIterator<'a, T> {
-        ListIterator {
-            child: self.child.clone(),
-            offset: self.list.offset as usize,
-            length: self.list.length as usize,
-            index: 0,
-        }
-    }
-
-    /// Return the number of values in the list.
-    pub fn len(&self) -> usize {
-        self.list.length as usize
-    }
-
-    /// Return whether the list contains no values.
-    pub fn is_empty(&self) -> bool {
-        self.list.length == 0
-    }
-}
-
-impl<'a, T: VectorElement + 'a> IntoIterator for ListRef<'a, T> {
-    type Item = Option<T::Ref<'a>>;
-    type IntoIter = ListIterator<'a, T>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
-    }
-}
-
-impl<'a, T: VectorElement + 'a> IntoIterator for &ListRef<'a, T> {
-    type Item = Option<T::Ref<'a>>;
-    type IntoIter = ListIterator<'a, T>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
-    }
-}
-
-/// Traverses the child-vector range belonging to a [`ListRef`].
-#[derive(Debug)]
-pub struct ListIterator<'a, T: VectorElement> {
-    child: crate::vector::VectorReader<'a, T>,
-    offset: usize,
-    length: usize,
-    index: usize,
-}
-
-impl<'a, T: VectorElement + 'a> Iterator for ListIterator<'a, T> {
-    type Item = Option<T::Ref<'a>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index >= self.length {
-            return None;
-        }
-
-        let logical = self.offset + self.index;
-        self.index += 1;
-
-        // SAFETY: ListRef retains the parent's cached descendant views.
-        Some(unsafe { self.child.get_unchecked(logical) })
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let remaining = self.length - self.index;
-        (remaining, Some(remaining))
-    }
-}
-
-impl<'a, T: VectorElement + 'a> ExactSizeIterator for ListIterator<'a, T> {}
-impl<'a, T: VectorElement + 'a> std::iter::FusedIterator for ListIterator<'a, T> {}
 
 #[cfg(test)]
 mod tests {
@@ -370,159 +222,111 @@ mod tests {
         Environment::new()?.open(StorageLocation::InMemory)?.connect()
     }
 
-    fn entries(vector: &Vector<'_, List<i32>>) -> Result<Vec<Option<Vec<Option<i32>>>>> {
-        Ok(vector
-            .reader()?
-            .iter()
-            .map(|row| row.map(|row| row.iter().map(|value| value.copied()).collect()))
-            .collect())
-    }
-
     #[test]
     fn list_entry_accessors() {
-        let entry = ListIndex { offset: 7, length: 3 };
+        let entry = ListIndex::new(7, 3);
         assert_eq!(entry.offset(), 7);
         assert_eq!(entry.length(), 3);
+        assert_eq!(entry.end(), Some(10));
+        assert_eq!(ListIndex::new(u64::MAX, 1).end(), None);
     }
 
     #[test]
-    fn list_ref_get_and_iteration() -> Result<()> {
-        let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+    fn list_rows_read_their_entries() -> Result<()> {
+        let conn = connection()?;
         let chunk = conn
-            .query("SELECT ['a', NULL, 'b'], []::VARCHAR[]", Parameters::None)?
+            .query(
+                "SELECT * FROM (VALUES (['a', NULL]), (NULL), ([]::VARCHAR[]))",
+                Parameters::None,
+            )?
             .next_chunk()?
             .unwrap();
-        let vector = chunk.get_vector_at::<List<String>>(0)?;
-        let row = vector.reader()?.get(0)?.unwrap();
-        assert_eq!(row.get(0), Some(Some("a")));
-        assert_eq!(row.get(1), Some(None));
-        assert_eq!(row.get(2), Some(Some("b")));
-        assert_eq!(row.get(3), None);
-        assert_eq!(row.get(usize::MAX), None);
-        assert_eq!((&row).into_iter().collect::<Vec<_>>(), vec![Some("a"), None, Some("b")]);
-        let mut iter = row.into_iter();
-        fn assert_traits(_: &impl ExactSizeIterator, _: &impl std::iter::FusedIterator) {}
-        assert_traits(&iter, &iter);
-        assert_eq!(iter.size_hint(), (3, Some(3)));
-        assert_eq!(iter.next(), Some(Some("a")));
-        assert_eq!(iter.len(), 2);
-        assert_eq!(iter.next(), Some(None));
-        assert_eq!(iter.next(), Some(Some("b")));
-        assert_eq!(iter.size_hint(), (0, Some(0)));
-        assert_eq!(iter.next(), None);
-        assert_eq!(iter.next(), None);
-
-        let empty_vector = chunk.get_vector_at::<List<String>>(1)?;
-        let empty = empty_vector.reader()?.get(0)?.unwrap();
-        assert!(empty.is_empty());
-        assert_eq!(empty.get(0), None);
-        assert_eq!(empty.iter().len(), 0);
-        assert_eq!(empty.iter().next(), None);
+        let reader = chunk.get_vector_at::<List<String>>(0)?.reader()?;
+        assert_eq!(reader.get(0)?, Some(ListIndex::new(0, 2)));
+        assert_eq!(reader.get(1)?, None);
+        assert_eq!(reader.get(2)?.map(|entry| entry.length()), Some(0));
         Ok(())
     }
 
     #[test]
-    fn list_rows_take_elements_in_write_order() -> Result<()> {
+    fn list_entries_are_checked_against_the_child() -> Result<()> {
         let conn = connection()?;
         let mut chunk = DataChunk::create(&conn, &[List::<i32>::logical_type(&conn)?], true)?;
         let mut vector = chunk.get_vector_at_mut::<List<i32>>(0)?;
         vector.set_size(3)?;
-        // SAFETY: the rows below write all three elements.
-        unsafe { vector.set_child_size(3)? };
+        vector.set_child_size(3)?;
         {
             let mut writer = vector.writer()?;
-            writer.set(2, Some(List(vec![Some(1), Some(2)])))?;
-            writer.set(1, None)?;
-            writer.set(0, Some(List(vec![None])))?;
-        }
-        assert_eq!(
-            entries(&vector)?,
-            [Some(vec![None]), None, Some(vec![Some(1), Some(2)])]
-        );
-        let reader = vector.reader()?;
-        assert_eq!(reader.get(2)?.unwrap().list.offset(), 0);
-        assert_eq!(reader.get(0)?.unwrap().list.offset(), 2);
-        Ok(())
-    }
-
-    #[test]
-    fn list_rows_that_do_not_fit_write_nothing() -> Result<()> {
-        let conn = connection()?;
-        let mut chunk = DataChunk::create(&conn, &[List::<i32>::logical_type(&conn)?], true)?;
-        let mut vector = chunk.get_vector_at_mut::<List<i32>>(0)?;
-        vector.set_size(2)?;
-        let error = vector.writer()?.set(0, Some(List(vec![Some(1)]))).unwrap_err();
-        assert!(error.message.contains("only 0 of 0 remain"), "{error}");
-        // SAFETY: the rows below write all three elements.
-        unsafe { vector.set_child_size(3)? };
-        {
-            let mut writer = vector.writer()?;
-            writer.set(0, Some(List(vec![Some(1), Some(2)])))?;
-            let error = writer.set(1, Some(List(vec![Some(3), Some(4)]))).unwrap_err();
-            assert!(
-                error.message.contains("needs 2 elements, but only 1 of 3 remain"),
-                "{error}"
-            );
-            assert_eq!(writer.child_offset(), 2);
-            writer.set(1, Some(List(vec![Some(3)])))?;
-            assert!(writer.set(0, Some(List(vec![Some(5)]))).is_err());
-            // Empty lists need no elements.
-            writer.set(0, Some(List(vec![])))?;
-        }
-        assert_eq!(entries(&vector)?, [Some(vec![]), Some(vec![Some(3)])]);
-        Ok(())
-    }
-
-    #[test]
-    fn list_writes_borrow_owned_elements() -> Result<()> {
-        let conn = connection()?;
-        let mut chunk = DataChunk::create(&conn, &[List::<String>::logical_type(&conn)?], true)?;
-        let mut vector = chunk.get_vector_at_mut::<List<String>>(0)?;
-        vector.set_size(2)?;
-        let rows = [
-            Some(List(vec![
-                Some("a string longer than the inline storage".to_owned()),
-                None,
-            ])),
-            Some(List(vec![Some("b".to_owned())])),
-        ];
-        // SAFETY: the rows below write all three elements.
-        unsafe { vector.set_child_size(3)? };
-        {
-            let mut writer = vector.writer()?;
-            for (index, row) in rows.iter().enumerate() {
-                writer.set_ref(index, row.as_ref())?;
+            writer.set(0, &ListIndex::new(0, 2))?;
+            writer.set(1, &ListIndex::new(2, 1))?;
+            writer.set_null(2)?;
+            for entry in [ListIndex::new(2, 2), ListIndex::new(4, 0), ListIndex::new(u64::MAX, 2)] {
+                let error = writer.set(2, &entry).unwrap_err();
+                assert!(error.message.contains("past the 3 LIST elements"), "{error}");
             }
         }
-        for (index, row) in rows.iter().enumerate() {
-            assert_eq!(
-                vector.get_value_slow(index)?.get::<List<String>>()?.as_ref(),
-                row.as_ref()
-            );
-        }
+        assert_eq!(
+            vector.get_value_slow(0)?.get::<List<i32>>()?,
+            Some(List(vec![Some(0), Some(0)]))
+        );
+        assert_eq!(vector.get_value_slow(2)?.get::<List<i32>>()?, None);
+        assert!(vector.reader()?.get(2)?.is_none());
         Ok(())
     }
 
     #[test]
-    fn list_child_offset_moves_within_the_child() -> Result<()> {
+    fn list_child_shrinks_only_below_unused_elements() -> Result<()> {
         let conn = connection()?;
         let mut chunk = DataChunk::create(&conn, &[List::<i32>::logical_type(&conn)?], true)?;
         let mut vector = chunk.get_vector_at_mut::<List<i32>>(0)?;
         vector.set_size(2)?;
-        // SAFETY: row 0 writes both elements; rewinding then rewrites them for row 1.
-        unsafe { vector.set_child_size(2)? };
-        vector.writer()?.set(0, Some(List(vec![Some(1), Some(2)])))?;
-        assert!(vector.set_child_offset(3).is_err());
-        vector.set_child_offset(0)?;
-        vector.writer()?.set(1, Some(List(vec![Some(7), Some(8)])))?;
-        // Both rows now share the rewritten range.
+        vector.set_child_size(10)?;
+        vector.writer()?.set(0, &ListIndex::new(1, 3))?;
+        vector.writer()?.set_null(1)?;
+        let error = vector.set_child_size(3).unwrap_err();
+        assert!(error.message.contains("past the new 3"), "{error}");
+        vector.set_child_size(4)?;
+        assert_eq!(vector.children().unwrap().get_untyped_vector_at(0)?.len(), 4);
+        // A NULL row's entry is never read.
+        vector.writer()?.set_null(0)?;
+        vector.set_child_size(0)?;
+        Ok(())
+    }
+
+    #[test]
+    fn list_entries_write_in_bulk() -> Result<()> {
+        let conn = connection()?;
+        let mut chunk = DataChunk::create(&conn, &[List::<i32>::logical_type(&conn)?], true)?;
+        let mut vector = chunk.get_vector_at_mut::<List<i32>>(0)?;
+        vector.set_size(3)?;
+        // SAFETY: all three elements are written below.
+        unsafe { vector.set_child_size_uninit(3)? };
+        {
+            let mut children = vector.children_mut().unwrap();
+            let mut elements = children.get_vector_at_mut::<i32>(0)?;
+            elements.writer()?.write_slice(0, &[1, 2, 3])?;
+        }
+        {
+            let mut writer = vector.writer()?;
+            let error = writer
+                .write_entries(0, &[ListIndex::new(0, 2), ListIndex::new(2, 2)])
+                .unwrap_err();
+            assert!(error.message.contains("past the 3 LIST elements"), "{error}");
+            assert!(
+                writer
+                    .write_entries(2, &[ListIndex::new(0, 0), ListIndex::new(0, 0)])
+                    .is_err()
+            );
+            writer.write_entries(0, &[ListIndex::new(0, 2), ListIndex::new(2, 1), ListIndex::new(0, 0)])?;
+            writer.set_null(2)?;
+        }
+        let rows = (0..3)
+            .map(|row| vector.get_value_slow(row)?.get::<List<i32>>())
+            .collect::<Result<Vec<_>>>()?;
         assert_eq!(
-            entries(&vector)?,
-            [Some(vec![Some(7), Some(8)]), Some(vec![Some(7), Some(8)])]
+            rows,
+            [Some(List(vec![Some(1), Some(2)])), Some(List(vec![Some(3)])), None]
         );
-        drop(vector);
-        chunk.clear()?;
-        assert_eq!(chunk.get_vector_at_mut::<List<i32>>(0)?.child_offset(), 0);
         Ok(())
     }
 }

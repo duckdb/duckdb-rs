@@ -1,6 +1,6 @@
 # Extensions
 
-_Experimental._ `duckdb-neo` can also be used to write DuckDB extensions. Add `duckdb-loadable-macros` with its `neo`
+`duckdb-neo` can also be used to write DuckDB extensions. Add `duckdb-loadable-macros` with its `neo`
 feature, mark the entrypoint with `#[duckdb_entrypoint_c_api_v2]`, and register functionality through the `Extension`
 it receives:
 
@@ -58,7 +58,3 @@ Both are pinned to the exact DuckDB build `duckdb-neo` was built against, the `D
    ```shell
    duckdb -unsigned -c "LOAD '$PWD/my_ext.duckdb_extension'"
    ```
-
-## Static extension in your own program
-
-TBD

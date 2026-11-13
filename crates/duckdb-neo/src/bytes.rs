@@ -56,7 +56,7 @@ use crate::{
 /// fn overwrite(vector: &mut Vector<'_, String>) -> Result<()> {
 ///     let mut writer = vector.writer()?;
 ///     let bytes = writer.arena()?.add_str("a value stored in the arena")?;
-///     writer.set(0, Some("replacement"))?;
+///     writer.set(0, "replacement")?;
 ///     assert_eq!(bytes.get_data(), b"a value stored in the arena");
 ///     Ok(())
 /// }
@@ -227,7 +227,8 @@ mod tests {
                 assert_eq!(encoded.size(), expected.len());
                 assert_eq!(encoded.get_data(), expected);
                 if expected.len() > ffi::DUCKDB_V2_BYTES_INLINE_LENGTH as usize {
-                    let prefix = unsafe { encoded.data.value.pointer.prefix }.map(|byte| byte as u8);
+                    let prefix =
+                        unsafe { encoded.data.value.pointer.prefix }.map(|byte| u8::from_ne_bytes(byte.to_ne_bytes()));
                     assert_eq!(prefix.as_slice(), &expected[..prefix.len()]);
                 }
             }

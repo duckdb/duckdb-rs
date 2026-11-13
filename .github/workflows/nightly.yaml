@@ -75,34 +75,35 @@ jobs:
           cache-save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: mozilla-actions/sccache-action@v0.0.10
 
-      # Point linked-mode builds at the staging build of the same commit, so the
-      # build script's own download path (the default for users) is what gets
-      # tested. The sync step below vendors the same commit from this pin.
-      - name: Pin nightly staging build
+      # Verify the staging libraries exist before updating the pin and sources.
+      - name: Locate nightly staging build
         id: pin
         run: |
           [[ "$DUCKDB_VERSION" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]*$ ]] || {
             echo "::error::duckdb-version contains unsupported characters"
             exit 1
           }
-          pin_file=crates/libduckdb-sys/.duckdb-release
           release_url="https://duckdb-staging.duckdb.org/${DUCKDB_SHA:0:10}/${DUCKDB_VERSION}/duckdb/duckdb/github_release"
           [[ "$DUCKDB_SHA" =~ ^[0-9a-fA-F]{40}$ ]] || {
             echo "::error::duckdb-sha must be the full 40-character commit SHA"
             exit 1
           }
-          sed -i.bak "s|^DUCKDB_RELEASE_COMMIT=.*|DUCKDB_RELEASE_COMMIT=${DUCKDB_SHA}|; s|^DUCKDB_RELEASE_URL=.*|DUCKDB_RELEASE_URL=${release_url}|; s|^DUCKDB_RELEASE_VERSION=.*|DUCKDB_RELEASE_VERSION=${DUCKDB_VERSION}|" "$pin_file"
-          rm -f "$pin_file.bak"
-          grep '^DUCKDB_RELEASE' "$pin_file"
+          echo "release_url=${release_url}" >> "$GITHUB_OUTPUT"
           curl --fail --head --location --retry 5 --silent --output /dev/null \
             "${release_url}/duckdb-shared-libs-linux-amd64.tar.gz" || {
             echo "::error::No staging artifacts at ${release_url}"
             exit 1
           }
 
-      - name: Sync bundled DuckDB to the nightly pin
+      - name: Update the core pin and bundled DuckDB to the nightly build
         id: upgrade
-        run: ./upgrade.sh --sync
+        env:
+          DUCKDB_RELEASE_URL: ${{ steps.pin.outputs.release_url }}
+        run: |
+          python3 scripts/upgrade.py \
+            --core-commit "$DUCKDB_SHA" \
+            --core-url "$DUCKDB_RELEASE_URL" \
+            --core-version "$DUCKDB_VERSION"
 
       - name: Show generated upgrade diff
         if: ${{ !cancelled() }}

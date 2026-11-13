@@ -140,10 +140,10 @@ fn test_replacement_scan_cdc() -> crate::Result<()> {
     id.set_size(2)?;
     is_active.set_size(2)?;
 
-    id.writer()?.set(0, Some(10))?;
-    id.writer()?.set(1, Some(20))?;
-    is_active.writer()?.set(0, Some(true))?;
-    is_active.writer()?.set(1, Some(false))?;
+    id.writer()?.set(0, &10)?;
+    id.writer()?.set(1, &20)?;
+    is_active.writer()?.set(0, &true)?;
+    is_active.writer()?.set(1, &false)?;
 
     let mut appender = collection.to_append()?;
     appender.append(&mut chunk)?;
@@ -185,8 +185,8 @@ fn single_row_collection(conn: &crate::connection::Connection) -> Result<ColumnD
     let (mut id, mut is_active) = (id.cast::<i32>()?, is_active.cast::<bool>()?);
     id.set_size(1)?;
     is_active.set_size(1)?;
-    id.writer()?.set(0, Some(1))?;
-    is_active.writer()?.set(0, Some(true))?;
+    id.writer()?.set(0, &1)?;
+    is_active.writer()?.set(0, &true)?;
 
     let mut appender = ColumnDataCollection::new(conn, &logical_types)?.to_append()?;
     appender.append(&mut chunk)?;
@@ -200,8 +200,8 @@ fn invalid_column_count_collection(conn: &crate::connection::Connection) -> Resu
     let (mut id, mut is_active) = (id.cast::<i32>()?, is_active.cast::<bool>()?);
     id.set_size(1)?;
     is_active.set_size(1)?;
-    id.writer()?.set(0, Some(1))?;
-    is_active.writer()?.set(0, Some(true))?;
+    id.writer()?.set(0, &1)?;
+    is_active.writer()?.set(0, &true)?;
 
     let mut appender = ColumnDataCollection::new(conn, &[(logical_types[0].clone(), "id".to_string())])?.to_append()?;
     appender.append(&mut chunk)?;

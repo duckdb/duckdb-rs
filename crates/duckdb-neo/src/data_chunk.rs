@@ -1,8 +1,7 @@
 //! Columnar batches exchanged with DuckDB.
 
-use std::cell::{Cell, OnceCell};
+use std::cell::OnceCell;
 use std::ops::Deref;
-use std::rc::Rc;
 
 use duckdb_loadable_macros::AsRaw;
 
@@ -11,7 +10,7 @@ use crate::error::check_api_call_no_err;
 use crate::ffi;
 use crate::links::{InstanceKeepAlive, KeepAlive};
 use crate::logical_type::LogicalType;
-use crate::vector::{Access, ChildOffsets, VectorElement};
+use crate::vector::{Access, ChildVector, NativeElement};
 use crate::{
     Result, check_api_call,
     raw::RawExt,
@@ -101,10 +100,6 @@ pub struct VectorCollection {
     rows: RowCount,
     /// `'static` because the collection has no lifetime; views are only handed out as `&Vector<'_, _>`.
     cache: Vec<OnceCell<Vector<'static, Unknown>>>,
-    /// Whether every view, including nested children, is cached.
-    complete: Cell<bool>,
-    /// Next unwritten child element of every `LIST` and `MAP` in this tree, shared with nested collections.
-    offsets: Rc<ChildOffsets>,
 }
 
 /// Where a [`VectorCollection`] reads its row count from.
@@ -120,33 +115,21 @@ pub(crate) enum RowCount {
 
 impl VectorCollection {
     pub(crate) fn new(handles: Vec<ffi::duckdb_v2_vector_handle>, access: Access, rows: RowCount) -> Self {
-        Self::with_offsets(handles, access, rows, Rc::default())
-    }
-
-    pub(crate) fn with_offsets(
-        handles: Vec<ffi::duckdb_v2_vector_handle>,
-        access: Access,
-        rows: RowCount,
-        offsets: Rc<ChildOffsets>,
-    ) -> Self {
         let cache = handles.iter().map(|_| OnceCell::new()).collect();
         Self {
             handles,
             access,
             rows,
             cache,
-            complete: Cell::new(false),
-            offsets,
         }
     }
 
-    fn wrap<T: VectorElement>(&self, index: usize, access: Access) -> Result<Vector<'static, T>> {
-        Vector::from_handle_in(&self.handles[index], access, &self.offsets)
+    pub(crate) fn children(handles: Vec<ffi::duckdb_v2_vector_handle>, access: Access) -> Self {
+        Self::new(handles, access, RowCount::FirstVector)
     }
 
-    /// Restart every `LIST` and `MAP` offset in this tree, e.g. after the chunk was cleared.
-    pub(crate) fn reset_child_offsets(&self) {
-        self.offsets.reset();
+    fn wrap<T: NativeElement>(&self, index: usize, access: Access) -> Result<Vector<'static, T>> {
+        Vector::from_handle(&self.handles[index], access)
     }
 
     fn cached(&self, index: usize) -> Result<&Vector<'_, Unknown>> {
@@ -158,58 +141,11 @@ impl VectorCollection {
         Ok(slot.get().expect("view was just cached"))
     }
 
-    /// Cache every view, recursively, so nested row types can borrow them infallibly.
-    pub(crate) fn cache_all(&self) -> Result<()> {
-        if self.complete.get() {
-            return Ok(());
-        }
-        for index in 0..self.handles.len() {
-            let vector = self.cached(index)?;
-            if vector.view.is_none() {
-                return Err(crate::vector::other_not_readable());
-            }
-            if let Some(children) = vector.children() {
-                children.cache_all()?;
-            }
-        }
-        self.complete.set(true);
-        Ok(())
-    }
-
-    /// Borrow a view cached by [`Self::cache_all`].
-    ///
-    /// # Panics
-    ///
-    /// Panics if the view is not cached.
-    pub(crate) fn cached_unchecked(&self, index: usize) -> &Vector<'_, Unknown> {
-        self.cache[index].get().expect("vector views are cached before reads")
-    }
-
-    /// Borrow the cached wrapper of `index` for writing, so nested writers reuse it across rows.
-    ///
-    /// The wrapper is only validated as `T` when built, so callers must use the
-    /// same `T` for an index; nested writers do, since the parent's type fixes it.
-    pub(crate) fn cached_mut<T: VectorElement>(&mut self, index: usize) -> Result<&mut Vector<'_, T>> {
-        // Writes through the wrapper may evict its own children.
-        self.complete.set(false);
-        if self.cache[index]
-            .get()
-            .is_none_or(|vector| vector.access != self.access)
-        {
-            let vector = self.wrap::<T>(index, self.access)?.cast_unchecked();
-            self.cache[index] = OnceCell::from(vector);
-        }
-        let vector = self.cache[index].get_mut().expect("view was just cached");
-        // SAFETY: The repr(C) wrappers differ only in direct and nested markers; the vector was validated as T.
-        Ok(unsafe { &mut *(vector as *mut Vector<'_, Unknown> as *mut Vector<'_, T>) })
-    }
-
     pub(crate) fn cached_iter_mut(&mut self) -> Result<impl Iterator<Item = &mut Vector<'_, Unknown>>> {
-        self.complete.set(false);
         for index in 0..self.cache.len() {
             if self.cache[index]
                 .get()
-                .is_none_or(|vector| vector.access != self.access)
+                .is_none_or(|vector| vector.access != self.access.for_kind(vector.storage_kind()))
             {
                 self.cache[index] = OnceCell::from(self.wrap(index, self.access)?);
             }
@@ -224,13 +160,19 @@ impl VectorCollection {
     /// Drop the cached view of `index`, which a mutable wrapper may reshape.
     fn evict(&mut self, index: usize) {
         self.cache[index].take();
-        self.complete.set(false);
+    }
+
+    /// Refresh every cached child after its parent was resized or written, keeping the wrappers.
+    pub(crate) fn refresh_cached(&mut self) -> Result<()> {
+        for vector in self.cache.iter_mut().filter_map(OnceCell::get_mut) {
+            vector.refresh_from_handle()?;
+        }
+        Ok(())
     }
 
     /// Drop every cached view after an operation that may have changed the vectors.
     pub(crate) fn evict_all(&mut self) {
         self.cache.iter_mut().for_each(|slot| drop(slot.take()));
-        self.complete.set(false);
     }
 
     fn check_index(&self, index: usize) {
@@ -270,7 +212,7 @@ impl VectorCollection {
     /// # Panics
     ///
     /// Panics if `index` is out of range.
-    pub fn get_vector_at<T: VectorElement>(&self, index: usize) -> Result<&Vector<'_, T>> {
+    pub fn get_vector_at<T: NativeElement>(&self, index: usize) -> Result<&Vector<'_, T>> {
         self.get_untyped_vector_at(index)?.cast_ref::<T>()
     }
 
@@ -282,7 +224,7 @@ impl VectorCollection {
     /// # Panics
     ///
     /// Panics if `index` is out of range.
-    pub fn get_vector_at_mut<T: VectorElement>(&mut self, index: usize) -> Result<Vector<'_, T>> {
+    pub fn get_vector_at_mut<T: NativeElement>(&mut self, index: usize) -> Result<Vector<'_, T>> {
         self.check_index(index);
         self.evict(index);
         self.wrap(index, self.access)
@@ -330,8 +272,8 @@ impl VectorCollection {
     /// Wrap the callback's input vectors in a [`DataChunk`] without copying.
     ///
     /// The chunk's vectors reference the input's storage, so the chunk borrows
-    /// this collection and cannot outlive the callback. It is writable only when
-    /// the input is. Use [`DataChunkRef::copy`] to keep the data longer.
+    /// this collection, cannot outlive the callback, and is read-only.
+    /// Use [`DataChunkRef::copy`] to keep or change the data.
     pub fn to_data_chunk<'a, C: HasFactory + 'a>(&'a mut self, link: &'a C) -> crate::Result<DataChunk<'a>> {
         let mut logical_types = Vec::with_capacity(self.col_count());
         for index in 0..self.col_count() {
@@ -350,7 +292,7 @@ impl VectorCollection {
             type_handles.len() as u64,
             RET
         )?;
-        let chunk: DataChunk<'a> = DataChunk::new(handle, self.access == Access::Writable)?;
+        let chunk: DataChunk<'a> = DataChunk::new(handle, false)?;
 
         for (i, handle) in self.handles.iter().enumerate() {
             let chunk_handle = chunk.get_vector_handle_at(i);
@@ -379,18 +321,21 @@ impl Deref for ChildrenMut<'_> {
 
 impl ChildrenMut<'_> {
     /// See [`VectorCollection::get_untyped_vector_at_mut`].
-    pub fn get_untyped_vector_at_mut(&mut self, index: usize) -> Result<Vector<'_, Unknown>> {
-        self.0.get_untyped_vector_at_mut(index)
+    pub fn get_untyped_vector_at_mut(&mut self, index: usize) -> Result<ChildVector<'_, Unknown>> {
+        self.0.get_untyped_vector_at_mut(index).map(ChildVector)
     }
 
     /// See [`VectorCollection::get_vector_at_mut`].
-    pub fn get_vector_at_mut<T: VectorElement>(&mut self, index: usize) -> Result<Vector<'_, T>> {
-        self.0.get_vector_at_mut(index)
+    pub fn get_vector_at_mut<T: NativeElement>(&mut self, index: usize) -> Result<ChildVector<'_, T>> {
+        self.0.get_vector_at_mut(index).map(ChildVector)
     }
 
     /// See [`VectorCollection::get_vector_array_mut`].
-    pub fn get_vector_array_mut<const N: usize>(&mut self, indices: [usize; N]) -> Result<[Vector<'_, Unknown>; N]> {
-        self.0.get_vector_array_mut(indices)
+    pub fn get_vector_array_mut<const N: usize>(
+        &mut self,
+        indices: [usize; N],
+    ) -> Result<[ChildVector<'_, Unknown>; N]> {
+        Ok(self.0.get_vector_array_mut(indices)?.map(ChildVector))
     }
 
     /// See [`VectorCollection::to_data_chunk`].
@@ -538,7 +483,7 @@ impl<'a> DataChunkRef<'a> {
     /// # Panics
     ///
     /// Panics if `index` is out of range.
-    pub fn get_vector_at<T: VectorElement>(&self, index: usize) -> Result<&Vector<'_, T>> {
+    pub fn get_vector_at<T: NativeElement>(&self, index: usize) -> Result<&Vector<'_, T>> {
         self.vectors.get_vector_at(index)
     }
 
@@ -558,7 +503,7 @@ impl<'a> DataChunkRef<'a> {
     /// let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
     /// let shared = chunk.get_vector_at::<i32>(0)?;
     /// let mut exclusive = chunk.get_vector_at_mut::<i32>(0)?;
-    /// exclusive.writer()?.set(0, Some(1))?;
+    /// exclusive.writer()?.set(0, &1)?;
     /// let _ = shared.reader()?.get(0)?;
     /// # Ok(())
     /// # }
@@ -567,7 +512,7 @@ impl<'a> DataChunkRef<'a> {
     /// # Panics
     ///
     /// Panics if `index` is out of range.
-    pub fn get_vector_at_mut<T: VectorElement>(&mut self, index: usize) -> Result<Vector<'_, T>> {
+    pub fn get_vector_at_mut<T: NativeElement>(&mut self, index: usize) -> Result<Vector<'_, T>> {
         self.vectors.get_vector_at_mut(index)
     }
 
@@ -636,7 +581,7 @@ impl<'a> DataChunk<'a> {
     }
 
     /// See [`DataChunkRef::get_vector_at_mut`].
-    pub fn get_vector_at_mut<T: VectorElement>(&mut self, index: usize) -> Result<Vector<'_, T>> {
+    pub fn get_vector_at_mut<T: NativeElement>(&mut self, index: usize) -> Result<Vector<'_, T>> {
         self.chunk.get_vector_at_mut(index)
     }
 
@@ -648,7 +593,6 @@ impl<'a> DataChunk<'a> {
     /// Reset the row count to zero and drop cached views, preserving writability.
     pub fn clear(&mut self) -> Result<()> {
         self.evict_cached();
-        self.chunk.vectors.reset_child_offsets();
         check_api_call!(ffi::duckdb_v2_data_chunk_clear, self.handle)
     }
 }
@@ -676,13 +620,13 @@ unsafe impl Send for DataChunk<'_> {}
 mod tests {
 
     use crate::AsRaw;
-    use crate::builder_helpers::scalar_callback;
-    use crate::scalar::ScalarFunctionBuilder;
+    use crate::scalar::MicroScalar;
     use crate::signature::{FunctionParameter, SignatureBuilder};
     use crate::types::DuckDBType;
     use crate::{
         data_chunk::DataChunk,
         environment::{Environment, StorageLocation},
+        vector::Vector,
     };
 
     #[test]
@@ -711,9 +655,9 @@ mod tests {
         let types = [i32::logical_type(&conn)?];
         let mut writable = DataChunk::create(&conn, &types, true)?;
         let mut vector = writable.get_vector_at_mut::<i32>(0)?;
-        assert!(vector.writer()?.set(0, Some(42)).is_err());
+        assert!(vector.writer()?.set(0, &42).is_err());
         vector.set_size(1)?;
-        vector.writer()?.set(0, Some(42))?;
+        vector.writer()?.set(0, &42)?;
         assert_eq!(vector.reader()?.get(0)?, Some(&42));
 
         let mut read_only = DataChunk::create(&conn, &types, false)?;
@@ -726,39 +670,31 @@ mod tests {
 
     #[test]
     fn test_copy_data_chunk() -> crate::Result<()> {
-        scalar_callback!(ChunkCopy, i32, |input, result, context, _ud| {
-            let mut dc = DataChunk::create(&context, &[i32::logical_type(&context)?], true)?;
-
-            let vec = dc.get_vector_at_mut::<i32>(0)?;
-
-            let input = input.get_vector_at::<i32>(0)?;
-
-            // SAFETY: the callback input outlives dc and is not mutated while dc references it.
-            unsafe {
-                vec.reference(input)?;
-            };
-            let copy = dc.copy(context)?;
-            let vec = copy.get_vector_at::<i32>(0)?;
-            let mut result = result;
-            result.set_size(vec.len())?;
-
-            for (index, value) in vec.reader()?.iter().enumerate() {
-                result.writer()?.set(index, value.copied())?;
-            }
-
-            Ok(())
-        });
-
         let env = Environment::new()?;
         let instance = env.open(StorageLocation::InMemory)?;
         let conn = instance.connect()?;
 
-        ScalarFunctionBuilder::new(
+        MicroScalar::with_signature(
             "chunk_copy",
             SignatureBuilder::new()
                 .param(FunctionParameter::new::<i32>("in"))
                 .return_type(i32::logical_type(&conn)?),
-            ChunkCopy,
+            |context, input, mut result: Vector<'_, i32>| {
+                let mut dc = DataChunk::create(context, &[i32::logical_type(context)?], true)?;
+                let vec = dc.get_vector_at_mut::<i32>(0)?;
+                let input = input.get_vector_at::<i32>(0)?;
+
+                // SAFETY: the callback input outlives dc and is not mutated while dc references it.
+                unsafe {
+                    vec.reference(input)?;
+                };
+                let copy = dc.copy(context)?;
+                let vec = copy.get_vector_at::<i32>(0)?;
+                for (index, value) in vec.reader()?.iter().enumerate() {
+                    result.writer()?.set_option(index, value)?;
+                }
+                Ok(())
+            },
         )
         .register(&conn)?;
 
@@ -788,21 +724,22 @@ mod tests {
         let mut chunk = DataChunk::create(&conn, &[List::<i64>::logical_type(&conn)?], true)?;
         let mut list = chunk.get_vector_at_mut::<List<i64>>(0)?;
         list.set_size(1)?;
-        // SAFETY: the row below writes both elements.
-        unsafe { list.set_child_size(2)? };
-        list.writer()?.set(0, Some(List(vec![Some(0), Some(0)])))?;
-        list.children_mut()
-            .unwrap()
-            .get_vector_at_mut::<i64>(0)?
-            .make_sequence(10, 1, 2)?;
+        list.set_child_size(2)?;
+        list.list_writer()?.set_elements(0, [Some(&0), Some(&0)])?;
+        {
+            let mut children = list.children_mut().unwrap();
+            let child = children.get_vector_at_mut::<i64>(0)?;
+            // DuckDB can hand out OTHER children, e.g. FSST fields; the safe API cannot make one.
+            crate::check_api_call!(crate::ffi::duckdb_v2_vector_make_sequence, child.handle, 10, 1, 2)?;
+        }
 
-        let error = list.reader().expect_err("sequence child must not read as NULL");
+        // The rows themselves stay readable; reading the elements needs the child flattened.
+        assert_eq!(list.reader()?.get(0)?.map(|entry| entry.length()), Some(2));
+        let error = list.list_reader().expect_err("sequence child must not read as NULL");
         assert!(error.to_string().contains("OTHER vectors must be flattened"));
-        assert!(list.reader().is_err());
         list.children_mut().unwrap().get_vector_at_mut::<i64>(0)?.flatten()?;
-        let values = list
-            .reader()?
-            .get(0)?
+        let lists = list.list_reader()?;
+        let values = crate::vector::RowReader::get(&lists, 0)?
             .expect("non-NULL list")
             .iter()
             .map(|value| value.copied())

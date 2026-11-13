@@ -77,17 +77,13 @@ impl Log {
 mod tests {
     use crate::{
         Parameters,
-        builder_helpers::scalar_callback,
         connection::SettingScope,
         environment::{Environment, StorageLocation},
         log::{Log, LogLevel},
-        scalar::ScalarFunctionBuilder,
+        scalar::MicroScalar,
         signature::{FunctionParameter, SignatureBuilder},
+        vector::Vector,
     };
-
-    scalar_callback!(LogCallback, i32, |_input, _result, ctx, _ud| {
-        Log::log_on_context(ctx, LogLevel::Warn, "first message", "cpp_api_test")
-    });
 
     use crate::types::DuckDBType;
 
@@ -142,12 +138,19 @@ mod tests {
 
         let conn = instance.connect()?;
 
-        ScalarFunctionBuilder::new(
+        MicroScalar::with_signature(
             "log_it",
             SignatureBuilder::new()
                 .param(FunctionParameter::new::<i32>("A"))
                 .return_type(i32::logical_type(&conn)?),
-            LogCallback,
+            |ctx, _input, mut output: Vector<'_, i32>| {
+                Log::log_on_context(ctx, LogLevel::Warn, "first message", "cpp_api_test")?;
+                let mut writer = output.writer()?;
+                for row in 0..writer.len() {
+                    writer.set_null(row)?;
+                }
+                Ok(())
+            },
         )
         .register(&conn)?;
 
