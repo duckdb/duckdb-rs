@@ -1,6 +1,9 @@
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicBool, AtomicUsize, Ordering},
+use std::{
+    num::NonZeroUsize,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    },
 };
 
 use crate::{
@@ -70,27 +73,38 @@ fn test_table_function() -> Result<()> {
 
         fn init_global_state(
             &self,
-            bind_data: &Self::BindData,
             _context: &Context,
+            bind_data: &Self::BindData,
             column_data: InitColumnData<'_>,
-        ) -> Result<(Option<Self::GlobalState>, Option<usize>)> {
+        ) -> Result<Option<Self::GlobalState>> {
             assert_eq!(bind_data.size, 10);
             assert_eq!(column_data.count()?, 1);
 
-            Ok((
-                Some(GlobalStateCounter {
-                    max_rounds: 1_000,
-                    count: Mutex::new(0),
-                }),
-                Some(12),
-            ))
+            Ok(Some(GlobalStateCounter {
+                max_rounds: 1_000,
+                count: Mutex::new(0),
+            }))
+        }
+
+        fn max_threads(
+            &self,
+            context: &Context,
+            bind_data: &Self::BindData,
+            global_state: Option<&Self::GlobalState>,
+            column_data: InitColumnData<'_>,
+        ) -> Result<Option<NonZeroUsize>> {
+            assert_eq!(bind_data.size, 10);
+            assert_eq!(global_state.map(|state| state.max_rounds), Some(1_000));
+            assert_eq!(column_data.count()?, 1);
+            context.config()?;
+            Ok(NonZeroUsize::new(12))
         }
 
         fn init_local_state(
             &self,
+            _context: &Context,
             bind_data: &Self::BindData,
             _global_state: Option<&Self::GlobalState>,
-            _context: &Context,
             _column_data: InitColumnData<'_>,
         ) -> Result<Option<Self::LocalState>> {
             assert_eq!(bind_data.size, 10);
@@ -99,9 +113,9 @@ fn test_table_function() -> Result<()> {
 
         fn progress(
             &self,
+            _context: &Context,
             bind_data: &Self::BindData,
             global_state: Option<&Self::GlobalState>,
-            _context: &Context,
         ) -> Result<Option<f64>> {
             assert_eq!(bind_data.size, 10);
             let global_state = global_state.unwrap();
@@ -118,10 +132,10 @@ fn test_table_function() -> Result<()> {
 
         fn exec(
             &self,
-            bind_data: &Self::BindData,
-            global_state: Option<&Self::GlobalState>,
-            local_state: Option<&mut Self::LocalState>,
             _context: &Context,
+            bind_data: &Self::BindData,
+            local_state: Option<&mut Self::LocalState>,
+            global_state: Option<&Self::GlobalState>,
             mut output: DataChunkRef<'_>,
             _column_info: ExecColumnInfo<'_>,
         ) -> Result<()> {
@@ -161,8 +175,8 @@ fn test_table_function() -> Result<()> {
     impl TableFilterPushdownCallbacks for MyTableFunction {
         fn pushdown_filter(
             &self,
-            bind_data: &Self::BindData,
             context: &Context,
+            bind_data: &Self::BindData,
             pushdown_data: PushdownData<'_>,
         ) -> Result<()> {
             self.pushdown_called.store(true, Ordering::SeqCst);
@@ -290,18 +304,28 @@ fn test_table_function_partitioning() -> Result<()> {
 
         fn init_global_state(
             &self,
-            _bind_data: &Self::BindData,
             _context: &Context,
+            _bind_data: &Self::BindData,
             _column_data: InitColumnData<'_>,
-        ) -> Result<(Option<Self::GlobalState>, Option<usize>)> {
-            Ok((Some(AtomicUsize::new(0)), Some(4)))
+        ) -> Result<Option<Self::GlobalState>> {
+            Ok(Some(AtomicUsize::new(0)))
+        }
+
+        fn max_threads(
+            &self,
+            _context: &Context,
+            _bind_data: &Self::BindData,
+            _global_state: Option<&Self::GlobalState>,
+            _column_data: InitColumnData<'_>,
+        ) -> Result<Option<NonZeroUsize>> {
+            Ok(NonZeroUsize::new(4))
         }
 
         fn init_local_state(
             &self,
+            _context: &Context,
             _bind_data: &Self::BindData,
             _global_state: Option<&Self::GlobalState>,
-            _context: &Context,
             _column_data: InitColumnData<'_>,
         ) -> Result<Option<Self::LocalState>> {
             self.local_init_calls.fetch_add(1, Ordering::SeqCst);
@@ -310,10 +334,10 @@ fn test_table_function_partitioning() -> Result<()> {
 
         fn exec(
             &self,
-            _bind_data: &Self::BindData,
-            global_state: Option<&Self::GlobalState>,
-            local_state: Option<&mut Self::LocalState>,
             _context: &Context,
+            _bind_data: &Self::BindData,
+            local_state: Option<&mut Self::LocalState>,
+            global_state: Option<&Self::GlobalState>,
             mut output: DataChunkRef<'_>,
             _column_info: ExecColumnInfo<'_>,
         ) -> Result<()> {
@@ -347,8 +371,8 @@ fn test_table_function_partitioning() -> Result<()> {
     impl TablePartitioningCallbacks for PartitionedFunction {
         fn partitioning(
             &self,
-            _bind_data: &Self::BindData,
             _context: &Context,
+            _bind_data: &Self::BindData,
             partitioning_data: PartitioningData<'_>,
         ) -> Result<TablePartitionInfo> {
             self.partitioning_calls.fetch_add(1, Ordering::SeqCst);
@@ -367,10 +391,10 @@ fn test_table_function_partitioning() -> Result<()> {
 
         fn partition_data(
             &self,
-            _bind_data: &Self::BindData,
-            _global_state: Option<&Self::GlobalState>,
-            local_state: Option<&mut Self::LocalState>,
             context: &Context,
+            _bind_data: &Self::BindData,
+            local_state: Option<&mut Self::LocalState>,
+            _global_state: Option<&Self::GlobalState>,
             partition_data: PartitionData<'_>,
         ) -> Result<usize> {
             self.partition_data_calls.fetch_add(1, Ordering::SeqCst);
@@ -529,7 +553,7 @@ struct ProjectionBindData {
 
 struct ProjectionScan {
     states: bool,
-    zero_threads: bool,
+    max_threads: Result<Option<NonZeroUsize>>,
     counters: [Arc<TableLifecycleCounter>; 4],
     mappings: Arc<Mutex<Vec<Vec<usize>>>>,
     _lifetime: TableLifecycleToken,
@@ -559,26 +583,34 @@ impl TableFunctionCallbacks for ProjectionScan {
 
     fn init_global_state(
         &self,
-        _bind_data: &Self::BindData,
         _context: &Context,
+        _bind_data: &Self::BindData,
         columns: InitColumnData<'_>,
-    ) -> Result<(Option<Self::GlobalState>, Option<usize>)> {
+    ) -> Result<Option<Self::GlobalState>> {
         let mapping = (0..columns.count()?)
             .map(|index| columns.get_column_index(index))
             .collect::<Result<Vec<_>>>()?;
         assert!(columns.get_column_index(columns.count()?).is_err());
         self.mappings.lock().unwrap().push(mapping);
-        Ok((
-            self.states.then(|| TableLifecycleToken::new(&self.counters[2])),
-            self.zero_threads.then_some(0),
-        ))
+        Ok(self.states.then(|| TableLifecycleToken::new(&self.counters[2])))
+    }
+
+    fn max_threads(
+        &self,
+        _context: &Context,
+        _bind_data: &Self::BindData,
+        global_state: Option<&Self::GlobalState>,
+        _column_data: InitColumnData<'_>,
+    ) -> Result<Option<NonZeroUsize>> {
+        assert_eq!(global_state.is_some(), self.states);
+        self.max_threads.clone()
     }
 
     fn init_local_state(
         &self,
+        _context: &Context,
         _bind_data: &Self::BindData,
         global_state: Option<&Self::GlobalState>,
-        _context: &Context,
         columns: InitColumnData<'_>,
     ) -> Result<Option<Self::LocalState>> {
         assert_eq!(global_state.is_some(), self.states);
@@ -588,10 +620,10 @@ impl TableFunctionCallbacks for ProjectionScan {
 
     fn exec(
         &self,
-        bind_data: &Self::BindData,
-        global_state: Option<&Self::GlobalState>,
-        local_state: Option<&mut Self::LocalState>,
         _context: &Context,
+        bind_data: &Self::BindData,
+        local_state: Option<&mut Self::LocalState>,
+        global_state: Option<&Self::GlobalState>,
         mut output: DataChunkRef<'_>,
         columns: ExecColumnInfo<'_>,
     ) -> Result<()> {
@@ -626,7 +658,7 @@ fn test_table_function_projection_lifecycle() -> Result<()> {
                 SignatureBuilder::new().param(FunctionParameter::new::<i32>("rows")),
                 ProjectionScan {
                     states,
-                    zero_threads: false,
+                    max_threads: Ok(None),
                     counters: counters.clone(),
                     mappings: mappings.clone(),
                     _lifetime: TableLifecycleToken::new(&counters[0]),
@@ -665,28 +697,37 @@ fn test_table_function_projection_lifecycle() -> Result<()> {
 }
 
 #[test]
-fn test_table_function_zero_threads() -> Result<()> {
+fn test_table_function_max_threads_error() -> Result<()> {
     let counters = std::array::from_fn(|_| Arc::new(TableLifecycleCounter::default()));
-    let env = Environment::new()?;
-    let instance = env.open(StorageLocation::InMemory)?;
-    let conn = instance.connect()?;
-    TableFunctionBuilder::new(
-        "zero_threads",
-        SignatureBuilder::new().param(FunctionParameter::new::<i32>("rows")),
-        ProjectionScan {
-            states: false,
-            zero_threads: true,
-            counters: counters.clone(),
-            mappings: Arc::new(Mutex::new(Vec::new())),
-            _lifetime: TableLifecycleToken::new(&counters[0]),
-        },
-    )
-    .register(&conn)?;
-    let error = conn
-        .query("SELECT * FROM zero_threads(1)", Parameters::None)
-        .and_then(|mut result| result.drain())
-        .expect_err("zero threads must fail");
-    assert!(error.message.contains("maximum number of threads must be at least 1"));
+    {
+        let env = Environment::new()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
+        TableFunctionBuilder::new(
+            "max_threads_error",
+            SignatureBuilder::new().param(FunctionParameter::new::<i32>("rows")),
+            ProjectionScan {
+                states: true,
+                max_threads: Err(Error::invalid_input("max threads unavailable")),
+                counters: counters.clone(),
+                mappings: Arc::new(Mutex::new(Vec::new())),
+                _lifetime: TableLifecycleToken::new(&counters[0]),
+            },
+        )
+        .register(&conn)?;
+        let error = conn
+            .query("SELECT * FROM max_threads_error(1)", Parameters::None)
+            .and_then(|mut result| result.drain())
+            .expect_err("max_threads error must fail the scan");
+        assert!(error.message.contains("max threads unavailable"), "{error}");
+    }
+    for counter in &counters {
+        assert_eq!(
+            counter.created.load(Ordering::SeqCst),
+            counter.dropped.load(Ordering::SeqCst)
+        );
+    }
+    assert!(counters[2].created.load(Ordering::SeqCst) > 0);
     Ok(())
 }
 
@@ -723,18 +764,28 @@ impl TableFunctionCallbacks for BatchedRange {
 
     fn init_global_state(
         &self,
-        _bind_data: &Self::BindData,
         _context: &Context,
+        _bind_data: &Self::BindData,
         _column_data: InitColumnData<'_>,
-    ) -> Result<(Option<Self::GlobalState>, Option<usize>)> {
-        Ok((Some(AtomicUsize::new(0)), Some(4)))
+    ) -> Result<Option<Self::GlobalState>> {
+        Ok(Some(AtomicUsize::new(0)))
+    }
+
+    fn max_threads(
+        &self,
+        _context: &Context,
+        _bind_data: &Self::BindData,
+        _global_state: Option<&Self::GlobalState>,
+        _column_data: InitColumnData<'_>,
+    ) -> Result<Option<NonZeroUsize>> {
+        Ok(NonZeroUsize::new(4))
     }
 
     fn init_local_state(
         &self,
+        _context: &Context,
         _bind_data: &Self::BindData,
         _global_state: Option<&Self::GlobalState>,
-        _context: &Context,
         _column_data: InitColumnData<'_>,
     ) -> Result<Option<Self::LocalState>> {
         Ok(Some(None))
@@ -742,10 +793,10 @@ impl TableFunctionCallbacks for BatchedRange {
 
     fn exec(
         &self,
-        _bind_data: &Self::BindData,
-        _global_state: Option<&Self::GlobalState>,
-        local_state: Option<&mut Self::LocalState>,
         _context: &Context,
+        _bind_data: &Self::BindData,
+        local_state: Option<&mut Self::LocalState>,
+        _global_state: Option<&Self::GlobalState>,
         mut output: DataChunkRef<'_>,
         _column_info: ExecColumnInfo<'_>,
     ) -> Result<()> {
@@ -768,10 +819,10 @@ impl TableFunctionCallbacks for BatchedRange {
 impl TableClaimBatchCallbacks for BatchedRange {
     fn claim_batch(
         &self,
-        &(rows, fail_at): &Self::BindData,
-        global_state: Option<&Self::GlobalState>,
-        local_state: Option<&mut Self::LocalState>,
         _context: &Context,
+        &(rows, fail_at): &Self::BindData,
+        local_state: Option<&mut Self::LocalState>,
+        global_state: Option<&Self::GlobalState>,
     ) -> Result<bool> {
         let batch = global_state.unwrap().fetch_add(1, Ordering::SeqCst);
         if fail_at == Some(batch) {
@@ -852,21 +903,26 @@ fn test_table_function_list_output_child_starts_empty() -> Result<()> {
             Ok(())
         }
 
-        fn init_global_state(
+        fn init_global_state(&self, _: &Context, _: &(), _: InitColumnData<'_>) -> Result<Option<AtomicUsize>> {
+            Ok(Some(AtomicUsize::new(0)))
+        }
+
+        fn max_threads(
             &self,
-            _: &(),
             _: &Context,
+            _: &(),
+            _: Option<&AtomicUsize>,
             _: InitColumnData<'_>,
-        ) -> Result<(Option<AtomicUsize>, Option<usize>)> {
-            Ok((Some(AtomicUsize::new(0)), Some(1)))
+        ) -> Result<Option<NonZeroUsize>> {
+            Ok(NonZeroUsize::new(1))
         }
 
         fn exec(
             &self,
-            _: &(),
-            global_state: Option<&AtomicUsize>,
-            _: Option<&mut ()>,
             _: &Context,
+            _: &(),
+            _: Option<&mut ()>,
+            global_state: Option<&AtomicUsize>,
             mut output: DataChunkRef<'_>,
             _: ExecColumnInfo<'_>,
         ) -> Result<()> {

@@ -198,10 +198,10 @@ mod tests {
 
         fn exec(
             &self,
-            _bind_data: &Self::BindData,
-            _global_state: Option<&Self::GlobalState>,
-            _local_state: Option<&mut Self::LocalState>,
             _context: &Context,
+            _bind_data: &Self::BindData,
+            _local_state: Option<&mut Self::LocalState>,
+            _global_state: Option<&Self::GlobalState>,
             mut output: DataChunkRef<'_>,
             _column_info: ExecColumnInfo<'_>,
         ) -> crate::Result<()> {
@@ -216,8 +216,8 @@ mod tests {
     impl crate::table_function::TableFilterPushdownCallbacks for TableFunctionTest {
         fn pushdown_filter(
             &self,
-            _bind_data: &Self::BindData,
             context: &Context,
+            _bind_data: &Self::BindData,
             pushdown_data: crate::table_function::PushdownData<'_>,
         ) -> crate::Result<()> {
             assert_eq!(pushdown_data.count()?, 3);

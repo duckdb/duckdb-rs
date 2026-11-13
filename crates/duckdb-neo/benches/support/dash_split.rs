@@ -67,24 +67,21 @@ impl TableFunctionCallbacks for DashSplit {
 
     fn init_global_state(
         &self,
-        bind_data: &Self::BindData,
         _context: &Context,
+        bind_data: &Self::BindData,
         _column_data: InitColumnData<'_>,
-    ) -> Result<(Option<Self::GlobalState>, Option<usize>)> {
+    ) -> Result<Option<Self::GlobalState>> {
         let cursor = (bind_data.limit > 0).then_some((0, 0));
-        Ok((
-            Some(SplitScan {
-                cursor: Mutex::new(cursor),
-            }),
-            Some(1),
-        ))
+        Ok(Some(SplitScan {
+            cursor: Mutex::new(cursor),
+        }))
     }
 
     fn init_local_state(
         &self,
+        _context: &Context,
         _bind_data: &Self::BindData,
         _global_state: Option<&Self::GlobalState>,
-        _context: &Context,
         _column_data: InitColumnData<'_>,
     ) -> Result<Option<Self::LocalState>> {
         Ok(Some(Vec::new()))
@@ -92,10 +89,10 @@ impl TableFunctionCallbacks for DashSplit {
 
     fn exec(
         &self,
-        bind_data: &Self::BindData,
-        global_state: Option<&Self::GlobalState>,
-        local_state: Option<&mut Self::LocalState>,
         _context: &Context,
+        bind_data: &Self::BindData,
+        local_state: Option<&mut Self::LocalState>,
+        global_state: Option<&Self::GlobalState>,
         mut output: DataChunkRef<'_>,
         column_info: ExecColumnInfo<'_>,
     ) -> Result<()> {

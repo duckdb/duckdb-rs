@@ -4,12 +4,12 @@ use crate::ffi;
 
 use crate::{
     Error, Result,
-    builder_helpers::{OpaqueHandle, ffi_enum_redeclaration, get_user_data, handle_unwind},
+    builder_helpers::{OpaqueHandle, ffi_enum_redeclaration, get_user_data, register_callback},
     check_api_call,
     connection::Context,
     handles::{CastFunctionHandle, CastFunctionLink},
     logical_type::{LogicalType, LogicalTypeID},
-    raw::{FromRaw, RawExt},
+    raw::RawExt,
     vector::{Access, NativeElement, Vector},
 };
 
@@ -23,36 +23,24 @@ ffi_enum_redeclaration! {
     }
 }
 
-unsafe extern "C" fn exec_callback<T: CastFunctionCallbacks>(
+fn exec_callback<T: CastFunctionCallbacks>(
+    context: &Context,
     info: ffi::duckdb_v2_cast_function_exec_info_handle,
-    context: ffi::duckdb_v2_context_handle,
-    err: *mut ffi::duckdb_v2_error_info_handle,
-) {
-    handle_unwind(
-        || {
-            let user_data = get_user_data!(ffi::duckdb_v2_cast_function_exec_get_user_data, info);
+) -> Result<()> {
+    let user_data = get_user_data!(ffi::duckdb_v2_cast_function_exec_get_user_data, info);
 
-            let input = Vector::<T::InputType>::from_handle(
-                &check_api_call!(ffi::duckdb_v2_cast_function_exec_get_input, info, RET)?,
-                Access::Exclusive,
-            )?;
+    let input = Vector::<T::InputType>::from_handle(
+        &check_api_call!(ffi::duckdb_v2_cast_function_exec_get_input, info, RET)?,
+        Access::Exclusive,
+    )?;
 
-            let mode = check_api_call!(ffi::duckdb_v2_cast_function_exec_get_mode, info, RET)?;
-            let output = Vector::<T::OutputType>::from_handle(
-                &check_api_call!(ffi::duckdb_v2_cast_function_exec_get_output, info, RET)?,
-                Access::Writable,
-            )?;
+    let mode = check_api_call!(ffi::duckdb_v2_cast_function_exec_get_mode, info, RET)?;
+    let output = Vector::<T::OutputType>::from_handle(
+        &check_api_call!(ffi::duckdb_v2_cast_function_exec_get_output, info, RET)?,
+        Access::Writable,
+    )?;
 
-            T::exec(
-                user_data,
-                &unsafe { Context::from_raw(context) },
-                mode.try_into()?,
-                input,
-                output,
-            )
-        },
-        err,
-    );
+    T::exec(user_data, context, mode.try_into()?, input, output)
 }
 
 fn validate_cast_type<T: NativeElement>(logical_type: &LogicalType) -> Result<()> {
@@ -131,11 +119,13 @@ impl<T: CastFunctionCallbacks> CastFunctionBuilder<T> {
             &mut self.user_data.to_handle()
         )?;
 
-        check_api_call!(
-            ffi::duckdb_v2_cast_function_set_exec_callback,
-            handle.raw(),
-            Some(exec_callback::<T>)
-        )?;
+        register_callback! {
+            T = CastFunctionCallbacks,
+            cb = ffi::duckdb_v2_cast_function_set_exec_callback,
+            handle = handle.raw(),
+            args = (info: ffi::duckdb_v2_cast_function_exec_info_handle),
+            exec = exec_callback,
+        }?;
 
         Ok(handle)
     }

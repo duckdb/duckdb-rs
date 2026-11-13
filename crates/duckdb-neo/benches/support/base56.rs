@@ -8,7 +8,6 @@
 //! digits, so encoding is linear and every encoded length decodes unambiguously.
 
 use std::{
-    num::NonZeroUsize,
     ops::Range,
     sync::{
         Mutex,
@@ -21,8 +20,7 @@ use duckdb_neo::{
     column_data_collection::ColumnDataCollection,
     connection::{Connection, Context},
     copy_function::{
-        CopyFromBindInfo, CopyFromCardinality, CopyFromFunctionCallbacks, CopyFunctionBuilder, CopyToBindInfo,
-        CopyToFunctionCallbacks,
+        CopyFromBindInfo, CopyFromFunctionCallbacks, CopyFunctionBuilder, CopyToBindInfo, CopyToFunctionCallbacks,
     },
     data_chunk::DataChunkRef,
     file::{File, FileBuilder, FileSystem},
@@ -306,23 +304,18 @@ impl CopyFromFunctionCallbacks for Base56 {
     type LocalState = Base56Batch;
     type GlobalState = Base56Reader;
 
-    fn bind(
-        &self,
-        _context: &Context,
-        file_path: &str,
-        bind_info: &CopyFromBindInfo,
-    ) -> Result<(Self::BindData, Option<CopyFromCardinality>)> {
+    fn bind(&self, _context: &Context, file_path: &str, bind_info: &CopyFromBindInfo) -> Result<Self::BindData> {
         let columns = (0..bind_info.column_count()?)
             .map(|index| Column::from_logical_type(&bind_info.get_column(index)?.1))
             .collect::<Result<_>>()?;
-        Ok(((file_path.to_owned(), columns), None))
+        Ok((file_path.to_owned(), columns))
     }
 
     fn init_global_state(
         &self,
-        (file_path, columns): &Self::BindData,
         context: &Context,
-    ) -> Result<(Option<Self::GlobalState>, Option<NonZeroUsize>)> {
+        (file_path, columns): &Self::BindData,
+    ) -> Result<Option<Self::GlobalState>> {
         let fs = FileSystem::new(context)?;
         let file = FileBuilder::new(&fs, file_path)?.read().open()?;
         let mut data = vec![0; file.size()? as usize];
@@ -341,13 +334,13 @@ impl CopyFromFunctionCallbacks for Base56 {
             next_row: AtomicUsize::new(expected.len()),
             data,
         };
-        Ok((Some(reader), None))
+        Ok(Some(reader))
     }
 
     fn init_local_state(
         &self,
-        _bind_data: &Self::BindData,
         _context: &Context,
+        _bind_data: &Self::BindData,
         _reader: Option<&Self::GlobalState>,
     ) -> Result<Option<Self::LocalState>> {
         Ok(Some(Base56Batch::default()))
@@ -355,10 +348,10 @@ impl CopyFromFunctionCallbacks for Base56 {
 
     fn exec(
         &self,
-        (_, columns): &Self::BindData,
-        reader: Option<&Self::GlobalState>,
-        batch: Option<&mut Self::LocalState>,
         _context: &Context,
+        (_, columns): &Self::BindData,
+        batch: Option<&mut Self::LocalState>,
+        reader: Option<&Self::GlobalState>,
         mut output: DataChunkRef<'_>,
     ) -> Result<()> {
         let reader = reader.expect("init_global_state sets the reader");

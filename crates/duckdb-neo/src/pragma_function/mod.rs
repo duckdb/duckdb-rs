@@ -16,53 +16,33 @@ use crate::ffi;
 use crate::{
     Result,
     bind_arguments::BindArguments,
-    builder_helpers::{OpaqueHandle, get_user_data, handle_unwind},
+    builder_helpers::{OpaqueHandle, callback_trampoline, get_user_data},
     check_api_call,
     connection::{Context, FFILink},
     handles::{PragmaFunctionBuilderHandle, PragmaFunctionBuilderLink},
-    raw::{FromRaw, RawExt},
+    raw::RawExt,
     signature::SignatureBuilder,
 };
 
-unsafe extern "C" fn query_callback<T: PragmaQueryCallbacks>(
+fn query_callback<T: PragmaQueryCallbacks>(
+    context: &Context,
     info: ffi::duckdb_v2_function_bind_info_handle,
     result: ffi::duckdb_v2_pragma_function_query_info_handle,
-    context: ffi::duckdb_v2_context_handle,
-    err: *mut ffi::duckdb_v2_error_info_handle,
-) {
-    handle_unwind(
-        || {
-            let user_data = get_user_data!(ffi::duckdb_v2_function_bind_get_user_data, info);
+) -> Result<()> {
+    let user_data = get_user_data!(ffi::duckdb_v2_function_bind_get_user_data, info);
 
-            let query = T::query(
-                user_data,
-                &unsafe { Context::from_raw(context) },
-                BindArguments { handle: &info },
-            )?;
+    let query = T::query(user_data, context, BindArguments { handle: &info })?;
 
-            check_api_call!(ffi::duckdb_v2_pragma_function_query_set_query, result, &(&query).into())
-        },
-        err,
-    );
+    check_api_call!(ffi::duckdb_v2_pragma_function_query_set_query, result, &(&query).into())
 }
 
-unsafe extern "C" fn exec_callback<T: PragmaExecCallbacks>(
+fn exec_callback<T: PragmaExecCallbacks>(
+    context: &Context,
     info: ffi::duckdb_v2_function_bind_info_handle,
-    context: ffi::duckdb_v2_context_handle,
-    err: *mut ffi::duckdb_v2_error_info_handle,
-) {
-    handle_unwind(
-        || {
-            let user_data = get_user_data!(ffi::duckdb_v2_function_bind_get_user_data, info);
+) -> Result<()> {
+    let user_data = get_user_data!(ffi::duckdb_v2_function_bind_get_user_data, info);
 
-            T::exec(
-                user_data,
-                &unsafe { Context::from_raw(context) },
-                BindArguments { handle: &info },
-            )
-        },
-        err,
-    );
+    T::exec(user_data, context, BindArguments { handle: &info })
 }
 
 #[derive(Debug)]
@@ -89,7 +69,14 @@ impl<T: PragmaQueryCallbacks> PragmaFunctionBuilder<T> {
         Self::new(
             name,
             signature,
-            PragmaCallback::Query(Some(query_callback::<T>)),
+            PragmaCallback::Query(callback_trampoline! {
+                T = PragmaQueryCallbacks,
+                args = (
+                    info: ffi::duckdb_v2_function_bind_info_handle,
+                    result: ffi::duckdb_v2_pragma_function_query_info_handle,
+                ),
+                exec = query_callback,
+            }),
             implementation,
         )
     }
@@ -101,7 +88,11 @@ impl<T: PragmaExecCallbacks> PragmaFunctionBuilder<T> {
         Self::new(
             name,
             signature,
-            PragmaCallback::Exec(Some(exec_callback::<T>)),
+            PragmaCallback::Exec(callback_trampoline! {
+                T = PragmaExecCallbacks,
+                args = (info: ffi::duckdb_v2_function_bind_info_handle),
+                exec = exec_callback,
+            }),
             implementation,
         )
     }

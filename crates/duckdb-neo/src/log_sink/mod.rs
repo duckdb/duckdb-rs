@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use duckdb_loadable_macros::AsRaw;
 
 use crate::Error;
-use crate::builder_helpers::{OpaqueHandle, handle_unwind};
+use crate::builder_helpers::{OpaqueHandle, register_callback};
 use crate::ffi_str::DuckDBStr;
 use crate::log::{LogLevel, LogScope};
 use crate::raw::RawExt;
@@ -73,19 +73,13 @@ pub struct LogWriteData<'a> {
     pub message: &'a str,
 }
 
-unsafe extern "C" fn flush_callback<T: LogSinkCallbacks>(
+fn flush_callback<T: LogSinkCallbacks>(
     _info: ffi::duckdb_v2_log_sink_flush_info_handle,
     user_data: *mut ::std::os::raw::c_void,
-    err: *mut ffi::duckdb_v2_error_info_handle,
-) {
-    handle_unwind(
-        || {
-            let user_data = unsafe { &*(user_data as *const T) };
+) -> Result<()> {
+    let user_data = unsafe { &*(user_data as *const T) };
 
-            T::flush(user_data)
-        },
-        err,
-    );
+    T::flush(user_data)
 }
 
 unsafe fn entry_str<'a>(text: *const ffi::duckdb_v2_str, what: &str) -> Result<&'a str> {
@@ -97,7 +91,7 @@ unsafe fn entry_str<'a>(text: *const ffi::duckdb_v2_str, what: &str) -> Result<&
         .ok_or_else(|| Error::api_error(format!("{what} is not valid UTF-8")))
 }
 
-unsafe extern "C" fn write_callback<T: LogSinkCallbacks>(
+fn write_callback<T: LogSinkCallbacks>(
     info: ffi::duckdb_v2_log_sink_write_info_handle,
     user_data: *mut ::std::os::raw::c_void,
     timestamp: i64,
@@ -105,33 +99,27 @@ unsafe extern "C" fn write_callback<T: LogSinkCallbacks>(
     scope: ffi::DUCKDB_V2_LOG_SCOPE,
     type_: *const ffi::duckdb_v2_str,
     message: *const ffi::duckdb_v2_str,
-    err: *mut ffi::duckdb_v2_error_info_handle,
-) {
-    handle_unwind(
-        || {
-            let user_data = unsafe { &*(user_data as *const T) };
+) -> Result<()> {
+    let user_data = unsafe { &*(user_data as *const T) };
 
-            // SAFETY: DuckDB keeps both strings alive for the duration of the callback.
-            let log_type = unsafe { entry_str(type_, "log type") }?;
-            let message = unsafe { entry_str(message, "log message") }?;
+    // SAFETY: DuckDB keeps both strings alive for the duration of the callback.
+    let log_type = unsafe { entry_str(type_, "log type") }?;
+    let message = unsafe { entry_str(message, "log message") }?;
 
-            T::write(
-                user_data,
-                LogWriteData {
-                    timestamp,
-                    log_level: level.try_into()?,
-                    log_scope: scope.try_into()?,
-                    log_type,
-                    message,
-                },
-                LogMetadata {
-                    handle: info,
-                    _callback: PhantomData,
-                },
-            )
+    T::write(
+        user_data,
+        LogWriteData {
+            timestamp,
+            log_level: level.try_into()?,
+            log_scope: scope.try_into()?,
+            log_type,
+            message,
         },
-        err,
-    );
+        LogMetadata {
+            handle: info,
+            _callback: PhantomData,
+        },
+    )
 }
 
 /// Builds a log sink; `SET logging_storage = '<name>'` routes entries to it once registered.
@@ -160,17 +148,34 @@ impl<T: LogSinkCallbacks> LogSinkBuilder<T> {
             &mut self.user_data.to_handle()
         )?;
 
-        check_api_call!(
-            ffi::duckdb_v2_log_sink_set_flush_callback,
-            handle.raw(),
-            Some(flush_callback::<T>)
-        )?;
+        register_callback! {
+            T = LogSinkCallbacks,
+            cb = ffi::duckdb_v2_log_sink_set_flush_callback,
+            handle = handle.raw(),
+            context = none,
+            args = (
+                info: ffi::duckdb_v2_log_sink_flush_info_handle,
+                user_data: *mut ::std::os::raw::c_void,
+            ),
+            exec = flush_callback,
+        }?;
 
-        check_api_call!(
-            ffi::duckdb_v2_log_sink_set_write_callback,
-            handle.raw(),
-            Some(write_callback::<T>)
-        )
+        register_callback! {
+            T = LogSinkCallbacks,
+            cb = ffi::duckdb_v2_log_sink_set_write_callback,
+            handle = handle.raw(),
+            context = none,
+            args = (
+                info: ffi::duckdb_v2_log_sink_write_info_handle,
+                user_data: *mut ::std::os::raw::c_void,
+                timestamp: i64,
+                level: ffi::DUCKDB_V2_LOG_LEVEL,
+                scope: ffi::DUCKDB_V2_LOG_SCOPE,
+                type_: *const ffi::duckdb_v2_str,
+                message: *const ffi::duckdb_v2_str,
+            ),
+            exec = write_callback,
+        }
     }
 
     /// Registers the sink on the instance for the instance's lifetime; this alone routes no entries to it.

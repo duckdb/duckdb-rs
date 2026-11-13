@@ -105,9 +105,9 @@ where
 
     fn exec(
         &self,
+        context: &Context,
         _bind_data: Option<&Self::BindData>,
         _init_data: Option<&mut Self::InitData>,
-        context: &Context,
         input: &mut VectorCollection,
         output: Vector<'_, Unknown>,
     ) -> Result<()> {

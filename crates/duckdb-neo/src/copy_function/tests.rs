@@ -363,55 +363,74 @@ fn test_copy_return_stats_requires_statistics() -> crate::Result<()> {
 
 struct RangeSource {
     total_rows: usize,
+    cardinality_error: bool,
+    max_threads: crate::Result<Option<NonZeroUsize>>,
 }
 
 impl CopyFromFunctionCallbacks for RangeSource {
-    type BindData = ();
+    type BindData = usize;
     type LocalState = usize;
-    type GlobalState = ();
+    type GlobalState = usize;
 
     fn bind(
         &self,
         _context: &Context,
         _file_path: &str,
         bind_info: &super::CopyFromBindInfo,
-    ) -> crate::Result<(Self::BindData, Option<CopyFromCardinality>)> {
+    ) -> crate::Result<Self::BindData> {
         assert_eq!(bind_info.column_count()?, 1);
         assert_eq!(bind_info.get_column(0)?.0, "i");
         assert_eq!(bind_info.get_column(0)?.1.id()?, LogicalTypeID::BigInt);
+        Ok(self.total_rows)
+    }
 
-        Ok((
-            (),
-            Some(CopyFromCardinality {
-                cardinality: self.total_rows,
-                is_exact: true,
-            }),
-        ))
+    fn cardinality(&self, context: &Context, bind_data: &Self::BindData) -> crate::Result<Option<CopyFromCardinality>> {
+        context.config()?;
+        if self.cardinality_error {
+            return Err(crate::Error::invalid_input("cardinality unavailable"));
+        }
+        Ok(Some(CopyFromCardinality {
+            cardinality: *bind_data,
+            is_exact: true,
+        }))
     }
 
     fn init_global_state(
         &self,
+        context: &Context,
         _bind_data: &Self::BindData,
-        _context: &Context,
-    ) -> crate::Result<(Option<Self::GlobalState>, Option<NonZeroUsize>)> {
-        Ok((None, NonZeroUsize::new(1)))
+    ) -> crate::Result<Option<Self::GlobalState>> {
+        context.config()?;
+        Ok(Some(self.total_rows))
+    }
+
+    fn max_threads(
+        &self,
+        context: &Context,
+        _bind_data: &Self::BindData,
+        global_state: Option<&Self::GlobalState>,
+    ) -> crate::Result<Option<NonZeroUsize>> {
+        context.config()?;
+        assert_eq!(global_state, Some(&self.total_rows));
+        self.max_threads.clone()
     }
 
     fn init_local_state(
         &self,
-        _bind_data: &Self::BindData,
         _context: &Context,
-        _global_state: Option<&Self::GlobalState>,
+        _bind_data: &Self::BindData,
+        global_state: Option<&Self::GlobalState>,
     ) -> crate::Result<Option<Self::LocalState>> {
+        assert_eq!(global_state, Some(&self.total_rows));
         Ok(Some(0))
     }
 
     fn exec(
         &self,
-        _bind_data: &Self::BindData,
-        _global_state: Option<&Self::GlobalState>,
-        local_state: Option<&mut Self::LocalState>,
         _context: &Context,
+        _bind_data: &Self::BindData,
+        local_state: Option<&mut Self::LocalState>,
+        _global_state: Option<&Self::GlobalState>,
         mut output: DataChunkRef<'_>,
     ) -> crate::Result<()> {
         let produced = local_state.expect("local state must be set");
@@ -438,9 +457,16 @@ pub fn test_copy_from_function() -> crate::Result<()> {
         .expect("Failed to open in-memory database");
     let conn = instance.connect().expect("Failed to connect to database");
 
-    CopyFunctionBuilder::new("rangesource", RangeSource { total_rows: 7 })
-        .register_from(&conn)
-        .expect("Failed to register copy-from function");
+    CopyFunctionBuilder::new(
+        "rangesource",
+        RangeSource {
+            total_rows: 7,
+            cardinality_error: false,
+            max_threads: Ok(NonZeroUsize::new(1)),
+        },
+    )
+    .register_from(&conn)
+    .expect("Failed to register copy-from function");
 
     conn.execute("CREATE TABLE t(i BIGINT)", Parameters::None)
         .expect("Failed to create table");
@@ -465,6 +491,31 @@ pub fn test_copy_from_function() -> crate::Result<()> {
 
     assert_eq!(values, vec![0, 1, 2, 3, 4, 5, 6]);
 
+    Ok(())
+}
+
+#[test]
+fn test_copy_from_callback_errors() -> crate::Result<()> {
+    for (cardinality_error, message) in [(true, "cardinality unavailable"), (false, "max threads unavailable")] {
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+        CopyFunctionBuilder::new(
+            "callback_error",
+            RangeSource {
+                total_rows: 7,
+                cardinality_error,
+                max_threads: Err(crate::Error::invalid_input("max threads unavailable")),
+            },
+        )
+        .register_from(&conn)?;
+        conn.execute("CREATE TABLE t(i BIGINT)", Parameters::None)?;
+
+        let error = conn
+            .execute("COPY t FROM 'unused.txt' (FORMAT callback_error)", Parameters::None)
+            .unwrap_err();
+        assert_eq!(error.code, crate::error::DuckDBError::InputInvalid);
+        assert!(error.message.contains(message), "{error}");
+    }
     Ok(())
 }
 
@@ -552,7 +603,7 @@ impl CopyFromFunctionCallbacks for EchoFormat {
         _context: &Context,
         file_path: &str,
         bind_info: &super::CopyFromBindInfo,
-    ) -> crate::Result<(Self::BindData, Option<CopyFromCardinality>)> {
+    ) -> crate::Result<Self::BindData> {
         assert_eq!(bind_info.file_path()?, file_path);
         assert_eq!(bind_info.column_count()?, 1);
         assert_eq!(bind_info.get_column(0)?.0, "i");
@@ -560,13 +611,13 @@ impl CopyFromFunctionCallbacks for EchoFormat {
         let (name, value) = bind_info.get_option(0)?;
         assert_eq!(name, "custom_option");
         assert_eq!(String::from_value(&value)?, Some("roundtrip".to_string()));
-        Ok(((), None))
+        Ok(())
     }
 
     fn init_local_state(
         &self,
-        _bind_data: &Self::BindData,
         _context: &Context,
+        _bind_data: &Self::BindData,
         _global_state: Option<&Self::GlobalState>,
     ) -> crate::Result<Option<Self::LocalState>> {
         Ok(Some(0))
@@ -574,10 +625,10 @@ impl CopyFromFunctionCallbacks for EchoFormat {
 
     fn exec(
         &self,
-        _bind_data: &Self::BindData,
-        _global_state: Option<&Self::GlobalState>,
-        local_state: Option<&mut Self::LocalState>,
         _context: &Context,
+        _bind_data: &Self::BindData,
+        local_state: Option<&mut Self::LocalState>,
+        _global_state: Option<&Self::GlobalState>,
         mut output: DataChunkRef<'_>,
     ) -> crate::Result<()> {
         let produced = local_state.expect("local state must be set");
