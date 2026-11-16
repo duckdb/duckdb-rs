@@ -159,7 +159,7 @@ mod tests {
 
     use crate::{
         DuckDBType, ToValue,
-        bind_arguments::BindArgument,
+        bind_arguments::{BindArgument, BindArguments},
         connection::Context,
         data_chunk::DataChunkRef,
         environment::{Environment, StorageLocation},
@@ -186,7 +186,7 @@ mod tests {
         fn bind(
             &self,
             context: &Context,
-            _metadata: Vec<BindArgument>,
+            _metadata: &BindArguments<'_>,
             bind_handle: crate::table_function::BindFunctionHandle<'_>,
         ) -> crate::Result<Self::BindData> {
             for i in 0..3 {

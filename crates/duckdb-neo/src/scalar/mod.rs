@@ -38,7 +38,7 @@ fn resolve_types_callback<T: ScalarResolveTypesCallbacks>(
     result: ffi::duckdb_v2_scalar_function_resolve_types_info_handle,
 ) -> Result<()> {
     let user_data = get_user_data!(ffi::duckdb_v2_function_bind_get_user_data, info);
-    let arguments = BindArguments { handle: &info };
+    let arguments = BindArguments::new(&info);
     let return_type = T::resolve_types(user_data, context, arguments)?;
 
     check_api_call!(
@@ -54,7 +54,7 @@ fn bind_callback<T: ScalarBindCallbacks>(
     result: ffi::duckdb_v2_scalar_function_bind_info_handle,
 ) -> Result<()> {
     let user_data = get_user_data!(ffi::duckdb_v2_function_bind_get_user_data, info);
-    let arguments = BindArguments { handle: &info };
+    let arguments = BindArguments::new(&info);
     let data = T::bind(user_data, context, arguments)?;
 
     check_api_call!(

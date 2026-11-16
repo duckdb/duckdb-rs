@@ -1,34 +1,51 @@
 //! Bind-time metadata for scalar, aggregate, table, and pragma functions.
 
+use std::cell::OnceCell;
+
+use duckdb_loadable_macros::AsRaw;
+
 /// Counts of positional fixed, `*args`, named-only, and `**kwargs` arguments, in that order.
 pub use crate::builder_helpers::ArgCount as ArgumentCounts;
 
-use crate::ffi;
 use crate::ffi_str::DuckDBStr;
+use crate::raw::RawExt;
+use crate::{Error, FromValue, ffi};
 use crate::{Result, check_api_call, error::DuckDBError, logical_type::LogicalType, value::Value};
 
 /// Arguments are ordered as positional fixed parameters, `*args`, named-only parameters, then `**kwargs`.
 /// [`Self::value`] folds constant arguments on demand and returns any evaluation errors.
-#[derive(Debug)]
+#[derive(Debug, AsRaw)]
 pub struct BindArguments<'a> {
     pub(crate) handle: &'a ffi::duckdb_v2_function_bind_info_handle,
-}
-
-/// An owned argument type and constant value supplied to a table function's bind callback.
-#[derive(Debug)]
-pub struct BindArgument {
-    /// The argument's resolved logical type.
-    pub logical_type: LogicalType,
-    /// The constant value, if the argument can be folded at bind time.
-    ///
-    /// SQL NULL is represented by `Some` containing a null [`Value`], not `None`.
-    pub value: Option<Value>,
+    pub(crate) len: OnceCell<usize>,
 }
 
 impl<'a> BindArguments<'a> {
+    pub(crate) fn new(raw: &'a ffi::duckdb_v2_function_bind_info_handle) -> Self {
+        Self {
+            handle: raw,
+            len: OnceCell::new(),
+        }
+    }
+
     /// Return the number of arguments.
     pub fn len(&self) -> Result<usize> {
-        self.counts().map(|counts| counts.total())
+        if let Some(len) = self.len.get() {
+            return Ok(*len);
+        }
+
+        let val = self.counts().map(|counts| counts.total())?;
+
+        self.len
+            .set(val)
+            .map_err(|_| Error::internal("Failed to set OnceCell"))?;
+
+        Ok(val)
+    }
+
+    /// Return whether the call site has no arguments.
+    pub fn is_empty(&self) -> Result<bool> {
+        Ok(self.len()? == 0)
     }
 
     /// Return the sizes of the four consecutive argument-list parts.
@@ -38,17 +55,57 @@ impl<'a> BindArguments<'a> {
         })
     }
 
-    /// Return whether the call site has no arguments.
-    pub fn is_empty(&self) -> Result<bool> {
-        Ok(self.len()? == 0)
+    pub fn arg(&'a self, index: usize) -> Result<BindArgument<'a>> {
+        if index < self.len()? {
+            Ok(BindArgument { parent: self, index })
+        } else {
+            Err(Error::api_error("index is out of bounds for arguments"))
+        }
+    }
+
+    /// Find an argument case-insensitively, skipping positional-only parameters.
+    /// Return `Ok(None)` if no argument matches the name.
+    pub fn index(&self, name: &str) -> Result<Option<usize>> {
+        let mut index: ffi::idx_t = 0;
+        let mut found = false;
+        check_api_call!(
+            ffi::duckdb_v2_function_bind_get_arg_index,
+            *self.handle,
+            &name.into(),
+            &mut index,
+            &mut found
+        )?;
+        Ok(found.then_some(index as usize))
+    }
+}
+
+/// An owned argument type and constant value supplied to a table function's bind callback.
+#[derive(Debug)]
+pub struct BindArgument<'a> {
+    parent: &'a BindArguments<'a>,
+    index: usize,
+}
+
+impl BindArgument<'_> {
+    /// Return the declared parameter name, the caller's name for `**kwargs`, or empty for `*args`.
+    pub fn name(&self) -> Result<String> {
+        let str = check_api_call!(
+            ffi::duckdb_v2_function_bind_get_arg_name,
+            *self.parent.raw(),
+            self.index as u64,
+            RET
+        )
+        .map(DuckDBStr::from_raw)?;
+
+        Ok(str.as_str().unwrap_or_default().to_string())
     }
 
     /// Return the resolved logical type of argument `index`.
-    pub fn logical_type(&self, index: usize) -> Result<LogicalType> {
+    pub fn logical_type(&self) -> Result<LogicalType> {
         check_api_call!(
             ffi::duckdb_v2_function_bind_get_arg_type,
-            *self.handle,
-            index as u64,
+            *self.parent.raw(),
+            self.index as u64,
             RET
         )
         .map(|handle| LogicalType { handle })
@@ -58,11 +115,11 @@ impl<'a> BindArguments<'a> {
     ///
     /// SQL NULL is represented by `Some` containing a null [`Value`]. Errors raised
     /// while evaluating a constant argument, such as a failing cast, are returned.
-    pub fn value(&self, index: usize) -> Result<Option<Value>> {
+    pub fn value(&self) -> Result<Option<Value>> {
         let handle = check_api_call!(
             ffi::duckdb_v2_function_bind_get_arg_value,
-            *self.handle,
-            index as u64,
+            *self.parent.raw(),
+            self.index as u64,
             RET
         );
 
@@ -81,44 +138,12 @@ impl<'a> BindArguments<'a> {
         }
     }
 
-    /// Return the declared parameter name, the caller's name for `**kwargs`, or empty for `*args`.
-    pub fn name(&self, index: usize) -> Result<String> {
-        let str = check_api_call!(
-            ffi::duckdb_v2_function_bind_get_arg_name,
-            *self.handle,
-            index as u64,
-            RET
-        )
-        .map(DuckDBStr::from_raw)?;
-
-        Ok(str.as_str().unwrap_or_default().to_string())
-    }
-
-    /// Find an argument case-insensitively, skipping positional-only parameters.
-    /// Return `Ok(None)` if no argument matches the name.
-    pub fn index(&self, name: &str) -> Result<Option<usize>> {
-        let mut index: ffi::idx_t = 0;
-        let mut found = false;
-        check_api_call!(
-            ffi::duckdb_v2_function_bind_get_arg_index,
-            *self.handle,
-            &name.into(),
-            &mut index,
-            &mut found
-        )?;
-        Ok(found.then_some(index as usize))
-    }
-
-    /// Collect every argument with its folded value.
-    pub(crate) fn collect(&self) -> Result<Vec<BindArgument>> {
-        (0..self.len()?)
-            .map(|index| {
-                Ok(BindArgument {
-                    logical_type: self.logical_type(index)?,
-                    value: self.value(index)?,
-                })
-            })
-            .collect()
+    /// Tries to resolve value to T. Err is it does not exist or .
+    pub fn resolved_value<T: FromValue>(&self) -> Result<Option<T>> {
+        match self.value()? {
+            Some(v) => Ok(T::from_value(&v)?),
+            None => Err(Error::api_error("Value parameter was not resolved.")),
+        }
     }
 }
 

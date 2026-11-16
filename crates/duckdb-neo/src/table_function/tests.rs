@@ -8,7 +8,7 @@ use std::{
 
 use crate::{
     DuckDBType, Parameters, Result, ToValue,
-    bind_arguments::BindArgument,
+    bind_arguments::{BindArgument, BindArguments},
     connection::{Context, SettingScope},
     data_chunk::DataChunkRef,
     environment::{Environment, StorageLocation},
@@ -50,15 +50,13 @@ fn test_table_function() -> Result<()> {
         fn bind(
             &self,
             context: &Context,
-            arguments: Vec<BindArgument>,
+            arguments: &BindArguments<'_>,
             bind_handle: BindFunctionHandle<'_>,
         ) -> Result<Self::BindData> {
-            let arg = &arguments[0];
+            let arg = &arguments.arg(0)?;
 
-            let val = &arg.value;
-
-            assert_eq!(arg.logical_type.id()?, LogicalTypeID::Integer);
-            assert_eq!(val.as_ref().unwrap().dbg_string()?, "10");
+            assert_eq!(arg.logical_type()?.id()?, LogicalTypeID::Integer);
+            assert_eq!(arg.value()?.as_ref().unwrap().dbg_string()?, "10");
 
             bind_handle.add_result_column("out", &i32::logical_type(context)?)?;
 
@@ -66,7 +64,7 @@ fn test_table_function() -> Result<()> {
             bind_handle.set_order(OrderPreservation::None)?;
 
             Ok(BindData {
-                size: val.as_ref().unwrap().get::<i32>()?.unwrap() as usize,
+                size: arg.value()?.as_ref().unwrap().get::<i32>()?.unwrap() as usize,
                 accepted_threshold: Mutex::new(None),
             })
         }
@@ -292,7 +290,7 @@ fn test_table_function_partitioning() -> Result<()> {
         fn bind(
             &self,
             context: &Context,
-            _arguments: Vec<BindArgument>,
+            _arguments: &BindArguments<'_>,
             bind_handle: BindFunctionHandle<'_>,
         ) -> Result<Self::BindData> {
             bind_handle.add_result_column("part", &i32::logical_type(context)?)?;
@@ -567,10 +565,11 @@ impl TableFunctionCallbacks for ProjectionScan {
     fn bind(
         &self,
         context: &Context,
-        arguments: Vec<BindArgument>,
+        arguments: &BindArguments<'_>,
         bind_handle: BindFunctionHandle<'_>,
     ) -> Result<Self::BindData> {
-        let rows = arguments[0].value.as_ref().unwrap().get::<i32>()?.unwrap_or(0);
+        let rows = arguments.arg(0)?.resolved_value::<i32>()?.unwrap_or(0);
+
         let logical_type = i32::logical_type(context)?;
         bind_handle.add_result_column("first", &logical_type)?;
         bind_handle.add_result_column("second", &logical_type)?;
@@ -747,16 +746,14 @@ impl TableFunctionCallbacks for BatchedRange {
     fn bind(
         &self,
         context: &Context,
-        arguments: Vec<BindArgument>,
+        arguments: &BindArguments<'_>,
         bind_handle: BindFunctionHandle<'_>,
     ) -> Result<Self::BindData> {
         let argument = |index: usize| -> Result<Option<usize>> {
-            Ok(arguments[index]
-                .value
-                .as_ref()
-                .unwrap()
-                .get::<i32>()?
-                .map(|x| x as usize))
+            arguments
+                .arg(index)?
+                .resolved_value::<i32>()
+                .map(|x| x.map(|x| x as usize))
         };
         bind_handle.add_result_column("i", &i64::logical_type(context)?)?;
         Ok((argument(0)?.unwrap(), argument(1)?))
@@ -898,7 +895,7 @@ fn test_table_function_list_output_child_starts_empty() -> Result<()> {
         type GlobalState = AtomicUsize;
         type LocalState = ();
 
-        fn bind(&self, context: &Context, _: Vec<BindArgument>, bind_handle: BindFunctionHandle<'_>) -> Result<()> {
+        fn bind(&self, context: &Context, _: &BindArguments<'_>, bind_handle: BindFunctionHandle<'_>) -> Result<()> {
             bind_handle.add_result_column("l", &List::<i32>::logical_type(context)?)?;
             Ok(())
         }

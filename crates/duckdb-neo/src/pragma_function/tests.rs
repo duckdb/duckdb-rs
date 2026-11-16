@@ -29,7 +29,7 @@ fn query_i32(conn: &Connection, sql: &str) -> Result<Vec<Option<i32>>> {
 }
 
 fn constant<T: FromValue>(arguments: &BindArguments<'_>, index: usize) -> Result<Option<T>> {
-    let value = arguments.value(index)?.expect("pragma arguments are constant");
+    let value = arguments.arg(index)?.value()?.expect("pragma arguments are constant");
     T::from_value(&value)
 }
 

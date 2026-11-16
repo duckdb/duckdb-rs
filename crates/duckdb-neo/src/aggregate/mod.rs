@@ -159,7 +159,7 @@ fn bind_callback<T: AggregateCallbacks>(
     info: ffi::duckdb_v2_function_bind_info_handle,
     result: ffi::duckdb_v2_aggregate_function_bind_info_handle,
 ) -> Result<()> {
-    let arguments = BindArguments { handle: &info };
+    let arguments = BindArguments::new(&info);
 
     let user_data = get_user_data!(ffi::duckdb_v2_function_bind_get_user_data, info);
 
