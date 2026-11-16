@@ -164,6 +164,9 @@ The `duckdb` crate provides a number of Cargo features that can be enabled to ad
 - `json` - Enables reading and writing JSON files. Implies `bundled`.
 - `parquet` - Enables reading and writing Parquet files. Implies `bundled`.
 
+### Other
+- `bundled-icu` - DuckDB's ICU extension for locale-aware operations.
+
 ### Bundled DuckDB extensions
 
 These extensions are only available through the CMake build backend and imply `bundled-cmake`.
@@ -187,7 +190,7 @@ These extensions are only available through the CMake build backend and imply `b
 ### Convenience features
 
 - `vtab-full` - Enables virtual table features: `vtab-arrow` and `appender-arrow`; retains the deprecated `vtab-excel` compatibility flag.
-- `extensions-full` - Enables all major extensions: `json`, `parquet`, and `vtab-full`.
+- `extensions-full` - Enables all major extensions: `json`, `parquet`, `bundled-icu` and `vtab-full`.
 - `modern-full` - Enables modern Rust ecosystem integrations: `chrono`, `serde_json`, `url`, `r2d2`, `uuid`, `polars`, and `rust_decimal`.
 
 ### Build configuration
@@ -341,17 +344,6 @@ When none of the options above are used, the build script falls back to this dis
 
 Cross-compiling with `bundled` is best-effort (not covered by CI): it compiles DuckDB from C++ source and so needs a working C++ cross-compiler for the target, not just the Rust toolchain. If you can't get one working, prefer one of the non-`bundled` options above (e.g. `DUCKDB_LIB_DIR` or `DUCKDB_DOWNLOAD_LIB=1`) and link a pre-built library for the target instead.
 
-### ICU extension and the bundled features
-
-When using the `bundled` feature, the ICU extension is not included due to crates.io's 10MB package size limit. This means some date/time operations (like `now() - interval '1 day'` or `ts::date` casts) will fail. You can load ICU at runtime:
-
-```rust,ignore
-conn.execute_batch("INSTALL icu; LOAD icu;")?;
-```
-
-Alternatively, link against a system libduckdb that was compiled with ICU (see build instructions above).
-
-If you are working from a duckdb-rs checkout, you can also use `bundled-cmake,icu` to compile ICU in through DuckDB's CMake build.
 
 ### Binding generation
 

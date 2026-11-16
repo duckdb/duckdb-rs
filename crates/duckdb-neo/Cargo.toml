@@ -20,7 +20,11 @@ name = "duckdb_neo"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
 
 [features]
-default = ["buildtime-download", "buildtime-pkg-config", "buildtime-pregenerated"]
+default = [
+    "buildtime-download",
+    "buildtime-pkg-config",
+    "buildtime-pregenerated",
+]
 # Features
 chrono = ["dep:chrono"]
 r2d2 = ["dep:r2d2"]
@@ -40,6 +44,7 @@ buildtime-bindgen = ["libduckdb-sys/buildtime_bindgen"]
 bundled = ["libduckdb-sys/bundled"]
 bundled-json = ["bundled", "libduckdb-sys/json"]
 bundled-parquet = ["bundled", "libduckdb-sys/parquet"]
+bundled-icu = ["bundled", "libduckdb-sys/bundled-icu"]
 
 bundled-cmake = ["bundled", "libduckdb-sys/bundled-cmake"]
 # Extensions statically linked through the CMake build backend.

@@ -15,6 +15,8 @@ mod test {
             "json",
             #[cfg(feature = "parquet")]
             "parquet",
+            #[cfg(any(feature = "bundled-icu", feature = "icu"))]
+            "icu",
         ];
         for extension in extensions {
             connection.execute_batch(&format!("LOAD {extension};"))?;
@@ -62,7 +64,7 @@ mod test {
     }
 
     // https://duckdb.org/docs/current/core_extensions/icu
-    #[cfg(feature = "icu")]
+    #[cfg(any(feature = "icu", feature = "bundled-icu"))]
     #[test]
     fn test_extension_icu() -> Result<()> {
         let db = Connection::open_in_memory()?;
