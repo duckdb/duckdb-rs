@@ -104,6 +104,8 @@ fn main() -> duckdb_neo::Result<()> {
 }
 ```
 
+To try it interactively, run the SQL REPL example with `cargo run -p duckdb-neo --example repl`.
+
 To write DuckDB extensions with `duckdb-neo`, loadable or statically linked, see [crates/duckdb-neo/extensions.md](crates/duckdb-neo/extensions.md) or the [extension template](https://github.com/duckdb/extension-template-rs).
 
 ## Examples

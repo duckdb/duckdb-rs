@@ -65,6 +65,7 @@ uuid = { workspace = true, optional = true }
 arrow-array = { workspace = true, features = ["ffi"] }
 divan = { workspace = true }
 memchr = "=2.8.3"
+rustyline = { version = "15", features = ["case_insensitive_history_search"] }
 tempfile = { workspace = true }
 
 [package.metadata.docs.rs]
