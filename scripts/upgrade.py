@@ -21,7 +21,7 @@ from urllib.parse import urlsplit
 WORKSPACE_DIR = Path(__file__).resolve().parents[1]
 RELEASE_PIN_FILE = Path("crates/libduckdb-sys/.duckdb-release")
 CRATES = ("duckdb", "libduckdb-sys", "duckdb-loadable-macros")
-EXTENSIONS = ("core_functions", "parquet", "json")
+EXTENSIONS = ("core_functions", "parquet", "json", "icu")
 # The cc backend cannot compile jemalloc's C sources as C++.
 EXCLUDED_THIRD_PARTY = ("third_party/jemalloc",)
 # A reproducible timestamp that Windows archive tools can restore.
