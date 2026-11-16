@@ -25,7 +25,7 @@ bundled = ["libduckdb-sys/bundled"]
 bundled-cmake = ["bundled", "libduckdb-sys/bundled-cmake", "parquet"]
 json = ["libduckdb-sys/json", "bundled"]
 parquet = ["libduckdb-sys/parquet", "bundled"]
-# Name colission with cmake icu, therefore its called bundled-icu
+# icu builds via CMake; bundled-icu links it into the cc build.
 bundled-icu = ["libduckdb-sys/bundled-icu", "bundled"]
 autocomplete = ["libduckdb-sys/autocomplete", "bundled-cmake"]
 httpfs = ["libduckdb-sys/httpfs", "bundled-cmake"]
@@ -42,7 +42,7 @@ vtab-excel = ["vtab"]
 vtab-arrow = ["vtab", "num"]
 appender-arrow = ["vtab-arrow"]
 vtab-full = ["vtab-excel", "vtab-arrow", "appender-arrow"]
-extensions-full = ["json", "parquet", "vtab-full"]
+extensions-full = ["json", "parquet", "bundled-icu", "vtab-full"]
 buildtime_bindgen = ["libduckdb-sys/buildtime_bindgen"]
 # Allow DUCKDB_DOWNLOAD_LIB=1 to fetch a pre-built libduckdb at build time.
 download-lib = ["libduckdb-sys/download-lib"]

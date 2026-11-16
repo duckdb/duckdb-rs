@@ -34,7 +34,7 @@ httpfs = ["bundled-cmake", "pkg-config"]
 icu = ["bundled-cmake"]
 tpcds = ["bundled-cmake"]
 tpch = ["bundled-cmake"]
-extensions-full = ["json", "parquet"]
+extensions-full = ["json", "parquet", "bundled-icu"]
 winduckdb = []
 # Download a pre-built libduckdb (by default when a `.duckdb-release` pin ships with the
 # crate, or when DUCKDB_DOWNLOAD_LIB=1). Pulls an HTTP client into the build script.

@@ -567,7 +567,7 @@ fn enabled_extensions() -> Vec<&'static str> {
     if cfg!(feature = "httpfs") {
         extensions.push("httpfs");
     }
-    if cfg!(feature = "icu") {
+    if cfg!(feature = "icu") || cfg!(feature = "bundled-icu") {
         extensions.push("icu");
     }
     if cfg!(feature = "tpcds") {

@@ -24,6 +24,8 @@ CRATES = ("duckdb", "libduckdb-sys", "duckdb-loadable-macros")
 EXTENSIONS = ("core_functions", "parquet", "json", "icu")
 # The cc backend cannot compile jemalloc's C sources as C++.
 EXCLUDED_THIRD_PARTY = ("third_party/jemalloc",)
+# crates.io rejects uploads larger than this.
+CRATES_IO_MAX_UPLOAD_SIZE = 10 * 1024 * 1024
 # A reproducible timestamp that Windows archive tools can restore.
 ARCHIVE_MTIME = 946684800
 VERSION_PATTERN = r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
@@ -517,6 +519,32 @@ def regenerate_bundled_sources(root: Path, commit: str, version: str) -> None:
     print("Finished regenerating bundled DuckDB sources and bindings (tests not run)")
 
 
+def check_package_size(root: Path, version: str) -> None:
+    subprocess.run(
+        [
+            "cargo",
+            "package",
+            "-p",
+            "libduckdb-sys",
+            "--no-verify",
+            "--allow-dirty",
+        ],
+        cwd=root,
+        check=True,
+    )
+    package = cargo_target_dir(root) / "package" / f"libduckdb-sys-{version}.crate"
+    size = package.stat().st_size
+    limit = CRATES_IO_MAX_UPLOAD_SIZE
+    print(
+        f"libduckdb-sys package is {size / 2**20:.2f} MiB "
+        f"({size / limit:.0%} of the {limit / 2**20:.0f} MiB crates.io limit)"
+    )
+    if size > limit:
+        raise ValueError(
+            f"{package} is {size} bytes, over the crates.io limit of {limit} bytes"
+        )
+
+
 def upgrade(args: argparse.Namespace, root: Path) -> None:
     current = current_crate_version(root / "Cargo.toml")
     current_neo = current_crate_version(root / "crates/duckdb-neo/Cargo.toml")
@@ -543,6 +571,7 @@ def upgrade(args: argparse.Namespace, root: Path) -> None:
     )
     workflow.write_text(text, encoding="utf-8")
     regenerate_bundled_sources(root, args.core_commit, args.core_version)
+    check_package_size(root, version)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

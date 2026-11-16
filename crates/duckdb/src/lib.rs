@@ -129,6 +129,7 @@ mod transaction;
 #[cfg(any(
     feature = "autocomplete",
     feature = "icu",
+    feature = "bundled-icu",
     feature = "json",
     feature = "parquet",
     feature = "tpcds",
