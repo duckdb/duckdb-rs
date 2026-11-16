@@ -4,7 +4,8 @@ use crate::{Result, error::Error};
 
 use super::{ReadableNativeElement, VectorReader};
 
-/// Iterates over equally sized readers, returning one flat tuple per logical row.
+/// Iterates over equally sized readers, returning one flat tuple per logical row, or the error of
+/// the first column that fails to decode.
 ///
 /// Accepts tuples of one through twelve [`VectorReader`]s. Each column preserves
 /// its element type, borrowed lifetime, and independent SQL NULL value. Different
@@ -21,8 +22,8 @@ use super::{ReadableNativeElement, VectorReader};
 /// let numbers = chunk.get_vector_at::<i32>(0)?.reader()?;
 /// let strings = chunk.get_vector_at::<String>(1)?.reader()?;
 /// let mut rows = CombinedVectorIterator::new((numbers, strings))?;
-/// assert_eq!(rows.next(), Some((Some(&42), Some("duck"))));
-/// assert_eq!(rows.next(), None);
+/// assert_eq!(rows.next().transpose()?, Some((Some(&42), Some("duck"))));
+/// assert!(rows.next().is_none());
 /// # Ok(())
 /// # }
 /// ```
@@ -184,7 +185,7 @@ macro_rules! impl_reader_tuple {
         impl<$($lifetime,)+ $($element: ReadableNativeElement + $lifetime,)+> VectorReaderTuple
             for ($(VectorReader<$lifetime, $element>,)+)
         {
-            type Row = ($(Option<$element::Ref<$lifetime>>,)+);
+            type Row = Result<($(Option<$element::Ref<$lifetime>>,)+)>;
 
             fn row_count(&self) -> Result<usize> {
                 let count = self.0.len();
@@ -206,13 +207,13 @@ macro_rules! impl_reader_tuple {
             #[inline(always)]
             unsafe fn read_unchecked(&self, index: usize) -> Self::Row {
                 // SAFETY: The caller guarantees the index is within every prepared reader.
-                ($(unsafe { self.$index.get_unchecked(index) },)+)
+                Ok(($(unsafe { self.$index.get_unchecked(index) }?,)+))
             }
 
             #[inline(always)]
             unsafe fn read_flat_unchecked(&self, index: usize) -> Self::Row {
                 // SAFETY: The caller guarantees flat storage and in-bounds rows.
-                ($(unsafe { self.$index.get_flat_unchecked(index) },)+)
+                Ok(($(unsafe { self.$index.get_flat_unchecked(index) }?,)+))
             }
         }
     };

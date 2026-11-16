@@ -92,7 +92,7 @@ impl<T: Display + Send + Sync + 'static> AggregateCallbacks for BasicAggregate<T
         let vec = collection.get_vector_at::<i32>(0)?;
 
         for (i, val) in vec.reader()?.iter().enumerate() {
-            if let Some(val) = val {
+            if let Some(val) = val? {
                 states[i].push(*val);
             }
         }
@@ -242,7 +242,7 @@ fn aggregate_test_groups() -> crate::Result<()> {
         let vec = chunk.get_vector_at::<String>(1)?;
 
         for value in vec.reader()?.iter() {
-            assert!(value.is_some());
+            assert!(value?.is_some());
 
             groups += 1;
         }
@@ -366,7 +366,7 @@ impl AggregateCallbacks for PaddedSum {
     ) -> crate::Result<()> {
         let vec = collection.get_vector_at::<i32>(0)?;
         for (i, val) in vec.reader()?.iter().enumerate() {
-            states[i] += i64::from(*val.unwrap_or(&0));
+            states[i] += i64::from(*val?.unwrap_or(&0));
         }
         Ok(())
     }

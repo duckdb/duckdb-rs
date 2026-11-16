@@ -85,14 +85,19 @@ unsafe impl<T: EnumStorage> NativeElement for EnumIndex<T> {
 // SAFETY: `get` reads the validated physical slot.
 unsafe impl<T: EnumStorage> ReadableNativeElement for EnumIndex<T> {
     type Ref<'a> = &'a EnumIndex<T>;
+    type Error = std::convert::Infallible;
 
     #[inline]
-    unsafe fn get<'a, U: NativeElement>(reader: &VectorReader<'a, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: NativeElement>(
+        reader: &VectorReader<'a, U>,
+        physical: usize,
+        _logical: usize,
+    ) -> std::result::Result<Self::Ref<'a>, Self::Error>
     where
         Self: 'a,
     {
         // SAFETY: the caller guarantees a valid row of this storage.
-        unsafe { &*reader.as_ptr().cast::<EnumIndex<T>>().add(physical) }
+        Ok(unsafe { &*reader.as_ptr().cast::<EnumIndex<T>>().add(physical) })
     }
 }
 
@@ -200,7 +205,7 @@ mod tests {
         let mut chunk = DataChunk::create(&conn, &[enum_type(&conn, 0)?], true)?;
         let mut vector = chunk.get_vector_at_mut::<EnumIndex<u8>>(0)?;
         vector.set_size(3)?;
-        assert!(vector.reader()?.iter().all(|row| row.is_none()));
+        assert!(vector.reader()?.iter().all(|row| matches!(row, Ok(None))));
         assert!(vector.writer()?.set(0, &EnumIndex(0)).is_err());
         Ok(())
     }
@@ -215,7 +220,9 @@ mod tests {
         let mut indices = Vec::new();
         while let Some(chunk) = result.next_chunk()? {
             let reader = chunk.get_vector_at::<EnumIndex<u8>>(0)?.reader()?;
-            indices.extend(reader.iter().map(|value| value.map(|value| value.index())));
+            for value in reader.iter() {
+                indices.push(value?.map(|value| value.index()));
+            }
         }
         assert_eq!(indices, [Some(1), None, Some(2), Some(0)]);
         Ok(())
@@ -243,8 +250,8 @@ mod tests {
         let row = reader.get(0)?.unwrap();
         let indices = row
             .iter()
-            .map(|index| index.map(|index| index.index()))
-            .collect::<Vec<_>>();
+            .map(|index| Ok(index?.map(|index| index.index())))
+            .collect::<Result<Vec<_>>>()?;
         assert_eq!(indices, [Some(2), None, Some(0)]);
         Ok(())
     }

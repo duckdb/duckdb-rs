@@ -56,7 +56,7 @@ impl ScalarCallbacks for ScalarWithData {
             .reader()?
             .iter()
             .next()
-            .expect("Expected at least one value in input vector")
+            .expect("Expected at least one value in input vector")?
             .expect("Expected input value to be non-null");
 
         let bind_data = bind_data.expect("bind callback must provide data");
@@ -298,7 +298,7 @@ impl ScalarCallbacks for FoldProbe {
         let mut output = output.cast::<i32>()?;
         output.set_size(input.len())?;
         for (i, value) in input.reader()?.iter().enumerate() {
-            output.writer()?.set_option(i, value)?;
+            output.writer()?.set_option(i, value?)?;
         }
         Ok(())
     }
@@ -361,7 +361,7 @@ impl ScalarCallbacks for Identity {
         let mut output = output.cast::<i32>()?;
         output.set_size(input.len())?;
         for (i, value) in input.reader()?.iter().enumerate() {
-            output.writer()?.set_option(i, value)?;
+            output.writer()?.set_option(i, value?)?;
         }
         Ok(())
     }
@@ -392,8 +392,8 @@ fn test_scalar_bind_does_not_fold_arguments() -> crate::Result<()> {
         .get_vector_at::<i32>(0)?
         .reader()?
         .iter()
-        .map(|v| v.copied())
-        .collect();
+        .map(|v| Ok(v?.copied()))
+        .collect::<crate::Result<_>>()?;
     assert_eq!(values, vec![Some(0), Some(1), Some(2)]);
     Ok(())
 }

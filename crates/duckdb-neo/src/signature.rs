@@ -472,7 +472,7 @@ mod test {
     fn identity(_ctx: &Context, input: &mut VectorCollection, mut result: Vector<'_, i32>) -> Result<()> {
         let input = input.get_vector_at::<i32>(0)?;
         for (i, value) in input.reader()?.iter().enumerate() {
-            result.writer()?.set_option(i, value)?;
+            result.writer()?.set_option(i, value?)?;
         }
         Ok(())
     }

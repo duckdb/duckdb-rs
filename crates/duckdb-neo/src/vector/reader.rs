@@ -260,17 +260,18 @@ impl<'vec, T: NativeElement> VectorReader<'vec, T> {
 }
 
 impl<'vec, T: ReadableNativeElement> VectorReader<'vec, T> {
-    /// Return a logical row, or `None` for SQL NULL. Out-of-range indices are errors.
-    #[inline]
+    /// Return a logical row, or `None` for SQL NULL. Out-of-range indices and rows that fail to
+    /// decode, such as invalid UTF-8, are errors.
+    #[inline(always)]
     pub fn get(&self, index: usize) -> Result<Option<T::Ref<'vec>>> {
         if index >= self.len() {
             return Err(out_of_bounds(index, self.len()));
         }
         // SAFETY: The index is in bounds.
-        Ok(unsafe { self.get_unchecked(index) })
+        unsafe { self.get_unchecked(index) }
     }
 
-    /// Iterate over logical rows without repeating reader preparation.
+    /// Iterate over logical rows without repeating reader preparation; items are [`Self::get`]'s results.
     pub fn iter(&self) -> VectorReaderIter<'vec, T> {
         VectorReaderIter {
             reader: self.clone(),
@@ -279,10 +280,21 @@ impl<'vec, T: ReadableNativeElement> VectorReader<'vec, T> {
     }
 
     #[inline(always)]
-    pub(crate) unsafe fn get_unchecked(&self, index: usize) -> Option<T::Ref<'vec>> {
-        let physical = unsafe { self.cached().storage.physical_index_unchecked(self.view(), index) }?;
-        // SAFETY: The reader is typed, and the row is valid.
-        Some(unsafe { T::get(self, physical, index) })
+    pub(crate) unsafe fn get_unchecked(&self, index: usize) -> Result<Option<T::Ref<'vec>>> {
+        let physical = unsafe { self.cached().storage.physical_index_unchecked(self.view(), index) };
+        // SAFETY: The caller guarantees bounds, and `physical` is only set for valid rows.
+        unsafe { self.read(physical, index) }
+    }
+
+    /// # Safety
+    /// `logical` must be a row of this reader, and `physical` its physical index if the row is valid.
+    #[inline(always)]
+    unsafe fn read(&self, physical: Option<usize>, logical: usize) -> Result<Option<T::Ref<'vec>>> {
+        match physical {
+            // SAFETY: The reader is typed, and the caller guarantees a valid row.
+            Some(physical) => unsafe { T::get(self, physical, logical) }.map(Some).map_err(Into::into),
+            None => Ok(None),
+        }
     }
 
     /// Fold `rows` with the storage kind resolved once, outside the loop.
@@ -294,47 +306,37 @@ impl<'vec, T: ReadableNativeElement> VectorReader<'vec, T> {
         &self,
         rows: Range<usize>,
         init: B,
-        mut f: impl FnMut(B, usize, Option<T::Ref<'vec>>) -> B,
+        mut f: impl FnMut(B, usize, Result<Option<T::Ref<'vec>>>) -> B,
     ) -> B {
         let view = self.view();
         match self.cached().storage {
             // SAFETY: the caller guarantees every row is in bounds; flat rows are their own physical slots.
             ReaderStorage::Flat => rows.fold(init, |acc, row| {
-                let value = unsafe { FlatReader::is_valid_unchecked(view.validity, row) }
-                    .then(|| unsafe { T::get(self, row, row) });
-                f(acc, row, value)
+                let physical = unsafe { FlatReader::is_valid_unchecked(view.validity, row) }.then_some(row);
+                f(acc, row, unsafe { self.read(physical, row) })
             }),
             // SAFETY: as above; the selection maps every logical row.
             ReaderStorage::Dictionary(_) => rows.fold(init, |acc, row| {
-                let value = unsafe { DictionaryReader::physical_index_unchecked(view.validity, view.sel, row) }
-                    .map(|physical| unsafe { T::get(self, physical, row) });
-                f(acc, row, value)
+                let physical = unsafe { DictionaryReader::physical_index_unchecked(view.validity, view.sel, row) };
+                f(acc, row, unsafe { self.read(physical, row) })
             }),
             // SAFETY: as above; every row reads physical slot zero.
             ReaderStorage::Constant(reader) => {
                 let physical = reader.physical_index();
-                rows.fold(init, |acc, row| {
-                    f(
-                        acc,
-                        row,
-                        physical.map(|physical| unsafe { T::get(self, physical, row) }),
-                    )
-                })
+                rows.fold(init, |acc, row| f(acc, row, unsafe { self.read(physical, row) }))
             }
         }
     }
 
     #[inline(always)]
-    pub(crate) unsafe fn get_flat_unchecked(&self, index: usize) -> Option<T::Ref<'vec>> {
+    pub(crate) unsafe fn get_flat_unchecked(&self, index: usize) -> Result<Option<T::Ref<'vec>>> {
         let ReaderStorage::Flat = &self.cached().storage else {
             // SAFETY: The caller guarantees flat storage for this prepared reader.
             unsafe { std::hint::unreachable_unchecked() }
         };
-        if !unsafe { FlatReader::is_valid_unchecked(self.view().validity, index) } {
-            return None;
-        }
+        let physical = unsafe { FlatReader::is_valid_unchecked(self.view().validity, index) }.then_some(index);
         // SAFETY: Flat storage uses the logical index directly; validity was checked above.
-        Some(unsafe { T::get(self, index, index) })
+        unsafe { self.read(physical, index) }
     }
 }
 
@@ -346,7 +348,7 @@ pub struct VectorReaderIter<'vec, T: ReadableNativeElement> {
 }
 
 impl<'vec, T: ReadableNativeElement + 'vec> Iterator for VectorReaderIter<'vec, T> {
-    type Item = Option<T::Ref<'vec>>;
+    type Item = Result<Option<T::Ref<'vec>>>;
 
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
@@ -387,7 +389,7 @@ pub struct EnumeratedVectorReaderIter<'vec, T: ReadableNativeElement> {
 }
 
 impl<'vec, T: ReadableNativeElement + 'vec> Iterator for EnumeratedVectorReaderIter<'vec, T> {
-    type Item = (usize, Option<T::Ref<'vec>>);
+    type Item = (usize, Result<Option<T::Ref<'vec>>>);
 
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {

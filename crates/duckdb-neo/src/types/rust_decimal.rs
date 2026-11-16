@@ -70,20 +70,18 @@ unsafe impl NativeElement for rust_decimal::Decimal {
 // SAFETY: `get` reads the validated physical slot.
 unsafe impl ReadableNativeElement for rust_decimal::Decimal {
     type Ref<'a> = rust_decimal::Decimal;
+    type Error = Error;
 
     #[inline]
     unsafe fn get<'a, U: NativeElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
         _logical: usize,
-    ) -> Self::Ref<'a>
+    ) -> Result<Self::Ref<'a>>
     where
         Self: 'a,
     {
-        let DecimalSignature { width, scale } = vector
-            .vector()
-            .decimal_signature()
-            .expect("validated DECIMAL vector has a signature");
+        let DecimalSignature { width, scale } = vector.vector().decimal_signature()?;
         let data = vector.as_ptr() as *const u8;
         let value = unsafe {
             match width {
@@ -93,7 +91,7 @@ unsafe impl ReadableNativeElement for rust_decimal::Decimal {
                 _ => (*(data as *const HugeDecimal).add(physical)).0,
             }
         };
-        rust_decimal::Decimal::from_i128_with_scale(value, u32::from(scale))
+        Ok(rust_decimal::Decimal::from_i128_with_scale(value, u32::from(scale)))
     }
 }
 
@@ -242,7 +240,7 @@ mod tests {
         assert!(chunk.get_vector_at::<rust_decimal::Decimal>(5).is_err());
 
         let map = chunk.get_vector_at::<crate::types::Map<i32, rust_decimal::Decimal>>(6)?;
-        assert_eq!(map.map_reader()?.get(0)?.unwrap().get(0), Some((&1, Some(dec("1.21")))));
+        assert_eq!(map.map_reader()?.get(0)?.unwrap().get(0)?, (&1, Some(dec("1.21"))));
 
         Ok(())
     }
@@ -263,7 +261,7 @@ mod tests {
             vector.writer()?.set_null(2)?;
             vector.writer()?.set(3, &dec("99.99"))?;
             assert_eq!(
-                vector.reader()?.iter().collect::<Vec<_>>(),
+                vector.reader()?.iter().collect::<Result<Vec<_>>>()?,
                 vec![Some(dec("1.50")), Some(dec("-12.30")), None, Some(dec("99.99"))]
             );
 

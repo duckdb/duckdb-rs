@@ -73,13 +73,16 @@ pub(super) fn native_impls(
         // SAFETY: `get` reads nothing.
         unsafe impl #impl_generics ::duckdb_neo::vector::ReadableNativeElement for #ident #type_generics #where_clause {
             type Ref<#lifetime> = () where Self: #lifetime;
+            type Error = ::core::convert::Infallible;
 
             #[inline]
             unsafe fn get<#lifetime, #reader_type: #bound>(
                 _reader: &::duckdb_neo::vector::VectorReader<#lifetime, #reader_type>,
                 _physical: ::core::primitive::usize,
                 _logical: ::core::primitive::usize,
-            ) where Self: #lifetime {}
+            ) -> ::core::result::Result<(), ::core::convert::Infallible> where Self: #lifetime {
+                ::core::result::Result::Ok(())
+            }
         }
 
         // SAFETY: the children are always initialized, so a valid row needs no data of its own.
@@ -248,14 +251,19 @@ fn struct_rows(
                 }
 
                 #[inline]
-                unsafe fn get_unchecked(&self, row: ::core::primitive::usize) -> ::core::option::Option<Self::Item<'_>> {
+                unsafe fn get_unchecked(
+                    &self,
+                    row: ::core::primitive::usize,
+                ) -> ::duckdb_neo::Result<::core::option::Option<Self::Item<'_>>> {
                     // SAFETY: the caller guarantees bounds; every field has one row per parent row.
                     unsafe {
-                        ::duckdb_neo::__derive::get_unchecked(self.parts.rows(), row)?;
+                        if ::duckdb_neo::__derive::get_unchecked(self.parts.rows(), row)?.is_none() {
+                            return ::core::result::Result::Ok(::core::option::Option::None);
+                        }
                         let fields = self.parts.fields();
-                        ::core::option::Option::Some(#ref_ident {
-                            #(#field_idents: ::duckdb_neo::__derive::get_unchecked(&fields.#field_indexes, row),)*
-                        })
+                        ::core::result::Result::Ok(::core::option::Option::Some(#ref_ident {
+                            #(#field_idents: ::duckdb_neo::__derive::get_unchecked(&fields.#field_indexes, row)?,)*
+                        }))
                     }
                 }
             }

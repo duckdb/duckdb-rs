@@ -85,18 +85,19 @@ unsafe impl NativeElement for BigNum {
 // SAFETY: `get` reads the validated physical slot.
 unsafe impl ReadableNativeElement for BigNum {
     type Ref<'a> = &'a BigNum;
+    type Error = std::convert::Infallible;
 
     #[inline]
     unsafe fn get<'a, U: NativeElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
         _logical: usize,
-    ) -> Self::Ref<'a>
+    ) -> std::result::Result<Self::Ref<'a>, Self::Error>
     where
         Self: Sized + 'a,
     {
         let data_ptr = vector.as_ptr() as *const BigNum;
-        (unsafe { &*data_ptr.add(physical) }) as _
+        Ok(unsafe { &*data_ptr.add(physical) })
     }
 }
 
@@ -163,13 +164,14 @@ unsafe impl NativeElement for BigNumValue {
 // SAFETY: `get` reads the validated physical slot.
 unsafe impl ReadableNativeElement for BigNumValue {
     type Ref<'a> = &'a BigNum;
+    type Error = std::convert::Infallible;
 
     #[inline]
     unsafe fn get<'a, U: NativeElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
         logical: usize,
-    ) -> Self::Ref<'a>
+    ) -> std::result::Result<Self::Ref<'a>, Self::Error>
     where
         Self: 'a,
     {

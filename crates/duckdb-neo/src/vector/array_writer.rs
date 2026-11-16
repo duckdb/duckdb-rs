@@ -230,10 +230,15 @@ mod tests {
         let reader = maps.list_reader()?;
         let row = reader.get(0)?.unwrap();
         assert_eq!(row.len(), 300);
-        let entries = row.get(299).unwrap().unwrap();
-        assert!(matches!(entries.get_key(long.as_str()), Some(None)));
+        let entries = row.get(299)?.unwrap();
+        assert!(matches!(entries.get_key(long.as_str())?, Some(None)));
         assert_eq!(
-            entries.get_key("a").unwrap().unwrap().iter().collect::<Vec<_>>(),
+            entries
+                .get_key("a")?
+                .unwrap()
+                .unwrap()
+                .iter()
+                .collect::<Result<Vec<_>>>()?,
             [Some(&1), None]
         );
         assert!(reader.get(1)?.is_none());

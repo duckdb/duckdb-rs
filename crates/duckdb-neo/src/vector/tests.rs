@@ -92,7 +92,7 @@ fn vector_dynamic_fields_validate_before_reading() -> crate::Result<()> {
     assert_eq!(row.value, Some(&42));
     assert_eq!(row.empty, None);
     let items = row.items.unwrap();
-    assert_eq!(items.iter().collect::<Vec<_>>(), [Some(&1), None]);
+    assert_eq!(items.iter().collect::<crate::Result<Vec<_>>>()?, [Some(&1), None]);
     assert!(chunk.get_vector_at::<DynamicStructWrongField>(0).is_err());
     assert!(chunk.get_vector_at::<DynamicStructWrongItems>(0).is_err());
 
@@ -188,7 +188,7 @@ fn vector_fill_validity_handles_empty_and_partial_words() -> crate::Result<()> {
         // SAFETY: INTEGER has no descendants and every row is initialized.
         unsafe { vector.row_writer()?.fill_validity(false)? };
         let reader = vector.row_reader()?;
-        assert!(reader.iter().all(|value| value.is_none()));
+        assert!(reader.iter().all(|value| matches!(value, Ok(None))));
         assert!(reader.validity().unwrap().iter().all(|word| *word == 0));
         // SAFETY: Clearing validity did not change the initialized INTEGER data.
         unsafe { vector.row_writer()?.fill_validity(true)? };
@@ -197,7 +197,7 @@ fn vector_fill_validity_handles_empty_and_partial_words() -> crate::Result<()> {
             reader
                 .iter()
                 .enumerate()
-                .all(|(index, value)| value == Some(&(index as i32)))
+                .all(|(index, value)| matches!(value, Ok(Some(value)) if *value == index as i32))
         );
         assert!(reader.validity().unwrap().iter().all(|word| *word == u64::MAX));
     }
@@ -491,7 +491,7 @@ fn vector_iterator_reports_remaining_rows() -> crate::Result<()> {
     assert_iterator_traits(&empty);
     assert_eq!(empty.size_hint(), (0, Some(0)));
     assert_eq!(empty.len(), 0);
-    assert_eq!(empty.next(), None);
+    assert!(empty.next().is_none());
 
     vector.set_size(2)?;
     vector.row_writer()?.set(0, &42)?;
@@ -500,14 +500,14 @@ fn vector_iterator_reports_remaining_rows() -> crate::Result<()> {
     assert_iterator_traits(&iter);
     assert_eq!(iter.size_hint(), (2, Some(2)));
     assert_eq!(iter.len(), 2);
-    assert_eq!(iter.next(), Some(Some(&42)));
+    assert_eq!(iter.next().transpose()?, Some(Some(&42)));
     assert_eq!(iter.size_hint(), (1, Some(1)));
     assert_eq!(iter.len(), 1);
-    assert_eq!(iter.next(), Some(None));
+    assert_eq!(iter.next().transpose()?, Some(None));
     assert_eq!(iter.size_hint(), (0, Some(0)));
     assert_eq!(iter.len(), 0);
-    assert_eq!(iter.next(), None);
-    assert_eq!(iter.next(), None);
+    assert!(iter.next().is_none());
+    assert!(iter.next().is_none());
     Ok(())
 }
 
@@ -527,12 +527,13 @@ fn vector_write_checks_rows_before_dispatch() -> crate::Result<()> {
     // SAFETY: Probe uses INTEGER's physical representation.
     unsafe impl ReadableNativeElement for Probe {
         type Ref<'a> = &'a i32;
+        type Error = std::convert::Infallible;
 
         unsafe fn get<'a, U: NativeElement>(
             vector: &crate::vector::VectorReader<'a, U>,
             physical: usize,
             logical: usize,
-        ) -> Self::Ref<'a>
+        ) -> std::result::Result<Self::Ref<'a>, Self::Error>
         where
             Self: 'a,
         {
@@ -626,7 +627,7 @@ fn vector_nested_writes_check_bounds_before_appending() -> crate::Result<()> {
         assert!(list.row_writer()?.set(index, &List(vec![Some(7)])).is_err());
         assert!(list.row_writer()?.set_null(index).is_err());
         assert_eq!(list.children().unwrap().row_count()?, child_len);
-        assert_eq!(list_values(list.row_reader()?.get(0)?), Some(vec![Some(42)]));
+        assert_eq!(list_values(list.row_reader()?.get(0)?)?, Some(vec![Some(42)]));
     }
 
     let mut maps = DataChunk::create(&conn, &[Map::<i32, i32>::logical_type(&conn)?], true)?;
@@ -640,7 +641,11 @@ fn vector_nested_writes_check_bounds_before_appending() -> crate::Result<()> {
         assert!(map.row_writer()?.set_null(index).is_err());
         assert_eq!(map.children().unwrap().row_count()?, child_len);
         assert_eq!(
-            map.row_reader()?.get(0)?.unwrap().iter().collect::<Vec<_>>(),
+            map.row_reader()?
+                .get(0)?
+                .unwrap()
+                .iter()
+                .collect::<crate::Result<Vec<_>>>()?,
             [(&1, Some(&42))]
         );
     }
@@ -680,7 +685,7 @@ fn vector_unknown_reads_nullness() -> crate::Result<()> {
     let reader = vector.reader()?;
     assert_eq!(reader.get(0)?, Some(()));
     assert_eq!(reader.get(1)?, None);
-    assert_eq!(reader.iter().collect::<Vec<_>>(), [Some(()), None]);
+    assert_eq!(reader.iter().collect::<crate::Result<Vec<_>>>()?, [Some(()), None]);
     Ok(())
 }
 
@@ -740,12 +745,16 @@ fn negate_scalar(_ctx: &Context, input: &mut VectorCollection, output: Vector<'_
     let mut output = output;
     output.set_size(input.len())?;
     for (i, v) in input.row_reader()?.iter().enumerate() {
-        match v {
+        match v? {
             Some(x) => output.row_writer()?.set(i, &-x)?,
             None => output.row_writer()?.set_null(i)?,
         }
     }
-    let written: Vec<_> = output.row_reader()?.iter().map(|value| value.copied()).collect();
+    let written: Vec<_> = output
+        .row_reader()?
+        .iter()
+        .map(|value| Ok(value?.copied()))
+        .collect::<crate::Result<_>>()?;
     assert_eq!(written, vec![Some(-1), Some(-2), Some(-3), Some(-4), Some(-5)]);
     Ok(())
 }
@@ -755,7 +764,7 @@ fn upper_scalar(_ctx: &Context, input: &mut VectorCollection, output: Vector<'_,
     let mut output = output;
     output.set_size(input.len())?;
     for (i, v) in input.row_reader()?.iter().enumerate() {
-        match v {
+        match v? {
             Some(s) => output.row_writer()?.set(i, &s.to_uppercase())?,
             None => output.row_writer()?.set_null(i)?,
         }
@@ -772,12 +781,12 @@ fn map_scalar(_ctx: &Context, input: &mut VectorCollection, result: Vector<'_, M
         .iter()
         .zip(values.row_reader()?.iter())
         .map(|(key, value)| {
-            (
-                key.copied().expect("key must not be null"),
-                value.expect("value must not be null").to_string(),
-            )
+            Ok((
+                key?.copied().expect("key must not be null"),
+                value?.expect("value must not be null").to_string(),
+            ))
         })
-        .collect();
+        .collect::<crate::Result<_>>()?;
     let mut result = result;
     result.set_size(total_len)?;
     result.set_child_size(rows.len())?;
@@ -789,7 +798,7 @@ fn map_scalar(_ctx: &Context, input: &mut VectorCollection, result: Vector<'_, M
     }
     let reader = result.row_reader()?;
     for (row, (key, value)) in reader.iter().zip(&rows) {
-        assert_eq!(row.unwrap().get(0), Some((key, Some(value.as_str()))));
+        assert_eq!(row?.unwrap().get(0)?, (key, Some(value.as_str())));
     }
     Ok(())
 }
@@ -801,8 +810,8 @@ fn union_scalar(_ctx: &Context, input: &mut VectorCollection, output: Vector<'_,
         .row_reader()?
         .iter()
         .zip(values.row_reader()?.iter())
-        .map(|(key, value)| (*key.unwrap(), value))
-        .collect();
+        .map(|(key, value)| Ok((*key?.unwrap(), value?)))
+        .collect::<crate::Result<_>>()?;
 
     let mut output = output;
     output.set_size(rows.len())?;
@@ -825,8 +834,8 @@ fn struct_scalar(_ctx: &Context, input: &mut VectorCollection, output: Vector<'_
         .row_reader()?
         .iter()
         .zip(values.row_reader()?.iter())
-        .map(|(key, value)| (*key.unwrap(), value.unwrap().to_string()))
-        .collect();
+        .map(|(key, value)| Ok((*key?.unwrap(), value?.unwrap().to_string())))
+        .collect::<crate::Result<_>>()?;
     let mut output = output;
     output.set_size(rows.len())?;
     for (index, (key, value)) in rows.iter().enumerate() {
@@ -839,7 +848,7 @@ fn struct_scalar(_ctx: &Context, input: &mut VectorCollection, output: Vector<'_
         )?;
     }
     for (row, (key, value)) in output.row_reader()?.iter().zip(rows) {
-        let row = row.unwrap();
+        let row = row?.unwrap();
         assert_eq!(row.key, Some(&key));
         assert_eq!(row.value, Some(value.as_str()));
     }
@@ -857,7 +866,7 @@ fn struct_key_scalar(_ctx: &Context, input: &mut VectorCollection, output: Vecto
     let mut output = output;
     output.set_size(structs.len())?;
     for (index, row) in structs.row_reader()?.iter().enumerate() {
-        output.row_writer()?.set_option(index, row.and_then(|row| row.key))?;
+        output.row_writer()?.set_option(index, row?.and_then(|row| row.key))?;
     }
     Ok(())
 }
@@ -871,7 +880,7 @@ fn nullable_struct_scalar(
     let mut output = output;
     output.set_size(keys.len())?;
     for (index, key) in keys.row_reader()?.iter().enumerate() {
-        let row = key.map(|key| TestStruct {
+        let row = key?.map(|key| TestStruct {
             key: *key,
             value: "x".into(),
         });
@@ -889,7 +898,7 @@ fn nullable_union_scalar(
     let mut output = output;
     output.set_size(keys.len())?;
     for (index, key) in keys.row_reader()?.iter().enumerate() {
-        let row = key.map(|key| TestUnion::Key(Some(*key)));
+        let row = key?.map(|key| TestUnion::Key(Some(*key)));
         output.row_writer()?.set_option(index, row.as_ref())?;
     }
     Ok(())
@@ -919,7 +928,7 @@ fn struct_member_union_scalar(
     let mut output = output;
     output.set_size(keys.len())?;
     for (index, key) in keys.row_reader()?.iter().enumerate() {
-        let key = *key.unwrap();
+        let key = *key?.unwrap();
         let row = if key % 2 == 1 {
             NumOrStruct::Num(key)
         } else {
@@ -952,7 +961,7 @@ fn copy_string_scalar(_ctx: &Context, input: &mut VectorCollection, result: Vect
     let mut result = result;
     result.set_size(vector.len())?;
     for (i, item) in vector.row_reader()?.iter().enumerate() {
-        result.row_writer()?.set_option(i, item)?;
+        result.row_writer()?.set_option(i, item?)?;
     }
     Ok(())
 }
@@ -972,7 +981,11 @@ fn dictionary_probe_scalar(_ctx: &Context, input: &mut VectorCollection, output:
         };
         assert_eq!(selection.len(), 2);
 
-        let before: Vec<_> = vector.row_reader()?.iter().map(|v| v.copied()).collect();
+        let before: Vec<_> = vector
+            .row_reader()?
+            .iter()
+            .map(|v| Ok(v?.copied()))
+            .collect::<crate::Result<_>>()?;
         assert_eq!(before, vec![Some(i32::MAX), None]);
 
         // Flattening should collapse the dictionary into a flat vector while
@@ -980,7 +993,11 @@ fn dictionary_probe_scalar(_ctx: &Context, input: &mut VectorCollection, output:
         vector.flatten()?;
         assert_eq!(vector.storage_kind(), StorageKind::Flat);
 
-        let after: Vec<_> = vector.row_reader()?.iter().map(|v| v.copied()).collect();
+        let after: Vec<_> = vector
+            .row_reader()?
+            .iter()
+            .map(|v| Ok(v?.copied()))
+            .collect::<crate::Result<_>>()?;
         assert_eq!(after, before);
     } else if vector.storage_kind() == StorageKind::Other {
         // The SEQUENCE-encoded chunk emitted by `test_vector_types` must be
@@ -989,7 +1006,7 @@ fn dictionary_probe_scalar(_ctx: &Context, input: &mut VectorCollection, output:
     }
 
     for (i, v) in vector.row_reader()?.iter().enumerate() {
-        output.row_writer()?.set_option(i, v)?;
+        output.row_writer()?.set_option(i, v?)?;
     }
     Ok(())
 }
@@ -1023,7 +1040,13 @@ pub fn test_vector_dictionary() -> crate::Result<()> {
 
     while let Some(chunk) = result.next_chunk()? {
         let vector = chunk.get_vector_at::<i32>(0)?;
-        values.extend(vector.row_reader()?.iter().map(|v| v.copied()));
+        values.extend(
+            vector
+                .row_reader()?
+                .iter()
+                .map(|v| Ok(v?.copied()))
+                .collect::<crate::Result<Vec<_>>>()?,
+        );
     }
 
     assert_eq!(
@@ -1059,7 +1082,7 @@ fn constant_probe_scalar(_ctx: &Context, input: &mut VectorCollection, output: V
         assert_eq!(view.selection(), super::Selection::Constant);
         assert_eq!(unsafe { view.as_slice() }.unwrap().len(), 1);
 
-        let values: Vec<_> = view.iter().map(|v| v.copied()).collect();
+        let values: Vec<_> = view.iter().map(|v| Ok(v?.copied())).collect::<crate::Result<_>>()?;
         assert_eq!(values, vec![Some(i32::MIN)]);
     } else if vector.storage_kind() == StorageKind::Other {
         // The SEQUENCE-encoded chunk emitted by `test_vector_types` must be
@@ -1068,7 +1091,7 @@ fn constant_probe_scalar(_ctx: &Context, input: &mut VectorCollection, output: V
     }
 
     for (i, v) in vector.row_reader()?.iter().enumerate() {
-        output.row_writer()?.set_option(i, v)?;
+        output.row_writer()?.set_option(i, v?)?;
     }
     Ok(())
 }
@@ -1098,7 +1121,13 @@ pub fn test_vector_constant() -> crate::Result<()> {
 
     while let Some(chunk) = result.next_chunk()? {
         let vector = chunk.get_vector_at::<i32>(0)?;
-        values.extend(vector.row_reader()?.iter().map(|v| v.copied()));
+        values.extend(
+            vector
+                .row_reader()?
+                .iter()
+                .map(|v| Ok(v?.copied()))
+                .collect::<crate::Result<Vec<_>>>()?,
+        );
     }
 
     assert_eq!(
@@ -1154,7 +1183,11 @@ fn test_vector_read_write() -> crate::Result<()> {
                     chunk_count += 1;
                     let vector = chunk.get_vector_at::<i32>(0).expect("Failed to get vector");
 
-                    let out: Vec<Option<i32>> = vector.row_reader()?.iter().map(|x| x.copied()).collect();
+                    let out = vector
+                        .row_reader()?
+                        .iter()
+                        .map(|x| Ok(x?.copied()))
+                        .collect::<crate::Result<Vec<_>>>()?;
                     assert_eq!(out, vec![Some(-1), Some(-2), Some(-3), Some(-4), Some(-5)]);
                 }
                 QueryResultStep::Waiting => continue,
@@ -1178,7 +1211,7 @@ fn test_logical_type_cast() -> crate::Result<()> {
     let vector = res.get_vector_at::<i32>(0)?;
 
     for item in vector.row_reader()?.iter() {
-        assert_eq!(item, Some(&1));
+        assert_eq!(item?, Some(&1));
     }
     Ok(())
 }
@@ -1207,7 +1240,7 @@ fn test_vector_string() -> crate::Result<()> {
         .unwrap();
 
     let vector = res.get_vector_at::<String>(0)?;
-    let data: Vec<_> = vector.row_reader()?.iter().collect();
+    let data = vector.row_reader()?.iter().collect::<crate::Result<Vec<_>>>()?;
 
     assert!(data.len() == 4, "Expected 4 rows, got {}", data.len());
 
@@ -1231,11 +1264,11 @@ fn test_vector_list() -> crate::Result<()> {
         output: Vector<'_, List<i32>>,
     ) -> crate::Result<()> {
         let input = input.get_vector_at::<List<i32>>(0)?;
-        let rows: Vec<Option<List<i32>>> = input
-            .row_reader()?
-            .iter()
-            .map(|row| row.map(|list| List(list.iter().map(|x| x.map(|v| v * 2)).collect())))
-            .collect();
+        let mut rows = Vec::new();
+        for row in input.row_reader()?.iter() {
+            let doubled = row?.map(|list| list.iter().map(|x| Ok(x?.map(|v| v * 2))).collect::<crate::Result<_>>());
+            rows.push(doubled.transpose()?.map(List));
+        }
         let mut output = output;
         output.set_size(rows.len())?;
         output.set_child_size(rows.iter().flatten().map(|row| row.0.len()).sum())?;
@@ -1274,8 +1307,8 @@ fn test_vector_list() -> crate::Result<()> {
     let items: Vec<_> = vector
         .row_reader()?
         .iter()
-        .map(|r| r.map(|v| v.iter().collect::<Vec<_>>()))
-        .collect();
+        .map(|r| r?.map(|v| v.iter().collect::<crate::Result<Vec<_>>>()).transpose())
+        .collect::<crate::Result<_>>()?;
 
     let expected = [
         Some(vec![Some(&2), Some(&4)]),
@@ -1314,12 +1347,12 @@ fn test_vector_struct() -> crate::Result<()> {
     let rows = vector.row_reader()?;
     let mut reader = rows.iter();
 
-    let row = reader.next().unwrap().unwrap();
+    let row = reader.next().unwrap()?.unwrap();
 
     assert_eq!(row.key1, Some("value1"));
     assert_eq!(row.key2, Some(&42));
 
-    let row = reader.next().unwrap().unwrap();
+    let row = reader.next().unwrap()?.unwrap();
     assert_eq!(row.key1, None);
     assert_eq!(row.key2, None);
     assert!(reader.next().is_none());
@@ -1344,12 +1377,14 @@ pub fn test_vector_array() -> crate::Result<()> {
     let vector_reader = vector.row_reader()?;
     let mut reader = vector_reader.iter();
 
-    let item = reader.next().unwrap().unwrap();
+    let item = reader.next().unwrap()?.unwrap();
     assert_eq!(item.len(), 3);
 
     let reader = vector_reader.iter();
 
-    let items: Vec<_> = reader.map(|r| r.map(|v| v.iter().collect::<Vec<_>>())).collect();
+    let items: Vec<_> = reader
+        .map(|r| r?.map(|v| v.iter().collect::<crate::Result<Vec<_>>>()).transpose())
+        .collect::<crate::Result<_>>()?;
 
     let expected = [
         Some(vec![Some(&1), None, Some(&3)]),
@@ -1383,7 +1418,7 @@ pub fn test_vector_union() -> crate::Result<()> {
 
     let vector = res.get_vector_at::<NumOrStr>(0)?;
     assert_eq!(vector.len(), 5);
-    let rows: Vec<_> = vector.row_reader()?.iter().collect();
+    let rows = vector.row_reader()?.iter().collect::<crate::Result<Vec<_>>>()?;
     assert_eq!(
         rows,
         [
@@ -1422,30 +1457,33 @@ pub fn test_vector_map() -> crate::Result<()> {
 
     assert_eq!(vector.len(), 3);
 
-    let row = reader.next().unwrap().unwrap();
+    let row = reader.next().unwrap()?.unwrap();
 
-    assert_eq!(row.keys().collect::<Vec<_>>(), vec![&1, &2]);
+    assert_eq!(row.keys().collect::<crate::Result<Vec<_>>>()?, vec![&1, &2]);
     assert_eq!(
-        row.values().collect::<Vec<_>>(),
+        row.values().collect::<crate::Result<Vec<_>>>()?,
         vec![Some(&ShortDecimal(121)), Some(&ShortDecimal(412))]
     );
 
-    assert_eq!(row.get(0), Some((&1, Some(&ShortDecimal(121)))));
-    assert_eq!(row.get(1), Some((&2, Some(&ShortDecimal(412)))));
-    assert_eq!(row.get(2), None);
+    assert_eq!(row.get(0)?, (&1, Some(&ShortDecimal(121))));
+    assert_eq!(row.get(1)?, (&2, Some(&ShortDecimal(412))));
+    assert!(row.get(2).is_err());
 
-    let row = reader.next().unwrap().unwrap();
+    let row = reader.next().unwrap()?.unwrap();
 
-    assert_eq!(row.get(0), Some((&1, Some(&ShortDecimal(1121)))));
-    assert_eq!(row.get(1), Some((&2, Some(&ShortDecimal(1412)))));
-    assert_eq!(row.get(2), None);
+    assert_eq!(row.get(0)?, (&1, Some(&ShortDecimal(1121))));
+    assert_eq!(row.get(1)?, (&2, Some(&ShortDecimal(1412))));
+    assert!(row.get(2).is_err());
 
-    let row = reader.next().unwrap().unwrap();
+    let row = reader.next().unwrap()?.unwrap();
 
-    assert_eq!(row.get(0), Some((&1, None)));
-    assert_eq!(row.get(1), Some((&2, Some(&ShortDecimal(412)))));
-    assert_eq!(row.get(2), None);
-    assert_eq!(row.values().collect::<Vec<_>>(), vec![None, Some(&ShortDecimal(412))]);
+    assert_eq!(row.get(0)?, (&1, None));
+    assert_eq!(row.get(1)?, (&2, Some(&ShortDecimal(412))));
+    assert!(row.get(2).is_err());
+    assert_eq!(
+        row.values().collect::<crate::Result<Vec<_>>>()?,
+        vec![None, Some(&ShortDecimal(412))]
+    );
 
     assert!(reader.next().is_none());
 
@@ -1487,13 +1525,13 @@ pub fn vector_complex_write() -> crate::Result<()> {
         let rows = res.row_reader()?;
         let mut reader = rows.iter();
 
-        let item = reader.next().unwrap().unwrap();
+        let item = reader.next().unwrap()?.unwrap();
 
-        assert_eq!(item.get(0), Some((&12, Some("AA"))));
+        assert_eq!(item.get(0)?, (&12, Some("AA")));
 
-        let item = reader.next().unwrap().unwrap();
+        let item = reader.next().unwrap()?.unwrap();
 
-        assert_eq!(item.get(0), Some((&15, Some("BB"))));
+        assert_eq!(item.get(0)?, (&15, Some("BB")));
     }
     assert_eq!(chunk_count, 1);
 
@@ -1508,7 +1546,7 @@ pub fn vector_complex_write() -> crate::Result<()> {
         let expected = [(1, "A"), (2, "B"), (3, "C")];
 
         for (item, (key, value)) in res.row_reader()?.iter().zip(expected) {
-            assert_eq!(item.unwrap().get(0), Some((&key, Some(value))));
+            assert_eq!(item?.unwrap().get(0)?, (&key, Some(value)));
         }
 
         return Ok(());
@@ -1544,7 +1582,7 @@ pub fn vector_union_write() -> crate::Result<()> {
         chunk_count += 1;
         let mut vector = chunk.get_vector_at_mut::<TestUnion>(0)?;
         vector.flatten()?;
-        let rows: Vec<_> = vector.row_reader()?.iter().collect();
+        let rows = vector.row_reader()?.iter().collect::<crate::Result<Vec<_>>>()?;
         assert_eq!(
             rows,
             [
@@ -1583,7 +1621,7 @@ pub fn vector_struct_write() -> crate::Result<()> {
     while let Some(chunk) = result.next_chunk()? {
         chunk_count += 1;
         let vector = chunk.get_vector_at::<TestStruct>(0)?;
-        let rows: Vec<_> = vector.row_reader()?.iter().collect();
+        let rows = vector.row_reader()?.iter().collect::<crate::Result<Vec<_>>>()?;
         assert_eq!(rows[0].as_ref().unwrap().key, Some(&1));
         assert_eq!(rows[1].as_ref().unwrap().value, Some("B"));
     }
@@ -1626,19 +1664,27 @@ pub fn vector_nested_null_write() -> crate::Result<()> {
         .get_vector_at::<i32>(0)?
         .row_reader()?
         .iter()
-        .map(|v| v.copied())
-        .collect();
+        .map(|v| Ok(v?.copied()))
+        .collect::<crate::Result<_>>()?;
     assert_eq!(keys, vec![Some(1), None, Some(3)]);
-    let values: Vec<_> = chunk.get_vector_at::<String>(1)?.row_reader()?.iter().collect();
+    let values = chunk
+        .get_vector_at::<String>(1)?
+        .row_reader()?
+        .iter()
+        .collect::<crate::Result<Vec<_>>>()?;
     assert_eq!(values, vec![Some("x"), None, Some("x")]);
-    let tags: Vec<_> = chunk.get_vector_at::<String>(2)?.row_reader()?.iter().collect();
+    let tags = chunk
+        .get_vector_at::<String>(2)?
+        .row_reader()?
+        .iter()
+        .collect::<crate::Result<Vec<_>>>()?;
     assert_eq!(tags, vec![Some("key"), None, Some("key")]);
     let members: Vec<_> = chunk
         .get_vector_at::<i32>(3)?
         .row_reader()?
         .iter()
-        .map(|v| v.copied())
-        .collect();
+        .map(|v| Ok(v?.copied()))
+        .collect::<crate::Result<_>>()?;
     assert_eq!(members, vec![Some(1), None, Some(3)]);
     Ok(())
 }
@@ -1722,7 +1768,7 @@ pub fn vector_test_bignum() -> crate::Result<()> {
         ];
 
         for (i, item) in reader.enumerate() {
-            let decoded = item.unwrap().decode()?;
+            let decoded = item?.unwrap().decode()?;
 
             let result = decoded.to_string();
 
@@ -1971,8 +2017,8 @@ pub fn vector_writable_value_types() -> crate::Result<()> {
             .get(0)?
             .unwrap()
             .iter()
-            .map(|value| value.copied())
-            .collect::<Vec<_>>(),
+            .map(|value| Ok(value?.copied()))
+            .collect::<crate::Result<Vec<_>>>()?,
         vec![Some(1), None, Some(3)]
     );
     assert!(reader.get(1)?.is_none());
@@ -2012,10 +2058,10 @@ pub fn test_vector_make_constant() -> crate::Result<()> {
         let rows = res.row_reader()?;
         let mut reader = rows.iter();
 
-        assert_eq!(reader.next(), Some(Some(&42)));
-        assert_eq!(reader.next(), Some(Some(&42)));
-        assert_eq!(reader.next(), Some(Some(&42)));
-        assert_eq!(reader.next(), None);
+        assert_eq!(reader.next().transpose()?, Some(Some(&42)));
+        assert_eq!(reader.next().transpose()?, Some(Some(&42)));
+        assert_eq!(reader.next().transpose()?, Some(Some(&42)));
+        assert!(reader.next().is_none());
     }
     assert_eq!(chunk_count, 1);
 
@@ -2054,10 +2100,10 @@ pub fn test_vector_make_sequence() -> crate::Result<()> {
         let rows = res.row_reader()?;
         let mut reader = rows.iter();
 
-        assert_eq!(reader.next(), Some(Some(&42)));
-        assert_eq!(reader.next(), Some(Some(&52)));
-        assert_eq!(reader.next(), Some(Some(&62)));
-        assert_eq!(reader.next(), None);
+        assert_eq!(reader.next().transpose()?, Some(Some(&42)));
+        assert_eq!(reader.next().transpose()?, Some(Some(&52)));
+        assert_eq!(reader.next().transpose()?, Some(Some(&62)));
+        assert!(reader.next().is_none());
     }
     assert_eq!(chunk_count, 1);
 
@@ -2089,7 +2135,9 @@ pub fn test_vector_types() -> crate::Result<()> {
     while let Some(item) = result.next_chunk()? {
         let vector = item.get_vector_at::<String>(0)?;
 
-        concatenated.extend(vector.row_reader()?.iter().map(|x| x.map(str::to_string)));
+        for x in vector.row_reader()?.iter() {
+            concatenated.push(x?.map(str::to_string));
+        }
     }
 
     assert_eq!(
@@ -2178,7 +2226,7 @@ pub fn test_vector_set_value() -> crate::Result<()> {
         while let Some(chunk) = result.next_chunk()? {
             let vector = chunk.get_vector_at::<Variant>(0)?;
             for row in vector.row_reader()?.iter() {
-                results.push(match row {
+                results.push(match row? {
                     None => "NULL".to_owned(),
                     Some(value) => value.dbg_string()?,
                 });
@@ -2229,7 +2277,7 @@ pub fn test_vector_reference_input() -> crate::Result<()> {
         for index in 0..item.col_count() {
             let vector = item.get_vector_at::<String>(index)?;
             for row in vector.row_reader()?.iter() {
-                match row {
+                match row? {
                     None => {
                         results.push("NULL".into());
                     }
@@ -2289,7 +2337,7 @@ fn test_vector_tstring() -> crate::Result<()> {
         let vector = chunk.get_vector_at::<BlobValue>(0)?;
 
         for item in vector.row_reader()?.iter() {
-            if let Some(value) = item {
+            if let Some(value) = item? {
                 let string = String::from_utf8_lossy(value);
                 results.push(Some(string.to_string()));
             } else {
@@ -2430,8 +2478,8 @@ fn test_reference_rebuilds_children() -> crate::Result<()> {
     let items: Vec<_> = referenced
         .row_reader()?
         .iter()
-        .map(|r| r.map(|v| v.iter().map(|x| x.copied()).collect::<Vec<_>>()))
-        .collect();
+        .map(|r| list_values(r?))
+        .collect::<crate::Result<_>>()?;
     assert_eq!(items, [Some(vec![Some(1), Some(2), Some(3)]), Some(vec![Some(4)])]);
 
     Ok(())
@@ -2469,8 +2517,8 @@ fn test_make_constant_rebuilds_children() -> crate::Result<()> {
     let items: Vec<_> = vector
         .row_reader()?
         .iter()
-        .map(|r| r.map(|v| v.iter().map(|x| x.copied()).collect::<Vec<_>>()))
-        .collect();
+        .map(|r| list_values(r?))
+        .collect::<crate::Result<_>>()?;
     assert_eq!(items, vec![Some(vec![Some(7), Some(8)]); 3]);
     assert!(!vector.is_writable());
     for i in 0..vector.children().unwrap().col_count() {
@@ -2492,7 +2540,10 @@ fn test_make_constant_null_value() -> crate::Result<()> {
         .get_vector_at_mut::<String>(0)?
         .make_constant(Value::null(&conn, &types[0])?, 3)?;
 
-    assert_eq!(vector.row_reader()?.iter().collect::<Vec<_>>(), vec![None; 3]);
+    assert_eq!(
+        vector.row_reader()?.iter().collect::<crate::Result<Vec<_>>>()?,
+        vec![None; 3]
+    );
     Ok(())
 }
 
@@ -2546,9 +2597,12 @@ fn flat_list_scalar(_ctx: &Context, input: &mut VectorCollection, output: Vector
     list.flatten()?;
 
     for (i, row) in list.row_reader()?.iter().enumerate() {
-        output
-            .row_writer()?
-            .set_option(i, row.map(|v| v.iter().map(|x| x.copied().unwrap_or(0)).sum()).as_ref())?;
+        output.row_writer()?.set_option(
+            i,
+            list_values(row?)?
+                .map(|v| v.into_iter().map(|x| x.unwrap_or(0)).sum())
+                .as_ref(),
+        )?;
     }
     Ok(())
 }
@@ -2572,7 +2626,14 @@ fn test_flatten_rebuilds_children() -> crate::Result<()> {
     let mut result = conn.query("SELECT flat_list(range, [1, 2, 3]) FROM range(5)", Parameters::None)?;
     let mut values = vec![];
     while let Some(chunk) = result.next_chunk()? {
-        values.extend(chunk.get_vector_at::<i32>(0)?.row_reader()?.iter().map(|v| v.copied()));
+        values.extend(
+            chunk
+                .get_vector_at::<i32>(0)?
+                .row_reader()?
+                .iter()
+                .map(|v| Ok(v?.copied()))
+                .collect::<crate::Result<Vec<_>>>()?,
+        );
     }
     assert_eq!(values, vec![Some(6); 5]);
 
@@ -2589,7 +2650,7 @@ fn slow_write_input_scalar(ctx: &Context, input: &mut VectorCollection, output: 
     assert!(vector.set_null_slow(0).is_err());
 
     for (i, v) in vector.row_reader()?.iter().enumerate() {
-        output.row_writer()?.set_option(i, v)?;
+        output.row_writer()?.set_option(i, v?)?;
     }
     Ok(())
 }
@@ -2623,8 +2684,8 @@ fn test_slow_writes_reject_read_only_input() -> crate::Result<()> {
         .get_vector_at::<i32>(0)?
         .row_reader()?
         .iter()
-        .map(|v| v.copied())
-        .collect();
+        .map(|v| Ok(v?.copied()))
+        .collect::<crate::Result<_>>()?;
     assert_eq!(values, [Some(0), Some(1), Some(2)]);
 
     Ok(())
@@ -2636,9 +2697,12 @@ fn array_sum_scalar(_ctx: &Context, input: &mut VectorCollection, output: Vector
     output.set_size(array.len())?;
 
     for (i, row) in array.row_reader()?.iter().enumerate() {
-        output
-            .row_writer()?
-            .set_option(i, row.map(|v| v.iter().map(|x| x.copied().unwrap_or(0)).sum()).as_ref())?;
+        output.row_writer()?.set_option(
+            i,
+            list_values(row?)?
+                .map(|v| v.into_iter().map(|x| x.unwrap_or(0)).sum())
+                .as_ref(),
+        )?;
     }
     Ok(())
 }
@@ -2666,7 +2730,14 @@ fn test_array_reads_use_type_size() -> crate::Result<()> {
         Parameters::None,
     )?;
     while let Some(chunk) = result.next_chunk()? {
-        values.extend(chunk.get_vector_at::<i32>(0)?.row_reader()?.iter().map(|v| v.copied()));
+        values.extend(
+            chunk
+                .get_vector_at::<i32>(0)?
+                .row_reader()?
+                .iter()
+                .map(|v| Ok(v?.copied()))
+                .collect::<crate::Result<Vec<_>>>()?,
+        );
     }
     assert_eq!(values, vec![Some(6); 5]);
 
@@ -2708,10 +2779,7 @@ fn test_list_and_map_writers_start_at_the_first_child_row() -> crate::Result<()>
 
     let lists = list_chunk.get_vector_at::<List<i32>>(0)?;
     let reader = lists.list_reader()?;
-    let items: Vec<_> = reader
-        .iter()
-        .map(|r| r.map(|v| v.iter().map(|x| x.copied()).collect::<Vec<_>>()))
-        .collect();
+    let items: Vec<_> = reader.iter().map(|r| list_values(r?)).collect::<crate::Result<_>>()?;
     assert_eq!(items, [Some(vec![Some(1), Some(2), Some(3)]), Some(vec![Some(9)])]);
 
     let mut map_chunk = DataChunk::create(&conn, &[Map::<i32, i32>::logical_type(&conn)?], true)?;
@@ -2733,18 +2801,18 @@ fn test_list_and_map_writers_start_at_the_first_child_row() -> crate::Result<()>
     let maps = map_chunk.get_vector_at::<Map<i32, i32>>(0)?;
     let reader = maps.map_reader()?;
     let mut rows = reader.iter();
-    let row = rows.next().unwrap().unwrap();
+    let row = rows.next().unwrap()?.unwrap();
     let entries = [row.get(0).unwrap(), row.get(1).unwrap()];
     assert_eq!(entries, [(&1, Some(&10)), (&2, Some(&20))]);
-    let row = rows.next().unwrap().unwrap();
-    assert_eq!(row.keys().collect::<Vec<_>>(), vec![&3]);
-    assert_eq!(row.get(0), Some((&3, Some(&30))));
+    let row = rows.next().unwrap()?.unwrap();
+    assert_eq!(row.keys().collect::<crate::Result<Vec<_>>>()?, vec![&3]);
+    assert_eq!(row.get(0)?, (&3, Some(&30)));
 
     Ok(())
 }
 
-fn list_values(row: Option<Elements<'_, VectorReader<'_, i32>>>) -> Option<Vec<Option<i32>>> {
-    row.map(|row| row.iter().map(|v| v.copied()).collect())
+fn list_values(row: Option<Elements<'_, VectorReader<'_, i32>>>) -> crate::Result<Option<Vec<Option<i32>>>> {
+    row.map(|row| row.iter().map(|v| Ok(v?.copied())).collect()).transpose()
 }
 
 #[test]
@@ -2777,7 +2845,7 @@ fn test_children_follow_parent() -> crate::Result<()> {
     assert_eq!(list.children().unwrap().row_count()?, 2);
     list.children_mut().unwrap().get_vector_at_mut::<i32>(0)?.flatten()?;
     let reader = list.row_reader()?;
-    assert_eq!(list_values(reader.get(0)?), Some(vec![Some(1), Some(2)]));
+    assert_eq!(list_values(reader.get(0)?)?, Some(vec![Some(1), Some(2)]));
     Ok(())
 }
 
@@ -2811,7 +2879,10 @@ fn test_nested_children_survive_reallocation() -> crate::Result<()> {
             },
         )?;
         // Readers copy the child views, which growing the parent must not leave stale.
-        assert_eq!(array.row_reader()?.get(0)?.unwrap().iter().next(), Some(Some(&3)));
+        assert_eq!(
+            array.row_reader()?.get(0)?.unwrap().iter().next().transpose()?,
+            Some(Some(&3))
+        );
         assert_eq!(structs.row_reader()?.get(0)?.unwrap().key, Some(&7));
         array.set_size(3000)?;
         structs.set_size(3000)?;
@@ -2826,7 +2897,10 @@ fn test_nested_children_survive_reallocation() -> crate::Result<()> {
                 value: "b".into(),
             },
         )?;
-        assert_eq!(array.row_reader()?.get(2999)?.unwrap().iter().next(), Some(Some(&4)));
+        assert_eq!(
+            array.row_reader()?.get(2999)?.unwrap().iter().next().transpose()?,
+            Some(Some(&4))
+        );
         assert_eq!(structs.row_reader()?.get(2999)?.unwrap().key, Some(&8));
         assert_eq!(structs.row_reader()?.get(0)?.unwrap().value, Some("a"));
         list.set_size(1)?;
@@ -2835,7 +2909,7 @@ fn test_nested_children_survive_reallocation() -> crate::Result<()> {
     }
     let lists = chunk.get_vector_at::<List<i32>>(2)?;
     let reader = lists.row_reader()?;
-    assert_eq!(reader.get(0)?.unwrap().iter().last(), Some(Some(&4999)));
+    assert_eq!(reader.get(0)?.unwrap().iter().last().transpose()?, Some(Some(&4999)));
     Ok(())
 }
 
@@ -2870,7 +2944,7 @@ fn test_nested_writes_reuse_child_wrappers() -> crate::Result<()> {
     let reader = lists.row_reader()?;
     for row in [0, 1, 2047, 2999] {
         let outer = reader.get(row)?.unwrap();
-        let inner = list_values(outer.iter().next().unwrap());
+        let inner = list_values(outer.iter().next().unwrap()?)?;
         assert_eq!(inner.unwrap()[0], Some(row as i32));
     }
     Ok(())
@@ -2922,7 +2996,7 @@ fn test_collection_append() -> crate::Result<()> {
 
 fn copy_over(ctx: &Context, input: &mut VectorCollection, result: Vector<'_, i64>) -> crate::Result<()> {
     let vec = input.get_vector_at::<String>(0)?;
-    let has_bad_row = vec.row_reader()?.iter().any(|row| row == Some("abc"));
+    let has_bad_row = vec.row_reader()?.iter().any(|row| matches!(row, Ok(Some("abc"))));
 
     // SAFETY: the callback input and output are not changed after the cast.
     match unsafe { result.try_cast_rows(vec, ctx)? } {
@@ -2965,7 +3039,8 @@ fn test_vector_cast() -> crate::Result<()> {
                     .get_vector_at::<i64>(0)?
                     .row_reader()?
                     .iter()
-                    .map(|row| row.copied()),
+                    .map(|row| Ok(row?.copied()))
+                    .collect::<crate::Result<Vec<_>>>()?,
             );
         }
         assert_eq!(results, expected);
@@ -3023,7 +3098,7 @@ fn test_list_output_child_starts_empty_in_every_callback() -> crate::Result<()> 
         let mut writer = output.list_writer()?;
         ENTRY_CHILD.lock().unwrap().push((child_len, writer.child_offset()));
         for (row, value) in input.row_reader()?.iter().enumerate() {
-            writer.set_option(row, value.map(|value| List(vec![Some(*value), Some(*value)])).as_ref())?;
+            writer.set_option(row, value?.map(|value| List(vec![Some(*value), Some(*value)])).as_ref())?;
         }
         Ok(())
     }
@@ -3082,14 +3157,17 @@ fn set_size_initializes_new_rows() -> crate::Result<()> {
         lists.set_size(ROWS)?;
         assert_eq!(lists.children().unwrap().get_untyped_vector_at(0)?.len(), 1);
         let reader = lists.row_reader()?;
-        assert_eq!(reader.get(0)?.unwrap().iter().collect::<Vec<_>>(), [Some(&7)]);
+        assert_eq!(
+            reader.get(0)?.unwrap().iter().collect::<crate::Result<Vec<_>>>()?,
+            [Some(&7)]
+        );
         for row in 1..ROWS {
             assert_eq!(reader.entry(row)?, Some(ListIndex { offset: 0, length: 0 }), "{row}");
         }
 
         let mut strings = strings.cast::<String>()?;
         strings.set_size(ROWS)?;
-        assert!(strings.row_reader()?.iter().all(|value| value == Some("")));
+        assert!(strings.row_reader()?.iter().all(|value| matches!(value, Ok(Some("")))));
 
         let mut arrays = arrays.cast::<Array<String, 2>>()?;
         arrays.set_size(ROWS)?;
@@ -3097,21 +3175,21 @@ fn set_size_initializes_new_rows() -> crate::Result<()> {
         assert!(
             reader
                 .iter()
-                .all(|row| row.unwrap().iter().all(|value| value == Some("")))
+                .all(|row| row.unwrap().unwrap().iter().all(|value| matches!(value, Ok(Some("")))))
         );
 
         let mut rows = rows.cast::<GrownRow>()?;
         rows.set_size(ROWS)?;
         let reader = rows.row_reader()?;
         for row in reader.iter() {
-            let row = row.unwrap();
+            let row = row?.unwrap();
             assert_eq!(row.name, Some(""));
             assert!(row.items.unwrap().is_empty());
         }
 
         let mut bits = bits.cast::<BitValue>()?;
         bits.set_size(ROWS)?;
-        assert!(bits.row_reader()?.iter().all(|value| value.is_none()));
+        assert!(bits.row_reader()?.iter().all(|value| matches!(value, Ok(None))));
 
         let mut enums = enums.cast::<super::Unknown>()?;
         enums.set_size(ROWS)?;

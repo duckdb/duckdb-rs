@@ -440,7 +440,9 @@ mod tests {
 
         let mut values = Vec::new();
         while let Some(chunk) = query.next_chunk()? {
-            values.extend(chunk.get_vector_at::<i64>(0)?.reader()?.iter().flatten().copied());
+            for value in chunk.get_vector_at::<i64>(0)?.reader()?.iter() {
+                values.extend(value?.copied());
+            }
         }
         assert_eq!(values, (10..15).collect::<Vec<i64>>());
 

@@ -2,7 +2,7 @@
 
 use super::{DuckDBType, ToValue};
 use crate::{
-    Parameters, Result,
+    Error, Parameters, Result,
     connection::FFILink,
     logical_type::{LogicalType, LogicalTypeID},
     value::Value,
@@ -25,17 +25,18 @@ unsafe impl NativeElement for Variant {
 // SAFETY: `get` reads the validated physical slot.
 unsafe impl ReadableNativeElement for Variant {
     type Ref<'a> = Value;
+    type Error = Error;
 
     #[inline]
     unsafe fn get<'a, U: NativeElement>(
         reader: &crate::vector::VectorReader<'a, U>,
         _physical: usize,
         logical: usize,
-    ) -> Self::Ref<'a>
+    ) -> Result<Self::Ref<'a>>
     where
         Self: Sized + 'a,
     {
-        reader.vector().get_value_slow(logical).unwrap()
+        reader.vector().get_value_slow(logical)
     }
 }
 

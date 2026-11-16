@@ -70,8 +70,8 @@ fn main() -> Result<()> {
         let names = chunk.get_vector_at::<String>(1)?.reader()?;
         for (id, name) in ids.iter().zip(names.iter()) {
             ducks.push(Duck {
-                id: *id.expect("id is a primary key"),
-                name: name.unwrap_or_default().to_owned(),
+                id: *id?.expect("id is a primary key"),
+                name: name?.unwrap_or_default().to_owned(),
             });
         }
     }

@@ -113,12 +113,18 @@ unsafe impl<T: NativeElement, const N: usize> ReadableNativeElement for Array<T,
         = ()
     where
         Self: 'a;
+    type Error = std::convert::Infallible;
 
     #[inline]
-    unsafe fn get<'a, U: NativeElement>(_reader: &VectorReader<'a, U>, _physical: usize, _logical: usize)
+    unsafe fn get<'a, U: NativeElement>(
+        _reader: &VectorReader<'a, U>,
+        _physical: usize,
+        _logical: usize,
+    ) -> std::result::Result<(), Self::Error>
     where
         Self: 'a,
     {
+        Ok(())
     }
 }
 
@@ -172,7 +178,10 @@ mod tests {
         );
         assert!(vector.reader()?.get(1)?.is_none());
         let elements = vector.children().unwrap().get_vector_at::<i32>(0)?.reader()?;
-        assert_eq!(elements.iter().collect::<Vec<_>>(), [Some(&0), Some(&0), None, None]);
+        assert_eq!(
+            elements.iter().collect::<Result<Vec<_>>>()?,
+            [Some(&0), Some(&0), None, None]
+        );
         Ok(())
     }
 }

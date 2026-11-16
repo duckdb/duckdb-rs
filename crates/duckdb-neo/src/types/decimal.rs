@@ -80,14 +80,15 @@ macro_rules! decimal_storage {
             unsafe impl ReadableNativeElement for $name {
 
                 type Ref<'a> = &'a $name;
+                type Error = ::std::convert::Infallible;
 
                 #[inline]
-                unsafe fn get<'a, U: NativeElement>(vector: &crate::vector::VectorReader<'a, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+                unsafe fn get<'a, U: NativeElement>(vector: &crate::vector::VectorReader<'a, U>, physical: usize, _logical: usize) -> ::std::result::Result<Self::Ref<'a>, Self::Error>
                 where
                     Self: 'a,
                 {
                     let data_ptr = vector.as_ptr() as *const $name;
-                    unsafe { &*data_ptr.add(physical) }
+                    Ok(unsafe { &*data_ptr.add(physical) })
                 }
             }
 
@@ -270,18 +271,19 @@ where
     Width<WIDTH>: DecimalWidth,
 {
     type Ref<'a> = &'a Self;
+    type Error = std::convert::Infallible;
 
     #[inline]
     unsafe fn get<'a, U: NativeElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
         _logical: usize,
-    ) -> Self::Ref<'a>
+    ) -> std::result::Result<Self::Ref<'a>, Self::Error>
     where
         Self: 'a,
     {
         let data_ptr = vector.as_ptr() as *const Self;
-        unsafe { &*data_ptr.add(physical) }
+        Ok(unsafe { &*data_ptr.add(physical) })
     }
 }
 

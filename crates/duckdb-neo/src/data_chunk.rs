@@ -691,7 +691,7 @@ mod tests {
                 let copy = dc.copy(context)?;
                 let vec = copy.get_vector_at::<i32>(0)?;
                 for (index, value) in vec.reader()?.iter().enumerate() {
-                    result.writer()?.set_option(index, value)?;
+                    result.writer()?.set_option(index, value?)?;
                 }
                 Ok(())
             },
@@ -707,7 +707,8 @@ mod tests {
                     .get_vector_at::<i32>(0)?
                     .reader()?
                     .iter()
-                    .map(|value| value.copied()),
+                    .map(|value| Ok(value?.copied()))
+                    .collect::<crate::Result<Vec<_>>>()?,
             );
         }
         assert_eq!(values, vec![Some(1), Some(2), Some(3), Some(4)]);
@@ -742,8 +743,8 @@ mod tests {
         let values = crate::vector::RowReader::get(&lists, 0)?
             .expect("non-NULL list")
             .iter()
-            .map(|value| value.copied())
-            .collect::<Vec<_>>();
+            .map(|value| Ok(value?.copied()))
+            .collect::<crate::Result<Vec<_>>>()?;
         assert_eq!(values, vec![Some(10), Some(11)]);
         Ok(())
     }

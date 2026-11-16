@@ -277,11 +277,13 @@ impl<'a, M: UnionReaders + 'a> UnionReader<'a, M> {
     /// `row` must be less than [`Self::len`].
     #[doc(hidden)]
     #[inline(always)]
-    pub unsafe fn tag_unchecked(&self, row: usize) -> Option<u8> {
+    pub unsafe fn tag_unchecked(&self, row: usize) -> Result<Option<u8>> {
         // SAFETY: the caller guarantees bounds; tags share the union's rows.
         unsafe {
-            self.rows.physical_index_unchecked(row)?;
-            self.tags.get_unchecked(row).copied()
+            if self.rows.physical_index_unchecked(row).is_none() {
+                return Ok(None);
+            }
+            Ok(self.tags.get_unchecked(row)?.copied())
         }
     }
 
@@ -638,7 +640,7 @@ mod tests {
         assert_eq!(reader.len(), 4);
         assert_eq!(reader.tag(0)?, Some(0));
         let items = reader.member::<0>().get(0)?.unwrap();
-        assert_eq!(items.iter().collect::<Vec<_>>(), [Some(&1), None]);
+        assert_eq!(items.iter().collect::<Result<Vec<_>>>()?, [Some(&1), None]);
         assert_eq!(reader.tag(1)?, Some(1));
         assert_eq!(reader.member::<1>().get(1)?, Some(&5));
         assert!(reader.member::<0>().get(1)?.is_none());

@@ -59,12 +59,18 @@ unsafe impl ReadableNativeElement for Union {
         = ()
     where
         Self: 'a;
+    type Error = std::convert::Infallible;
 
     #[inline]
-    unsafe fn get<'a, U: NativeElement>(_reader: &VectorReader<'a, U>, _physical: usize, _logical: usize)
+    unsafe fn get<'a, U: NativeElement>(
+        _reader: &VectorReader<'a, U>,
+        _physical: usize,
+        _logical: usize,
+    ) -> std::result::Result<(), Self::Error>
     where
         Self: 'a,
     {
+        Ok(())
     }
 }
 
@@ -194,8 +200,8 @@ pub mod derive_support {
 
     /// Report a valid row whose tag names no member, which DuckDB never produces.
     #[cold]
-    pub fn invalid_union_tag(tag: Option<&u8>, count: usize) -> ! {
-        panic!("UNION row has tag {tag:?}, but the union has {count} members")
+    pub fn invalid_union_tag(tag: u8, count: usize) -> Error {
+        Error::api_error(format!("UNION row has tag {tag}, but the union has {count} members"))
     }
 }
 
@@ -227,6 +233,35 @@ mod tests {
         Num(String),
         #[duckdb(rename = "str")]
         Text(i32),
+    }
+
+    #[test]
+    fn union_reader_reports_invalid_tags() -> Result<()> {
+        let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+        let mut chunk = DataChunk::create(&conn, &[NumOrText::logical_type(&conn)?], true)?;
+        let mut vector = chunk.get_vector_at_mut::<NumOrText>(0)?;
+        vector.set_size(2)?;
+        {
+            let mut writer = vector.union_writer::<(i32, String)>()?;
+            writer.set::<0>(0, &7)?;
+            writer.set::<0>(1, &8)?;
+        }
+        vector
+            .children_mut()
+            .unwrap()
+            .get_vector_at_mut::<u8>(0)?
+            .writer()?
+            .set(1, &2)?;
+        let reader = vector.row_reader()?;
+        assert_eq!(reader.get(0)?, Some(NumOrTextRef::Num(Some(&7))));
+        let error = reader.get(1).unwrap_err();
+        assert!(
+            error
+                .message
+                .contains("UNION row has tag 2, but the union has 2 members"),
+            "{error}"
+        );
+        Ok(())
     }
 
     #[test]

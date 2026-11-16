@@ -1,6 +1,6 @@
-use super::{RowReader, Vector, VectorReader, WithReader};
+use super::{RowReader, Vector, VectorReader, WithReader, out_of_bounds};
 use crate::{
-    Result,
+    Error, Result,
     types::{Array, List, ListIndex, Map, Union},
 };
 
@@ -14,9 +14,9 @@ use crate::{
 /// let vector = chunk.get_vector_at::<List<List<i32>>>(0)?;
 /// let lists = vector.list_reader()?;
 /// let row = lists.get(0)?.unwrap();
-/// let inner = row.get(0).unwrap().unwrap();
-/// assert_eq!(inner.iter().collect::<Vec<_>>(), [Some(&1), None]);
-/// assert_eq!(row.get(1).unwrap().unwrap().iter().collect::<Vec<_>>(), [Some(&3)]);
+/// let inner = row.get(0)?.unwrap();
+/// assert_eq!(inner.iter().collect::<Result<Vec<_>>>()?, [Some(&1), None]);
+/// assert_eq!(row.get(1)?.unwrap().iter().collect::<Result<Vec<_>>>()?, [Some(&3)]);
 /// # Ok(())
 /// # }
 /// ```
@@ -63,14 +63,14 @@ impl<'a, T: WithReader + 'a> RowReader for ListReader<'a, T> {
     }
 
     #[inline(always)]
-    unsafe fn get_unchecked(&self, row: usize) -> Option<Self::Item<'_>> {
+    unsafe fn get_unchecked(&self, row: usize) -> Result<Option<Self::Item<'_>>> {
         // SAFETY: the caller guarantees bounds; LIST rows store list entries.
-        let entry = unsafe { self.rows.list_entry_unchecked(row) }?;
-        Some(Elements {
+        let entry = unsafe { self.rows.list_entry_unchecked(row) };
+        Ok(entry.map(|entry| Elements {
             reader: &self.elements,
             offset: entry.offset as usize,
             len: entry.length as usize,
-        })
+        }))
     }
 }
 
@@ -112,15 +112,19 @@ impl<'r, R: RowReader> Elements<'r, R> {
         ListIndex::new(self.offset as u64, self.len as u64)
     }
 
-    /// Return an element; the outer `None` means `index` is out of bounds, the inner one SQL NULL.
+    /// Return an element, or `None` for SQL NULL. Out-of-range indices and elements that fail to
+    /// decode are errors.
     #[inline]
-    pub fn get(&self, index: usize) -> Option<Option<R::Item<'r>>> {
+    pub fn get(&self, index: usize) -> Result<Option<R::Item<'r>>> {
+        if index >= self.len {
+            return Err(out_of_bounds(index, self.len));
+        }
         // SAFETY: DuckDB keeps every entry within its child.
-        (index < self.len).then(|| unsafe { self.reader.get_unchecked(self.offset + index) })
+        unsafe { self.reader.get_unchecked(self.offset + index) }
     }
 
-    /// Iterate over the elements.
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = Option<R::Item<'r>>> + 'r {
+    /// Iterate over the elements; items are [`Self::get`]'s results.
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = Result<Option<R::Item<'r>>>> + 'r {
         let reader = self.reader;
         // SAFETY: DuckDB keeps every entry within its child.
         (self.offset..self.offset + self.len).map(move |index| unsafe { reader.get_unchecked(index) })
@@ -129,7 +133,7 @@ impl<'r, R: RowReader> Elements<'r, R> {
 
 /// Reads `MAP` rows, with the key and value readers prepared once.
 ///
-/// Reading a key panics if it is NULL, which DuckDB does not allow in a `MAP`.
+/// Reading a NULL key, which DuckDB does not allow in a `MAP`, is an error.
 ///
 /// ```
 /// # use duckdb_neo::{Parameters, Result, environment::{Environment, StorageLocation}, types::Map, vector::RowReader};
@@ -139,7 +143,7 @@ impl<'r, R: RowReader> Elements<'r, R> {
 /// let vector = chunk.get_vector_at::<Map<String, i32>>(0)?;
 /// let maps = vector.map_reader()?;
 /// let row = maps.get(0)?.unwrap();
-/// assert_eq!(row.iter().collect::<Vec<_>>(), [("a", Some(&1)), ("b", None)]);
+/// assert_eq!(row.iter().collect::<Result<Vec<_>>>()?, [("a", Some(&1)), ("b", None)]);
 /// # Ok(())
 /// # }
 /// ```
@@ -199,15 +203,15 @@ impl<'a, K: WithReader + 'a, V: WithReader + 'a> RowReader for MapReader<'a, K, 
     }
 
     #[inline(always)]
-    unsafe fn get_unchecked(&self, row: usize) -> Option<Self::Item<'_>> {
+    unsafe fn get_unchecked(&self, row: usize) -> Result<Option<Self::Item<'_>>> {
         // SAFETY: the caller guarantees bounds; MAP rows store list entries.
-        let entry = unsafe { self.rows.list_entry_unchecked(row) }?;
-        Some(Entries {
+        let entry = unsafe { self.rows.list_entry_unchecked(row) };
+        Ok(entry.map(|entry| Entries {
             keys: &self.keys,
             values: &self.values,
             offset: entry.offset as usize,
             len: entry.length as usize,
-        })
+        }))
     }
 }
 
@@ -250,47 +254,55 @@ impl<'r, K: RowReader, V: RowReader> Entries<'r, K, V> {
         ListIndex::new(self.offset as u64, self.len as u64)
     }
 
-    /// Return the entry at `index`, or `None` if it is out of bounds.
+    /// Return the entry at `index`. Out-of-range indices, NULL keys and entries that fail to decode
+    /// are errors.
     #[inline]
-    pub fn get(&self, index: usize) -> Option<(K::Item<'r>, Option<V::Item<'r>>)> {
+    pub fn get(&self, index: usize) -> Result<(K::Item<'r>, Option<V::Item<'r>>)> {
+        if index >= self.len {
+            return Err(out_of_bounds(index, self.len));
+        }
         // SAFETY: DuckDB keeps every entry within its child.
-        (index < self.len).then(|| unsafe { Self::read(self.keys, self.values, self.offset + index) })
+        unsafe { Self::read(self.keys, self.values, self.offset + index) }
     }
 
-    /// Iterate over the entries.
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = (K::Item<'r>, Option<V::Item<'r>>)> + 'r {
+    /// Iterate over the entries; items are [`Self::get`]'s results.
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = Result<(K::Item<'r>, Option<V::Item<'r>>)>> + 'r {
         let (keys, values) = (self.keys, self.values);
         // SAFETY: DuckDB keeps every entry within its child.
         (self.offset..self.offset + self.len).map(move |index| unsafe { Self::read(keys, values, index) })
     }
 
     /// Iterate over the keys.
-    pub fn keys(&self) -> impl ExactSizeIterator<Item = K::Item<'r>> + 'r {
-        self.iter().map(|(key, _)| key)
+    pub fn keys(&self) -> impl ExactSizeIterator<Item = Result<K::Item<'r>>> + 'r {
+        self.iter().map(|entry| entry.map(|(key, _)| key))
     }
 
     /// Iterate over the values; `None` values are SQL NULL.
-    pub fn values(&self) -> impl ExactSizeIterator<Item = Option<V::Item<'r>>> + 'r {
-        self.iter().map(|(_, value)| value)
+    pub fn values(&self) -> impl ExactSizeIterator<Item = Result<Option<V::Item<'r>>>> + 'r {
+        self.iter().map(|entry| entry.map(|(_, value)| value))
     }
 
-    /// Return the value of the first entry whose key equals `key`.
-    pub fn get_key<Q: Copy>(&self, key: Q) -> Option<Option<V::Item<'r>>>
+    /// Return the value of the first entry whose key equals `key`, or `None` if no key does.
+    pub fn get_key<Q: Copy>(&self, key: Q) -> Result<Option<Option<V::Item<'r>>>>
     where
         K::Item<'r>: PartialEq<Q>,
     {
-        self.iter().find(|(entry, _)| *entry == key).map(|(_, value)| value)
+        for entry in self.iter() {
+            let (entry, value) = entry?;
+            if entry == key {
+                return Ok(Some(value));
+            }
+        }
+        Ok(None)
     }
 
     #[inline(always)]
-    unsafe fn read(keys: &'r K, values: &'r V, index: usize) -> (K::Item<'r>, Option<V::Item<'r>>) {
+    unsafe fn read(keys: &'r K, values: &'r V, index: usize) -> Result<(K::Item<'r>, Option<V::Item<'r>>)> {
         // SAFETY: the caller guarantees the entry is within the child.
-        unsafe {
-            (
-                keys.get_unchecked(index).expect("MAP keys must not be NULL"),
-                values.get_unchecked(index),
-            )
-        }
+        let key = unsafe { keys.get_unchecked(index) }?;
+        let key = key.ok_or_else(|| Error::invalid_input("MAP keys must not be NULL"))?;
+        // SAFETY: as above.
+        Ok((key, unsafe { values.get_unchecked(index) }?))
     }
 }
 
@@ -333,14 +345,14 @@ impl<'a, T: WithReader + 'a, const N: usize> RowReader for ArrayReader<'a, T, N>
     }
 
     #[inline(always)]
-    unsafe fn get_unchecked(&self, row: usize) -> Option<Self::Item<'_>> {
+    unsafe fn get_unchecked(&self, row: usize) -> Result<Option<Self::Item<'_>>> {
         // SAFETY: the caller guarantees bounds; every physical row owns `N` child elements.
-        let physical = unsafe { self.rows.physical_index_unchecked(row) }?;
-        Some(Elements {
+        let physical = unsafe { self.rows.physical_index_unchecked(row) };
+        Ok(physical.map(|physical| Elements {
             reader: &self.elements,
             offset: physical * N,
             len: N,
-        })
+        }))
     }
 }
 
@@ -440,24 +452,28 @@ mod tests {
         assert_eq!(reader.len(), 3);
         let first = reader.get(0)?.unwrap();
         assert_eq!(first.len(), 2);
-        assert!(first.get(0).unwrap().unwrap().is_empty());
-        assert!(first.get(1).unwrap().is_none());
-        assert!(first.get(2).is_none());
+        assert!(first.get(0)?.unwrap().is_empty());
+        assert!(first.get(1)?.is_none());
+        assert!(first.get(2).is_err());
         assert!(reader.get(1)?.is_none());
-        let map = reader.get(2)?.unwrap().get(0).unwrap().unwrap();
-        let (key, value) = map.get(0).unwrap();
+        let map = reader.get(2)?.unwrap().get(0)?.unwrap();
+        let (key, value) = map.get(0)?;
         assert_eq!(key, "k");
-        assert_eq!(value.unwrap().iter().collect::<Vec<_>>(), [Some(&1), Some(&2)]);
-        assert_eq!(map.get_key("k").unwrap().unwrap().len(), 2);
-        assert!(map.get_key("missing").is_none());
+        assert_eq!(value.unwrap().iter().collect::<Result<Vec<_>>>()?, [Some(&1), Some(&2)]);
+        assert_eq!(map.get_key("k")?.unwrap().unwrap().len(), 2);
+        assert!(map.get_key("missing")?.is_none());
+        assert!(map.get(1).is_err());
         assert!(reader.get(3).is_err());
 
         let arrays = chunk.get_vector_at::<Array<String, 2>>(2)?;
         let reader = arrays.array_reader()?;
-        assert_eq!(reader.get(0)?.unwrap().iter().collect::<Vec<_>>(), [None, Some("y")]);
+        assert_eq!(
+            reader.get(0)?.unwrap().iter().collect::<Result<Vec<_>>>()?,
+            [None, Some("y")]
+        );
         assert!(reader.get(1)?.is_none());
         assert_eq!(
-            reader.get(2)?.unwrap().iter().collect::<Vec<_>>(),
+            reader.get(2)?.unwrap().iter().collect::<Result<Vec<_>>>()?,
             [Some("x"), Some("a string longer than inline storage")]
         );
         Ok(())
@@ -477,19 +493,28 @@ mod tests {
             for row in 0..reader.len() {
                 let read = reader
                     .get(row)?
-                    .map(|elements| elements.iter().map(|value| value.copied()).collect::<Vec<_>>());
+                    .map(|elements| {
+                        elements
+                            .iter()
+                            .map(|value| Ok(value?.copied()))
+                            .collect::<Result<Vec<_>>>()
+                    })
+                    .transpose()?;
                 assert_eq!(read, lists.get_value_slow(row)?.get::<List<i32>>()?.map(|list| list.0));
                 rows += 1;
             }
             let maps = chunk.get_vector_at::<Map<String, i32>>(1)?;
             let reader = maps.map_reader()?;
             for row in 0..reader.len() {
-                let read = reader.get(row)?.map(|entries| {
-                    entries
-                        .iter()
-                        .map(|(key, value)| (key.to_owned(), value.copied()))
-                        .collect::<Vec<_>>()
-                });
+                let read = reader
+                    .get(row)?
+                    .map(|entries| {
+                        entries
+                            .iter()
+                            .map(|entry| entry.map(|(key, value)| (key.to_owned(), value.copied())))
+                            .collect::<Result<Vec<_>>>()
+                    })
+                    .transpose()?;
                 assert_eq!(
                     read,
                     maps.get_value_slow(row)?.get::<Map<String, i32>>()?.map(|map| map.0)

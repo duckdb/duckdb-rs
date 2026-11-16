@@ -312,7 +312,8 @@ mod tests {
         assert!(reader.get(1)?.is_none());
         let row = reader.get(2)?.unwrap();
         assert_eq!(row.len(), 5000);
-        for (index, (key, value)) in row.iter().enumerate() {
+        for (index, entry) in row.iter().enumerate() {
+            let (key, value) = entry?;
             assert_eq!(key, keys[index]);
             assert_eq!(value.copied(), (index % 3 != 0).then_some(index as i32));
         }
@@ -368,13 +369,40 @@ mod tests {
         }
         let reader = vector.map_reader()?;
         let rows = (0..2)
-            .map(|row| {
-                reader
-                    .get(row)
-                    .map(|entries| entries.unwrap().iter().collect::<Vec<_>>())
-            })
+            .map(|row| reader.get(row)?.unwrap().iter().collect::<Result<Vec<_>>>())
             .collect::<Result<Vec<_>>>()?;
         assert_eq!(rows, [vec![("a", Some("x")), ("b", None)], vec![("c", Some("z"))]]);
+        Ok(())
+    }
+
+    #[test]
+    fn map_reader_reports_null_keys() -> Result<()> {
+        let conn = connection()?;
+        let mut chunk = DataChunk::create(&conn, &[Map::<String, i32>::logical_type(&conn)?], true)?;
+        let mut vector = chunk.get_vector_at_mut::<Map<String, i32>>(0)?;
+        vector.set_size(1)?;
+        vector.set_child_size(2)?;
+        {
+            let mut writer = vector.map_writer()?;
+            writer.keys().set(0, "a")?;
+            writer.values().set(0, &1)?;
+            writer.keys().set_null(1)?;
+            writer.values().set(1, &2)?;
+            writer.set_entry(0, ListIndex::new(0, 2))?;
+        }
+        let reader = vector.map_reader()?;
+        let entries = reader.get(0)?.unwrap();
+        assert_eq!(entries.get(0)?, ("a", Some(&1)));
+        assert!(
+            entries
+                .get(1)
+                .unwrap_err()
+                .message
+                .contains("MAP keys must not be NULL")
+        );
+        assert!(entries.get_key("b").is_err());
+        assert_eq!(entries.get_key("a")?, Some(Some(&1)));
+        assert_eq!(entries.iter().filter(|entry| entry.is_err()).count(), 1);
         Ok(())
     }
 }

@@ -5,7 +5,7 @@
 //! human-readable message. Callers can inspect the code when they need to
 //! distinguish error classes without matching message text.
 
-use std::fmt;
+use std::{convert::Infallible, fmt, str::Utf8Error};
 
 use crate::{builder_helpers::ffi_enum_redeclaration, ffi};
 
@@ -156,6 +156,18 @@ impl Error {
 }
 
 impl std::error::Error for Error {}
+
+impl From<Infallible> for Error {
+    fn from(error: Infallible) -> Self {
+        match error {}
+    }
+}
+
+impl From<Utf8Error> for Error {
+    fn from(error: Utf8Error) -> Self {
+        Error::invalid_input(format!("invalid UTF-8: {error}"))
+    }
+}
 
 /// [`check_api_call_no_err!`] is a macro that safely converts FFI calls into `Results`.
 ///

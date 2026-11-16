@@ -15,13 +15,9 @@ fn execute(conn: &Connection, sql: &str) -> Result<Vec<i64>> {
     let mut rows = Vec::new();
     while let Some(chunk) = result.next_chunk()? {
         if chunk.col_count() > 0 {
-            rows.extend(
-                chunk
-                    .get_vector_at::<i64>(0)?
-                    .reader()?
-                    .iter()
-                    .map(|value| *value.unwrap()),
-            );
+            for value in chunk.get_vector_at::<i64>(0)?.reader()?.iter() {
+                rows.push(*value?.unwrap());
+            }
         }
     }
     Ok(rows)
@@ -36,7 +32,7 @@ where
         let reader = input.reader()?;
         let mut writer = output.writer()?;
         for (row, value) in reader.iter().enumerate() {
-            writer.set_option(row, value.as_deref())?;
+            writer.set_option(row, value?.as_deref())?;
         }
         Ok(())
     })

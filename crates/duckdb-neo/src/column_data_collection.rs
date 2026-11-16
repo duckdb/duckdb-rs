@@ -725,7 +725,9 @@ mod test {
         let mut scan = collection.to_scan(&conn)?;
         let mut rows = Vec::new();
         while let Some(chunk) = scan.next_chunk()? {
-            rows.extend(chunk.get_vector_at::<i32>(0)?.reader()?.iter().flatten().copied());
+            for value in chunk.get_vector_at::<i32>(0)?.reader()?.iter() {
+                rows.extend(value?.copied());
+            }
         }
         assert_eq!(rows, [42, 42]);
         Ok(())
@@ -766,7 +768,8 @@ mod test {
                     .get_vector_at::<i32>(0)?
                     .reader()?
                     .iter()
-                    .map(|value| *value.unwrap()),
+                    .map(|value| Ok(*value?.unwrap()))
+                    .collect::<crate::Result<Vec<_>>>()?,
             );
         }
         assert_eq!(values, [1, 2, 3, 4, 5]);

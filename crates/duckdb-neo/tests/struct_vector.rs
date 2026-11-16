@@ -124,20 +124,20 @@ fn owned_struct_fields_roundtrip_without_a_write_projection() -> Result<()> {
     assert_eq!(others.get(0).unwrap().unwrap().value, Some(&7));
     assert!(others.get(1).unwrap().is_none());
     assert_eq!(
-        row.labels.unwrap().iter().collect::<Vec<_>>(),
+        row.labels.unwrap().iter().collect::<Result<Vec<_>>>()?,
         [Some("first owned label"), Some("second")]
     );
     assert_eq!(
-        row.nullable_labels.unwrap().iter().collect::<Vec<_>>(),
+        row.nullable_labels.unwrap().iter().collect::<Result<Vec<_>>>()?,
         [None, Some("nullable")]
     );
     assert_eq!(
-        row.fixed.unwrap().iter().collect::<Vec<_>>(),
+        row.fixed.unwrap().iter().collect::<Result<Vec<_>>>()?,
         [Some("fixed string"), None]
     );
     let matrix = row.matrix.unwrap();
     assert_eq!(
-        matrix.get(0).unwrap().unwrap().iter().collect::<Vec<_>>(),
+        matrix.get(0).unwrap().unwrap().iter().collect::<Result<Vec<_>>>()?,
         [Some(&1), Some(&2)]
     );
     assert!(matrix.get(1).unwrap().is_none());
@@ -238,7 +238,7 @@ impl ScalarCallbacks for RowProbe {
         output.set_size(vector.len())?;
         let mut writer = output.row_writer()?;
         for (index, row) in vector.row_reader()?.iter().enumerate() {
-            writer.set_option(index, row.and_then(|row| row.value.copied()).as_ref())?;
+            writer.set_option(index, row?.and_then(|row| row.value.copied()).as_ref())?;
         }
         Ok(())
     }
@@ -468,14 +468,17 @@ fn derived_writer_supports_nested_fields() -> Result<()> {
     assert_eq!(inner.name, Some("nested"));
     assert_eq!(inner.value, Some(&9));
     assert_eq!(
-        row.items.unwrap().iter().collect::<Vec<_>>(),
+        row.items.unwrap().iter().collect::<Result<Vec<_>>>()?,
         [Some(&4), None, Some(&8)]
     );
     assert!(vector.row_reader()?.get(1)?.is_none());
     let reader = vector.row_reader()?;
     let row = reader.get(2)?.unwrap();
     assert!(row.row.is_none());
-    assert_eq!(row.items.unwrap().iter().collect::<Vec<_>>(), [Some(&5), Some(&6)]);
+    assert_eq!(
+        row.items.unwrap().iter().collect::<Result<Vec<_>>>()?,
+        [Some(&5), Some(&6)]
+    );
     let inner = vector.children().unwrap().get_vector_at::<Row>(0)?;
     for index in [1, 2] {
         assert!(inner.row_reader()?.get(index)?.is_none());
@@ -542,7 +545,10 @@ fn derived_writer_checks_fixed_array_schema() -> Result<()> {
     assert!(wrong.get_vector_at_mut::<Fixed>(0).is_err());
     let reader = vector.row_reader()?;
     let row = reader.get(0)?.unwrap();
-    assert_eq!(row.values.unwrap().iter().collect::<Vec<_>>(), [Some(&1), Some(&2)]);
+    assert_eq!(
+        row.values.unwrap().iter().collect::<Result<Vec<_>>>()?,
+        [Some(&1), Some(&2)]
+    );
     {
         // Arrays have a fixed child, so rows can be rewritten in place.
         let mut writer = vector.row_writer()?;
@@ -556,7 +562,10 @@ fn derived_writer_checks_fixed_array_schema() -> Result<()> {
     }
     let reader = vector.row_reader()?;
     let row = reader.get(0)?.unwrap();
-    assert_eq!(row.values.unwrap().iter().collect::<Vec<_>>(), [Some(&3), None]);
+    assert_eq!(
+        row.values.unwrap().iter().collect::<Result<Vec<_>>>()?,
+        [Some(&3), None]
+    );
     assert!(vector.row_reader()?.get(1)?.unwrap().values.is_none());
     let chunk = conn
         .query("SELECT {'values': [1, NULL]::INTEGER[2]}", Parameters::None)?
@@ -564,7 +573,10 @@ fn derived_writer_checks_fixed_array_schema() -> Result<()> {
         .unwrap();
     let reader = chunk.get_vector_at::<Fixed>(0)?.row_reader()?;
     let row = reader.get(0)?.unwrap();
-    assert_eq!(row.values.unwrap().iter().collect::<Vec<_>>(), [Some(&1), None]);
+    assert_eq!(
+        row.values.unwrap().iter().collect::<Result<Vec<_>>>()?,
+        [Some(&1), None]
+    );
     Ok(())
 }
 
@@ -663,7 +675,7 @@ fn derived_vector_reads_nested_children_and_generic_fields() -> Result<()> {
     assert_eq!(row.name, Some("duck"));
     assert_eq!(row.value, Some(&42));
     assert_eq!(
-        nested.items.unwrap().iter().collect::<Vec<_>>(),
+        nested.items.unwrap().iter().collect::<Result<Vec<_>>>()?,
         [Some(&4), None, Some(&8)]
     );
     let reader = chunk.get_vector_at::<Generic<i32>>(1)?.row_reader()?;

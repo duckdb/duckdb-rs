@@ -392,8 +392,8 @@ mod tests {
         writer.set_entry(0, ListIndex::new(0, 100))?;
         let reader = vector.list_reader()?;
         let row = reader.get(0)?.unwrap();
-        assert_eq!(row.get(0), Some(Some("written")));
-        assert!((1..100).all(|index| row.get(index) == Some(Some(""))));
+        assert_eq!(row.get(0)?, Some("written"));
+        assert!((1..100).all(|index| matches!(row.get(index), Ok(Some("")))));
         Ok(())
     }
 
@@ -414,7 +414,10 @@ mod tests {
         vector.list_writer()?.set_elements(0, [Some(&()), None])?;
         assert_eq!(vector.get_value_slow(0)?.dbg_string()?, "[{'a': 0}, NULL]");
         let reader = vector.list_reader()?;
-        assert_eq!(reader.get(0)?.unwrap().iter().collect::<Vec<_>>(), [Some(()), None]);
+        assert_eq!(
+            reader.get(0)?.unwrap().iter().collect::<Result<Vec<_>>>()?,
+            [Some(()), None]
+        );
         let mut unions = chunk.get_vector_at_mut::<List<Union>>(1)?;
         unions.set_size(1)?;
         let reader = unions.list_reader()?;

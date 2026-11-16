@@ -230,7 +230,7 @@ fn collect_parts(conn: &Connection, sql: &str) -> Result<Vec<(i64, String)>> {
         let indexes = chunk.get_vector_at::<i64>(0)?.reader()?;
         let values = chunk.get_vector_at::<UncheckedString>(1)?.reader()?;
         for (index, value) in indexes.iter().zip(values.iter()) {
-            parts.push((*index.unwrap(), value.unwrap().to_owned()));
+            parts.push((*index?.unwrap(), value?.unwrap().to_owned()));
         }
     }
     Ok(parts)

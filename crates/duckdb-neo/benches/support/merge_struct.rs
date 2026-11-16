@@ -77,7 +77,7 @@ where
 {
     let mut writer = target.writer()?;
     for (row, value) in source.reader()?.iter().enumerate() {
-        writer.set_option(row, value)?;
+        writer.set_option(row, value?)?;
     }
     Ok(())
 }

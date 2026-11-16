@@ -130,19 +130,24 @@ unsafe impl<K: NativeElement, V: NativeElement> ReadableNativeElement for Map<K,
         = ListIndex
     where
         Self: 'a;
+    type Error = std::convert::Infallible;
 
     #[inline(always)]
-    unsafe fn get<'a, U: NativeElement>(reader: &VectorReader<'a, U>, physical: usize, _logical: usize) -> ListIndex
+    unsafe fn get<'a, U: NativeElement>(
+        reader: &VectorReader<'a, U>,
+        physical: usize,
+        _logical: usize,
+    ) -> std::result::Result<ListIndex, Self::Error>
     where
         Self: 'a,
     {
         // SAFETY: the caller guarantees a valid row of MAP storage.
-        unsafe { *reader.as_ptr().cast::<ListIndex>().add(physical) }
+        Ok(unsafe { *reader.as_ptr().cast::<ListIndex>().add(physical) })
     }
 }
 
 // SAFETY: entries are checked against the entries child's size, whose rows are always initialized.
-// A valid entry whose key is NULL is not unsafe: readers panic on it.
+// A valid entry whose key is NULL is not unsafe: readers report it as an error.
 unsafe impl<K: NativeElement, V: NativeElement> WritableNativeElement for Map<K, V> {
     type Write = ListIndex;
 

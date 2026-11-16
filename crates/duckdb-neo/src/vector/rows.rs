@@ -26,22 +26,22 @@ pub trait RowReader {
     /// Return whether a row is SQL NULL. Out-of-range rows are errors.
     fn is_null(&self, row: usize) -> Result<bool>;
 
-    /// Return a row, or `None` for SQL NULL. Out-of-range rows are errors.
+    /// Return a row, or `None` for SQL NULL. Out-of-range rows and rows that fail to decode are errors.
     #[inline]
     fn get(&self, row: usize) -> Result<Option<Self::Item<'_>>> {
         if row >= self.len() {
             return Err(out_of_bounds(row, self.len()));
         }
         // SAFETY: the row is in bounds.
-        Ok(unsafe { self.get_unchecked(row) })
+        unsafe { self.get_unchecked(row) }
     }
 
     /// # Safety
     /// `row` must be less than [`Self::len`].
     #[doc(hidden)]
-    unsafe fn get_unchecked(&self, row: usize) -> Option<Self::Item<'_>>;
+    unsafe fn get_unchecked(&self, row: usize) -> Result<Option<Self::Item<'_>>>;
 
-    /// Iterate over the rows; `None` items are SQL NULL.
+    /// Iterate over the rows; items are [`Self::get`]'s results.
     fn iter(&self) -> RowIter<'_, Self>
     where
         Self: Sized,
@@ -61,7 +61,7 @@ pub struct RowIter<'r, R> {
 }
 
 impl<'r, R: RowReader> Iterator for RowIter<'r, R> {
-    type Item = Option<R::Item<'r>>;
+    type Item = Result<Option<R::Item<'r>>>;
 
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
@@ -182,7 +182,7 @@ impl<'a, T: ReadableNativeElement + 'a> RowReader for VectorReader<'a, T> {
     }
 
     #[inline(always)]
-    unsafe fn get_unchecked(&self, row: usize) -> Option<Self::Item<'_>> {
+    unsafe fn get_unchecked(&self, row: usize) -> Result<Option<Self::Item<'_>>> {
         // SAFETY: the caller guarantees bounds.
         unsafe { VectorReader::get_unchecked(self, row) }
     }

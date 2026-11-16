@@ -75,18 +75,19 @@ unsafe impl ReadableNativeElement for UuidValueRaw {
         = &'a UuidValueRaw
     where
         Self: 'a;
+    type Error = std::convert::Infallible;
 
     #[inline]
     unsafe fn get<'a, U: NativeElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
         _logical: usize,
-    ) -> Self::Ref<'a>
+    ) -> std::result::Result<Self::Ref<'a>, Self::Error>
     where
         Self: Sized + 'a,
     {
         let data_ptr = vector.as_ptr() as *const UuidValueRaw;
-        unsafe { &*data_ptr.add(physical) }
+        Ok(unsafe { &*data_ptr.add(physical) })
     }
 }
 
@@ -187,18 +188,19 @@ mod external {
     // SAFETY: `get` reads the validated physical slot.
     unsafe impl ReadableNativeElement for Uuid {
         type Ref<'a> = Uuid;
+        type Error = std::convert::Infallible;
 
         #[inline]
         unsafe fn get<'a, U: NativeElement>(
             vector: &crate::vector::VectorReader<'a, U>,
             physical: usize,
             logical: usize,
-        ) -> Self::Ref<'a>
+        ) -> std::result::Result<Self::Ref<'a>, Self::Error>
         where
             Self: 'a,
         {
             // SAFETY: same storage as `UuidValueRaw`; the caller upholds the contract.
-            Self::from(*unsafe { UuidValueRaw::get(vector, physical, logical) })
+            unsafe { UuidValueRaw::get(vector, physical, logical) }.map(|raw| Self::from(*raw))
         }
     }
 
@@ -263,7 +265,7 @@ mod external {
             values.writer()?.set_null(expected.len())?;
             let mut all = expected.map(Some).to_vec();
             all.push(None);
-            assert_eq!(values.reader()?.iter().collect::<Vec<_>>(), all);
+            assert_eq!(values.reader()?.iter().collect::<Result<Vec<_>>>()?, all);
 
             Ok(())
         }

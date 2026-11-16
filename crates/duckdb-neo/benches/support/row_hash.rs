@@ -84,7 +84,8 @@ impl AggregateCallbacks for RowHash {
             readable::<bool>(b)?,
         );
         let rows = CombinedVectorIterator::new((s.reader()?, d.reader()?, b.reader()?))?;
-        for (row, (s, d, b)) in rows.enumerate() {
+        for (row, values) in rows.enumerate() {
+            let (s, d, b) = values?;
             let state = &mut states[row];
             state.hash = state.hash.wrapping_add(hash_row(s, d.copied(), b.copied()));
             state.rows += 1;
@@ -171,7 +172,8 @@ pub fn verify(conn: &Connection) -> Result<()> {
         let s = chunk.get_vector_at::<UncheckedString>(1)?.reader()?;
         let d = chunk.get_vector_at::<f64>(2)?.reader()?;
         let b = chunk.get_vector_at::<bool>(3)?.reader()?;
-        for (g, s, d, b) in CombinedVectorIterator::new((g, s, d, b))? {
+        for values in CombinedVectorIterator::new((g, s, d, b))? {
+            let (g, s, d, b) = values?;
             let hash = hash_row(s, d.copied(), b.copied());
             expected = expected.wrapping_add(hash);
             let group = expected_groups.entry(g.copied()).or_insert(0u64);
@@ -189,7 +191,10 @@ pub fn verify(conn: &Connection) -> Result<()> {
     while let Some(chunk) = result.next_chunk()? {
         let groups = chunk.get_vector_at::<i32>(0)?.reader()?;
         let hashes = chunk.get_vector_at::<u64>(1)?.reader()?;
-        grouped.extend(CombinedVectorIterator::new((groups, hashes))?.map(|(g, hash)| (g.copied(), hash.copied())));
+        for values in CombinedVectorIterator::new((groups, hashes))? {
+            let (g, hash) = values?;
+            grouped.push((g.copied(), hash.copied()));
+        }
     }
     drop(result);
     verify_groups(expected_groups, &grouped)?;

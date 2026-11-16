@@ -230,7 +230,7 @@ pub mod __derive {
     /// # Safety
     /// `row` must be less than the reader's length.
     #[inline(always)]
-    pub unsafe fn get_unchecked<R: RowReader>(reader: &R, row: usize) -> Option<R::Item<'_>> {
+    pub unsafe fn get_unchecked<R: RowReader>(reader: &R, row: usize) -> crate::Result<Option<R::Item<'_>>> {
         // SAFETY: the caller guarantees bounds.
         unsafe { reader.get_unchecked(row) }
     }
@@ -291,7 +291,7 @@ mod tests {
             .unwrap();
 
         let vector = result.get_vector_at::<i32>(0).unwrap();
-        let value = vector.reader()?.iter().next().unwrap();
+        let value = vector.reader()?.iter().next().unwrap()?;
         assert_eq!(value, Some(&1));
 
         let result = conn
@@ -300,7 +300,7 @@ mod tests {
             .unwrap();
 
         let vector = result.get_vector_at::<i32>(0).unwrap();
-        let value = vector.reader()?.iter().next().unwrap();
+        let value = vector.reader()?.iter().next().unwrap()?;
         assert_eq!(value, Some(&2));
 
         Ok(())
@@ -328,7 +328,7 @@ mod tests {
                 assert_eq!(type_id, logical_type::LogicalTypeID::Integer);
                 assert_eq!(vector.len(), 1);
 
-                let value = vector.reader()?.iter().next().unwrap();
+                let value = vector.reader()?.iter().next().unwrap()?;
 
                 assert_eq!(value, Some(&42));
 
@@ -369,7 +369,7 @@ mod tests {
 
         assert_eq!(vector.len(), 3);
 
-        let values: Vec<Option<&i32>> = vector.reader()?.iter().collect();
+        let values = vector.reader()?.iter().collect::<crate::Result<Vec<_>>>()?;
 
         assert_eq!(values, vec![Some(&2), Some(&4), Some(&6)]);
         assert!(result.next_chunk()?.is_none());

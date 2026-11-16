@@ -329,15 +329,25 @@ fn union_rows(
 
                 #[inline]
                 #[allow(unreachable_patterns)]
-                unsafe fn get_unchecked(&self, row: ::core::primitive::usize) -> ::core::option::Option<Self::Item<'_>> {
+                unsafe fn get_unchecked(
+                    &self,
+                    row: ::core::primitive::usize,
+                ) -> ::duckdb_neo::Result<::core::option::Option<Self::Item<'_>>> {
                     // SAFETY: the caller guarantees bounds; members share the union's rows.
                     unsafe {
-                        ::core::option::Option::Some(match self.inner.tag_unchecked(row)? {
+                        let ::core::option::Option::Some(tag) = self.inner.tag_unchecked(row)? else {
+                            return ::core::result::Result::Ok(::core::option::Option::None);
+                        };
+                        ::core::result::Result::Ok(::core::option::Option::Some(match tag {
                             #(#tags => #ref_ident::#idents(
-                                ::duckdb_neo::__derive::get_unchecked(self.inner.member::<#indexes>(), row)
+                                ::duckdb_neo::__derive::get_unchecked(self.inner.member::<#indexes>(), row)?
                             ),)*
-                            tag => ::duckdb_neo::__derive::invalid_union_tag(::core::option::Option::Some(&tag), #count),
-                        })
+                            tag => {
+                                return ::core::result::Result::Err(
+                                    ::duckdb_neo::__derive::invalid_union_tag(tag, #count),
+                                );
+                            }
+                        }))
                     }
                 }
             }

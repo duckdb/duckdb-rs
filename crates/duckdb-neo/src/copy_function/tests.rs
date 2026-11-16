@@ -81,7 +81,8 @@ impl CopyToFunctionCallbacks for RapidCopy {
         while let Some(chunk) = scanner.next_chunk()? {
             let in_vector = chunk.get_vector_at::<i64>(0)?;
 
-            for item in in_vector.reader()?.iter().flatten() {
+            for item in in_vector.reader()?.iter() {
+                let Some(item) = item? else { continue };
                 let mapped_value = ((*item) as f64 * self.multiplier) as i32;
                 result.push(mapped_value);
             }
@@ -264,7 +265,9 @@ fn test_copy_deferred_input() -> crate::Result<()> {
             let mut scan = input.to_scan(context)?;
             let mut rows = self.rows.lock().unwrap();
             while let Some(chunk) = scan.next_chunk()? {
-                rows.extend(chunk.get_vector_at::<i64>(0)?.reader()?.iter().flatten().copied());
+                for value in chunk.get_vector_at::<i64>(0)?.reader()?.iter() {
+                    rows.extend(value?.copied());
+                }
             }
             Ok(())
         }
@@ -484,8 +487,8 @@ pub fn test_copy_from_function() -> crate::Result<()> {
     let mut result = conn.query(statement, Parameters::None).expect("Failed to query");
     while let Some(chunk) = result.next_chunk().expect("Failed to fetch chunk") {
         let column = chunk.get_vector_at::<i64>(0).expect("Failed to get column");
-        for item in column.reader()?.iter().flatten() {
-            values.push(*item);
+        for item in column.reader()?.iter() {
+            values.extend(item?.copied());
         }
     }
 
@@ -562,7 +565,9 @@ impl CopyToFunctionCallbacks for EchoFormat {
         let mut scan = input.to_scan(context)?;
         while let Some(chunk) = scan.next_chunk()? {
             let in_vector = chunk.get_vector_at::<i64>(0)?;
-            result.extend(in_vector.reader()?.iter().flatten().copied());
+            for value in in_vector.reader()?.iter() {
+                result.extend(value?.copied());
+            }
         }
         Ok(result)
     }

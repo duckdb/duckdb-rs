@@ -28,7 +28,7 @@ fn combined_rows_preserve_types_and_independent_nulls() -> Result<()> {
     let d = chunk.get_vector_at::<f64>(2)?.reader()?;
     let b = chunk.get_vector_at::<bool>(3)?.reader()?;
     let dt = chunk.get_vector_at::<DateValue>(4)?.reader()?;
-    let rows = CombinedVectorIterator::new((s, n, d, b, dt))?.collect::<Vec<_>>();
+    let rows = CombinedVectorIterator::new((s, n, d, b, dt))?.collect::<Result<Vec<_>>>()?;
     assert_eq!(
         rows,
         [
@@ -54,14 +54,14 @@ fn combined_iterator_tracks_remaining_rows_and_is_fused() -> Result<()> {
     fn assert_traits(_: &impl ExactSizeIterator, _: &impl std::iter::FusedIterator) {}
     assert_traits(&rows, &rows);
     assert_eq!(rows.size_hint(), (3, Some(3)));
-    assert_eq!(rows.next(), Some((Some(&0), Some(&0))));
+    assert_eq!(rows.next().transpose()?, Some((Some(&0), Some(&0))));
     assert_eq!(rows.len(), 2);
-    assert_eq!(rows.next(), Some((Some(&1), Some(&1))));
+    assert_eq!(rows.next().transpose()?, Some((Some(&1), Some(&1))));
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows.next(), Some((Some(&2), Some(&2))));
+    assert_eq!(rows.next().transpose()?, Some((Some(&2), Some(&2))));
     assert_eq!(rows.size_hint(), (0, Some(0)));
-    assert_eq!(rows.next(), None);
-    assert_eq!(rows.next(), None);
+    assert!(rows.next().is_none());
+    assert!(rows.next().is_none());
     Ok(())
 }
 
@@ -74,8 +74,8 @@ fn combined_iterator_accepts_empty_readers() -> Result<()> {
     let second = chunk.get_vector_at::<String>(1)?.reader()?;
     let mut rows = CombinedVectorIterator::new((first, second))?;
     assert_eq!(rows.len(), 0);
-    assert_eq!(rows.next(), None);
-    assert_eq!(rows.next(), None);
+    assert!(rows.next().is_none());
+    assert!(rows.next().is_none());
     Ok(())
 }
 
@@ -123,7 +123,8 @@ fn combined_iterator_handles_large_and_null_constants() -> Result<()> {
     }
     let constant = constant.make_constant(42_i32.value(&conn)?, count)?;
     let rows = CombinedVectorIterator::new((constant.reader()?, flat.reader()?))?;
-    for (index, (constant, flat)) in rows.enumerate() {
+    for (index, row) in rows.enumerate() {
+        let (constant, flat) = row?;
         assert_eq!(constant, Some(&42));
         assert_eq!(flat.copied(), (index % 5 != 0).then_some(index as i64));
     }
@@ -136,7 +137,8 @@ fn combined_iterator_handles_large_and_null_constants() -> Result<()> {
         .make_constant(Value::null(&conn, &types[0])?, count)?;
     let flat = chunk.get_vector_at::<i64>(1)?;
     let flat = flat.reader()?;
-    for (index, (constant, flat)) in CombinedVectorIterator::new((constant.reader()?, flat))?.enumerate() {
+    for (index, row) in CombinedVectorIterator::new((constant.reader()?, flat))?.enumerate() {
+        let (constant, flat) = row?;
         assert_eq!(constant, None);
         assert_eq!(flat.copied(), (index % 5 != 0).then_some(index as i64));
     }
@@ -152,7 +154,10 @@ fn combined_iterator_supports_one_and_twelve_columns() -> Result<()> {
         .next_chunk()?
         .unwrap();
     let r = chunk.get_vector_at::<i32>(0)?.reader()?;
-    assert_eq!(CombinedVectorIterator::new((r.clone(),))?.next(), Some((Some(&7),)));
+    assert_eq!(
+        CombinedVectorIterator::new((r.clone(),))?.next().transpose()?,
+        Some((Some(&7),))
+    );
     let row = CombinedVectorIterator::new((
         r.clone(),
         r.clone(),
@@ -168,7 +173,7 @@ fn combined_iterator_supports_one_and_twelve_columns() -> Result<()> {
         r,
     ))?
     .next()
-    .unwrap();
+    .unwrap()?;
     assert_eq!(
         [
             row.0, row.1, row.2, row.3, row.4, row.5, row.6, row.7, row.8, row.9, row.10, row.11
@@ -201,9 +206,33 @@ fn combined_rows_borrow_vectors_not_the_iterator() -> Result<()> {
         let first = numbers.get_vector_at::<i32>(0)?.reader()?;
         let second = strings.get_vector_at::<String>(0)?.reader()?;
         let mut rows = pair_readers(first, second)?;
-        rows.next().unwrap()
+        rows.next().unwrap()?
     };
     assert_eq!(row, (Some(&42), Some("duck")));
+    Ok(())
+}
+
+#[test]
+fn combined_rows_report_the_first_decoding_error() -> Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let types = [i32::logical_type(&conn)?, String::logical_type(&conn)?];
+    let mut chunk = DataChunk::create(&conn, &types, true)?;
+    let [numbers, strings] = chunk.get_vector_array_mut([0, 1])?;
+    let mut numbers = numbers.cast::<i32>()?;
+    let mut strings = strings.cast::<String>()?;
+    numbers.set_size(2)?;
+    strings.set_size(2)?;
+    for row in 0..2 {
+        numbers.writer()?.set(row, &(row as i32))?;
+    }
+    strings.writer()?.set(0, "duck")?;
+    // SAFETY: the writable byte vector is flat and has two rows.
+    unsafe { strings.writer()?.write_bytes(1, Some(&[0xff]))? };
+    let mut rows = CombinedVectorIterator::new((numbers.reader()?, strings.reader()?))?;
+    assert_eq!(rows.next().transpose()?, Some((Some(&0), Some("duck"))));
+    assert!(rows.next().unwrap().unwrap_err().message.contains("invalid UTF-8"));
+    assert!(rows.next().is_none());
     Ok(())
 }
 
@@ -217,7 +246,7 @@ fn combined_iterator_supports_owned_row_values() -> Result<()> {
         .unwrap();
     let variant = chunk.get_vector_at::<Variant>(0)?.reader()?;
     let number = chunk.get_vector_at::<i32>(1)?.reader()?;
-    let (variant, number) = CombinedVectorIterator::new((variant, number))?.next().unwrap();
+    let (variant, number) = CombinedVectorIterator::new((variant, number))?.next().unwrap()?;
     assert!(!variant.unwrap().is_null()?);
     assert_eq!(number, Some(&7));
     Ok(())
@@ -233,11 +262,13 @@ fn enumerated_rows_restart_indices_after_partial_consumption() -> Result<()> {
         .unwrap();
     let reader = chunk.get_vector_at::<i32>(0)?.reader()?;
     let mut rows = CombinedVectorIterator::new((reader,))?;
-    assert_eq!(rows.next(), Some((Some(&0),)));
+    assert_eq!(rows.next().transpose()?, Some((Some(&0),)));
     let mut numbered = rows.enumerate();
     assert_eq!(numbered.len(), 3);
-    assert_eq!(numbered.next(), Some((0, (Some(&1),))));
-    let rest = numbered.fold(Vec::new(), |mut values, (index, (value,))| {
+    let (index, row) = numbered.next().unwrap();
+    assert_eq!((index, row?), (0, (Some(&1),)));
+    let rest = numbered.fold(Vec::new(), |mut values, (index, row)| {
+        let (value,) = row.unwrap();
         values.push((index, value.copied()));
         values
     });
@@ -261,7 +292,8 @@ fn flat_and_mixed_folds_preserve_nulls_and_indices() -> Result<()> {
     }
     let flat = CombinedVectorIterator::new((first.reader()?, second.reader()?))?;
     assert!(flat.all_flat);
-    let flat = flat.enumerate().fold(Vec::new(), |mut values, (index, (a, b))| {
+    let flat = flat.enumerate().fold(Vec::new(), |mut values, (index, row)| {
+        let (a, b) = row.unwrap();
         values.push((index, a.copied(), b.copied()));
         values
     });
@@ -269,7 +301,8 @@ fn flat_and_mixed_folds_preserve_nulls_and_indices() -> Result<()> {
     let second = second.make_constant(9_i32.value(&conn)?, 3)?;
     let mixed = CombinedVectorIterator::new((first.reader()?, second.reader()?))?;
     assert!(!mixed.all_flat);
-    let mixed = mixed.enumerate().fold(Vec::new(), |mut values, (index, (a, b))| {
+    let mixed = mixed.enumerate().fold(Vec::new(), |mut values, (index, row)| {
+        let (a, b) = row.unwrap();
         values.push((index, a.copied(), b.copied()));
         values
     });
@@ -290,10 +323,11 @@ fn enumerated_rows_are_exact_size_and_fused() -> Result<()> {
     fn assert_traits(_: &impl ExactSizeIterator, _: &impl std::iter::FusedIterator) {}
     assert_traits(&rows, &rows);
     assert_eq!(rows.size_hint(), (1, Some(1)));
-    assert_eq!(rows.next(), Some((0, (Some(&42),))));
+    let (index, row) = rows.next().unwrap();
+    assert_eq!((index, row?), (0, (Some(&42),)));
     assert_eq!(rows.size_hint(), (0, Some(0)));
-    assert_eq!(rows.next(), None);
-    assert_eq!(rows.next(), None);
+    assert!(rows.next().is_none());
+    assert!(rows.next().is_none());
     Ok(())
 }
 
@@ -314,7 +348,8 @@ fn combined_iterator_handles_native_dictionary_layouts() -> Result<()> {
                 .make_constant(9_i32.value(ctx)?, reader.len())?;
             let rows = CombinedVectorIterator::new((reader.clone(), constant.reader()?, reader))?;
             let mut writer = output.writer()?;
-            for (index, (first, constant, repeated)) in rows.enumerate() {
+            for (index, row) in rows.enumerate() {
+                let (first, constant, repeated) = row?;
                 assert_eq!(constant, Some(&9));
                 assert_eq!(first, repeated);
                 writer.set_option(index, first)?;
@@ -334,7 +369,8 @@ fn combined_iterator_handles_native_dictionary_layouts() -> Result<()> {
                 .get_vector_at::<i32>(0)?
                 .reader()?
                 .iter()
-                .map(|value| value.copied()),
+                .map(|value| Ok(value?.copied()))
+                .collect::<Result<Vec<_>>>()?,
         );
     }
     assert_eq!(

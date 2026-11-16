@@ -36,12 +36,18 @@ unsafe impl ReadableNativeElement for Struct {
         = ()
     where
         Self: 'a;
+    type Error = std::convert::Infallible;
 
     #[inline]
-    unsafe fn get<'a, U: NativeElement>(_reader: &VectorReader<'a, U>, _physical: usize, _logical: usize)
+    unsafe fn get<'a, U: NativeElement>(
+        _reader: &VectorReader<'a, U>,
+        _physical: usize,
+        _logical: usize,
+    ) -> std::result::Result<(), Self::Error>
     where
         Self: 'a,
     {
+        Ok(())
     }
 }
 

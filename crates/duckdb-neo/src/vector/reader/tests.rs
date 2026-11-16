@@ -99,7 +99,7 @@ fn flat_reader_handles_empty_rows_nulls_and_bounds() -> Result<()> {
     assert!(matches!(reader.cached().storage, ReaderStorage::Flat));
     assert!(reader.is_empty());
     assert_eq!(reader.len(), 0);
-    assert_eq!(reader.iter().next(), None);
+    assert!(reader.iter().next().is_none());
     assert!(reader.get(0).is_err());
     assert!(reader.is_null(0).is_err());
 
@@ -141,14 +141,14 @@ fn reader_iterator_tracks_remaining_rows() -> Result<()> {
     fn assert_traits(_: &impl ExactSizeIterator, _: &impl std::iter::FusedIterator) {}
     assert_traits(&iter, &iter);
     assert_eq!(iter.size_hint(), (3, Some(3)));
-    assert_eq!(iter.next(), Some(Some(&1)));
+    assert_eq!(iter.next().transpose()?, Some(Some(&1)));
     assert_eq!(iter.len(), 2);
-    assert_eq!(iter.next(), Some(None));
+    assert_eq!(iter.next().transpose()?, Some(None));
     assert_eq!(iter.len(), 1);
-    assert_eq!(iter.next(), Some(Some(&3)));
+    assert_eq!(iter.next().transpose()?, Some(Some(&3)));
     assert_eq!(iter.size_hint(), (0, Some(0)));
-    assert_eq!(iter.next(), None);
-    assert_eq!(iter.next(), None);
+    assert!(iter.next().is_none());
+    assert!(iter.next().is_none());
 
     let reader = vector.reader()?;
     let mut rows = reader.iter();
@@ -156,16 +156,19 @@ fn reader_iterator_tracks_remaining_rows() -> Result<()> {
     let mut rows = rows.enumerate();
     assert_traits(&rows, &rows);
     assert_eq!(rows.len(), 2);
-    assert_eq!(rows.next(), Some((0, None)));
-    assert_eq!(rows.next(), Some((1, Some(&3))));
-    assert_eq!(rows.next(), None);
-    assert_eq!(rows.next(), None);
-    assert!(
-        reader
-            .iter()
-            .enumerate()
-            .eq(reader.iter().collect::<Vec<_>>().into_iter().enumerate())
-    );
+    let (index, value) = rows.next().unwrap();
+    assert_eq!((index, value?), (0, None));
+    let (index, value) = rows.next().unwrap();
+    assert_eq!((index, value?), (1, Some(&3)));
+    assert!(rows.next().is_none());
+    assert!(rows.next().is_none());
+    let enumerated = reader
+        .iter()
+        .enumerate()
+        .map(|(index, value)| Ok((index, value?)))
+        .collect::<Result<Vec<_>>>()?;
+    let values = reader.iter().collect::<Result<Vec<_>>>()?;
+    assert_eq!(enumerated, values.into_iter().enumerate().collect::<Vec<_>>());
     Ok(())
 }
 
@@ -200,7 +203,7 @@ fn constant_reader_does_not_index_the_shared_selection() -> Result<()> {
             assert!(reader.is_null(count).is_err());
             assert_eq!(reader.iter().count(), count);
             for (index, value) in reader.iter().enumerate() {
-                assert_eq!(value.copied(), expected);
+                assert_eq!(value?.copied(), expected);
                 assert_eq!(reader.get(index)?.copied(), expected);
                 assert_eq!(reader.is_null(index)?, expected.is_none());
             }
@@ -234,8 +237,13 @@ fn reader_values_borrow_the_vector_not_the_reader() -> Result<()> {
     let row = lists.get(0)?.unwrap();
     let values = row
         .iter()
-        .map(|row| row.unwrap().iter().map(|value| value.copied()).collect::<Vec<_>>())
-        .collect::<Vec<_>>();
+        .map(|row| {
+            row?.unwrap()
+                .iter()
+                .map(|value| Ok(value?.copied()))
+                .collect::<Result<Vec<_>>>()
+        })
+        .collect::<Result<Vec<_>>>()?;
     assert_eq!(values, [vec![Some(1), None], vec![Some(3)]]);
 
     let vector = chunk.get_vector_at::<ParamStruct>(2)?;
@@ -271,11 +279,11 @@ fn nested_readers_copy_child_metadata() -> Result<()> {
     assert!(same_view(lists.elements().elements(), elements));
     assert_eq!(lists.elements().len(), 2);
     assert_eq!(
-        lists.elements().get(0)?.unwrap().iter().collect::<Vec<_>>(),
+        lists.elements().get(0)?.unwrap().iter().collect::<Result<Vec<_>>>()?,
         [Some(&1), None]
     );
     assert_eq!(
-        lists.elements().elements().iter().collect::<Vec<_>>(),
+        lists.elements().elements().iter().collect::<Result<Vec<_>>>()?,
         [Some(&1), None, Some(&3)]
     );
     Ok(())
@@ -303,7 +311,10 @@ fn reader_rejects_other_storage_until_explicitly_flattened() -> Result<()> {
     vector.flatten()?;
     let reader = vector.reader()?;
     assert_eq!(reader.vector().storage_kind(), StorageKind::Flat);
-    assert_eq!(reader.iter().collect::<Vec<_>>(), [Some(&3), Some(&5), Some(&7)]);
+    assert_eq!(
+        reader.iter().collect::<Result<Vec<_>>>()?,
+        [Some(&3), Some(&5), Some(&7)]
+    );
     Ok(())
 }
 
@@ -321,14 +332,19 @@ fn reader_handles_native_storage_layouts() -> Result<()> {
             let reader = vector.reader()?;
             assert_eq!(reader.vector().storage_kind(), vector.storage_kind());
             assert_physical_reads(&reader)?;
-            let stepped = reader.iter().map(|value| value.copied()).collect::<Vec<_>>();
+            let stepped = reader
+                .iter()
+                .map(|value| Ok(value?.copied()))
+                .collect::<Result<Vec<_>>>()?;
             let mut folded = Vec::new();
-            reader.iter().for_each(|value| folded.push(value.copied()));
-            assert_eq!(folded, stepped);
+            reader
+                .iter()
+                .for_each(|value| folded.push(value.map(|value| value.copied())));
+            assert_eq!(folded.into_iter().collect::<Result<Vec<_>>>()?, stepped);
             let mut rest = reader.iter();
             rest.next();
             let enumerated = rest.enumerate().fold(Vec::new(), |mut rows, (row, value)| {
-                rows.push((row, value.copied()));
+                rows.push((row, value.unwrap().copied()));
                 rows
             });
             assert_eq!(
@@ -342,7 +358,7 @@ fn reader_handles_native_storage_layouts() -> Result<()> {
                 };
                 let reader = vector.reader()?;
 
-                assert_eq!(reader.iter().collect::<Vec<_>>(), [Some(&i32::MAX), None]);
+                assert_eq!(reader.iter().collect::<Result<Vec<_>>>()?, [Some(&i32::MAX), None]);
                 assert_eq!(reader.get(0)?, Some(&i32::MAX));
                 assert_eq!(reader.get(1)?, None);
                 assert!(!reader.is_null(0)?);
@@ -351,7 +367,7 @@ fn reader_handles_native_storage_layouts() -> Result<()> {
                 assert!(reader.is_null(2).is_err());
             }
             for (index, value) in reader.iter().enumerate() {
-                output.writer()?.set_option(index, value)?;
+                output.writer()?.set_option(index, value?)?;
             }
             Ok(())
         },
@@ -365,7 +381,12 @@ fn reader_handles_native_storage_layouts() -> Result<()> {
     while let Some(chunk) = result.next_chunk()? {
         let vector = chunk.get_vector_at::<i32>(0)?;
         let reader: VectorReader<'_, i32> = vector.reader()?;
-        values.extend(reader.iter().map(|value| value.copied()));
+        values.extend(
+            reader
+                .iter()
+                .map(|value| Ok(value?.copied()))
+                .collect::<Result<Vec<_>>>()?,
+        );
     }
     assert_eq!(
         values,
@@ -406,13 +427,16 @@ fn cached_views_follow_writes_and_resizes() -> Result<()> {
     // The slow path writes valid rows without allocating a validity mask.
     vector.write_value_slow(0, &1_i32.value(&conn)?)?;
     vector.write_value_slow(1, &2_i32.value(&conn)?)?;
-    assert_eq!(vector.reader()?.iter().collect::<Vec<_>>(), [Some(&1), Some(&2)]);
+    assert_eq!(
+        vector.reader()?.iter().collect::<Result<Vec<_>>>()?,
+        [Some(&1), Some(&2)]
+    );
     assert!(vector.reader()?.validity().is_none());
 
     // The writer allocates the mask after the view was cached.
     vector.writer()?.set_null(1)?;
     assert_view_is_current(&vector)?;
-    assert_eq!(vector.reader()?.iter().collect::<Vec<_>>(), [Some(&1), None]);
+    assert_eq!(vector.reader()?.iter().collect::<Result<Vec<_>>>()?, [Some(&1), None]);
 
     vector.set_size(5000)?;
     assert_view_is_current(&vector)?;
@@ -444,11 +468,11 @@ fn cached_child_views_follow_parent_writes() -> Result<()> {
         x.write_value_slow(1, &2_i32.value(&conn)?)?;
     }
     let read = |vector: &crate::vector::Vector<'_, CachedField>| -> Result<Vec<Option<Option<i32>>>> {
-        Ok(vector
+        vector
             .row_reader()?
             .iter()
-            .map(|row| row.map(|row| row.x.copied()))
-            .collect())
+            .map(|row| Ok(row?.map(|row| row.x.copied())))
+            .collect()
     };
     assert_eq!(read(&vector)?, [Some(Some(1)), Some(Some(2))]);
     assert!(

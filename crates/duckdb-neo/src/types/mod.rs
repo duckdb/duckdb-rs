@@ -26,11 +26,11 @@
 //! ```
 //! use duckdb_neo::{types::List, vector::{Elements, ListReader, RowReader, VectorReader}};
 //!
-//! fn list_items<'r>(row: Elements<'r, VectorReader<'_, i32>>) -> Vec<Option<&'r i32>> {
+//! fn list_items<'r>(row: Elements<'r, VectorReader<'_, i32>>) -> duckdb_neo::Result<Vec<Option<&'r i32>>> {
 //!     row.iter().collect()
 //! }
 //! fn first_row<'a>(lists: &'a ListReader<'a, i32>) -> duckdb_neo::Result<Option<Vec<Option<&'a i32>>>> {
-//!     Ok(lists.get(0)?.map(list_items))
+//!     lists.get(0)?.map(list_items).transpose()
 //! }
 //! # let _ = (first_row, std::marker::PhantomData::<List<i32>>);
 //! ```

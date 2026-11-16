@@ -28,8 +28,8 @@ fn test_send_between_threads() -> duckdb_neo::Result<()> {
         .get_vector_at::<i32>(0)?
         .reader()?
         .iter()
-        .map(|value| value.copied())
-        .collect::<Vec<_>>();
+        .map(|value| Ok(value?.copied()))
+        .collect::<duckdb_neo::Result<Vec<_>>>()?;
     assert_eq!(values, vec![Some(42)]);
     assert!(result.next_chunk()?.is_none());
     drop(result);

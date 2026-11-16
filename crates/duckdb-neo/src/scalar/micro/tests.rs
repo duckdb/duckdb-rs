@@ -22,7 +22,7 @@ fn inferred_signature_and_sized_batches() -> Result<()> {
             assert_eq!(output.len(), input.len());
             let mut writer = output.writer()?;
             for (row, value) in input.reader()?.iter().enumerate() {
-                writer.set_option(row, value.map(|value| i64::from(*value) + *offset).as_ref())?;
+                writer.set_option(row, value?.map(|value| i64::from(*value) + *offset).as_ref())?;
             }
             Ok(())
         },
@@ -47,7 +47,14 @@ fn inferred_signature_and_sized_batches() -> Result<()> {
         )?;
         let mut actual = Vec::new();
         while let Some(chunk) = result.next_chunk()? {
-            actual.extend(chunk.get_vector_at::<i64>(0)?.reader()?.iter().map(|v| v.copied()));
+            actual.extend(
+                chunk
+                    .get_vector_at::<i64>(0)?
+                    .reader()?
+                    .iter()
+                    .map(|v| Ok(v?.copied()))
+                    .collect::<Result<Vec<_>>>()?,
+            );
         }
         let expected: Vec<_> = (0..10000)
             .filter(|i| i % 3 != 0)
@@ -68,7 +75,7 @@ fn nested_input_and_string_output() -> Result<()> {
         |_ctx, input: Vector<'_, List<i32>>, mut output: Vector<'_, String>| {
             let mut writer = output.writer()?;
             for (row, value) in input.reader()?.iter().enumerate() {
-                let text = value.map(|list| format!("length: {}", list.length()));
+                let text = value?.map(|list| format!("length: {}", list.length()));
                 writer.set_option(row, text.as_deref())?;
             }
             Ok(())
@@ -85,7 +92,11 @@ fn nested_input_and_string_output() -> Result<()> {
         .next_chunk()?
         .unwrap();
     assert_eq!(
-        chunk.get_vector_at::<String>(0)?.reader()?.iter().collect::<Vec<_>>(),
+        chunk
+            .get_vector_at::<String>(0)?
+            .reader()?
+            .iter()
+            .collect::<Result<Vec<_>>>()?,
         [Some("length: 3"), Some("length: 0"), None]
     );
     Ok(())
@@ -99,7 +110,7 @@ fn properties_control_null_handling() -> Result<()> {
         MicroScalar::create(name, |_ctx, input: Vector<'_, i32>, mut output: Vector<'_, i32>| {
             let mut writer = output.writer()?;
             for (row, value) in input.reader()?.iter().enumerate() {
-                writer.set(row, &value.copied().unwrap_or(42))?;
+                writer.set(row, &value?.copied().unwrap_or(42))?;
             }
             Ok(())
         })
@@ -177,7 +188,7 @@ fn explicit_signature_sizes_variadic_batches() -> Result<()> {
                     .iter_mut()
                     .zip(input.get_vector_at::<i32>(column)?.reader()?.iter())
                 {
-                    *sum += i64::from(value.copied().unwrap_or(0));
+                    *sum += i64::from(value?.copied().unwrap_or(0));
                 }
             }
             let mut writer = output.writer()?;
@@ -207,7 +218,8 @@ fn explicit_signature_sizes_variadic_batches() -> Result<()> {
                 .get_vector_at::<i64>(0)?
                 .reader()?
                 .iter()
-                .map(|value| value.copied()),
+                .map(|value| Ok(value?.copied()))
+                .collect::<Result<Vec<_>>>()?,
         );
     }
     assert_eq!(actual, (45..5045).map(Some).collect::<Vec<_>>());

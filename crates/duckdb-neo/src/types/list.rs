@@ -148,14 +148,19 @@ unsafe impl<T: NativeElement> ReadableNativeElement for List<T> {
         = ListIndex
     where
         T: 'a;
+    type Error = std::convert::Infallible;
 
     #[inline(always)]
-    unsafe fn get<'a, U: NativeElement>(reader: &VectorReader<'a, U>, physical: usize, _logical: usize) -> ListIndex
+    unsafe fn get<'a, U: NativeElement>(
+        reader: &VectorReader<'a, U>,
+        physical: usize,
+        _logical: usize,
+    ) -> std::result::Result<ListIndex, Self::Error>
     where
         Self: 'a,
     {
         // SAFETY: the caller guarantees a valid row of LIST storage.
-        unsafe { *reader.as_ptr().cast::<ListIndex>().add(physical) }
+        Ok(unsafe { *reader.as_ptr().cast::<ListIndex>().add(physical) })
     }
 }
 

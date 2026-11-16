@@ -32,7 +32,7 @@
 //! let vector = chunk.get_vector_at::<i32>(0)?;
 //! let reader = vector.reader()?;
 //! for value in reader.iter() {
-//!     assert_eq!(value, Some(&1));
+//!     assert_eq!(value?, Some(&1));
 //! }
 //! # Ok(())
 //! # }

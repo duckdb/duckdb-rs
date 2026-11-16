@@ -4,6 +4,9 @@
 //! [`BlobValue`] and [`BitValue`] wrap `BLOB` and `BIT` payloads.
 //! All share DuckDB's [`crate::bytes::DuckDBBytes`] wire representation.
 
+use std::convert::Infallible;
+use std::str::Utf8Error;
+
 use super::{DuckDBType, FromValue, ToValue};
 use crate::ffi_str::{DuckDBStr, bytes_view};
 use crate::{
@@ -184,18 +187,19 @@ unsafe impl NativeElement for BlobValue {
 // SAFETY: `get` reads the validated physical slot.
 unsafe impl ReadableNativeElement for BlobValue {
     type Ref<'a> = &'a [u8];
+    type Error = Infallible;
 
     #[inline]
     unsafe fn get<'a, U: NativeElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
         _logical: usize,
-    ) -> Self::Ref<'a>
+    ) -> std::result::Result<Self::Ref<'a>, Self::Error>
     where
         Self: 'a,
     {
         let data_ptr = vector.as_ptr() as *const DuckDBBytes<'a>;
-        unsafe { &*data_ptr.add(physical) }.get_data()
+        Ok(unsafe { &*data_ptr.add(physical) }.get_data())
     }
 }
 
@@ -209,23 +213,22 @@ unsafe impl NativeElement for BitValue {
 // SAFETY: `get` reads the validated physical slot.
 unsafe impl ReadableNativeElement for BitValue {
     type Ref<'a> = &'a [u8];
+    type Error = Infallible;
 
     #[inline]
     unsafe fn get<'a, U: NativeElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
         _logical: usize,
-    ) -> Self::Ref<'a>
+    ) -> std::result::Result<Self::Ref<'a>, Self::Error>
     where
         Self: Sized + 'a,
     {
         let data_ptr = vector.as_ptr() as *const DuckDBBytes<'a>;
-        unsafe { &*data_ptr.add(physical) }.get_data()
+        Ok(unsafe { &*data_ptr.add(physical) }.get_data())
     }
 }
 
-/// # Panics
-/// Panics when a VARCHAR row contains invalid UTF-8.
 // SAFETY: `DuckDBBytes` matches DuckDB's string storage.
 unsafe impl NativeElement for String {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Varchar;
@@ -236,13 +239,14 @@ unsafe impl NativeElement for String {
 // SAFETY: `get` reads the validated physical slot.
 unsafe impl ReadableNativeElement for String {
     type Ref<'a> = &'a str;
+    type Error = Utf8Error;
 
     #[inline]
     unsafe fn get<'a, U: NativeElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
         _logical: usize,
-    ) -> Self::Ref<'a>
+    ) -> std::result::Result<Self::Ref<'a>, Self::Error>
     where
         Self: Sized + 'a,
     {
@@ -250,7 +254,7 @@ unsafe impl ReadableNativeElement for String {
 
         let string_view = unsafe { &*data_ptr.add(physical) };
 
-        std::str::from_utf8(bytes_view(string_view)).expect("DuckDB VARCHAR is not valid UTF-8")
+        std::str::from_utf8(bytes_view(string_view))
     }
 }
 
@@ -264,19 +268,20 @@ unsafe impl NativeElement for UncheckedString {
 // SAFETY: `get` reads the validated physical slot.
 unsafe impl ReadableNativeElement for UncheckedString {
     type Ref<'a> = &'a str;
+    type Error = Infallible;
 
     #[inline]
     unsafe fn get<'a, U: NativeElement>(
         vector: &crate::vector::VectorReader<'a, U>,
         physical: usize,
         _logical: usize,
-    ) -> Self::Ref<'a>
+    ) -> std::result::Result<Self::Ref<'a>, Self::Error>
     where
         Self: 'a,
     {
         let data_ptr = vector.as_ptr() as *const ffi::duckdb_v2_bytes;
         let string_view = unsafe { &*data_ptr.add(physical) };
-        unsafe { std::str::from_utf8_unchecked(bytes_view(string_view)) }
+        Ok(unsafe { std::str::from_utf8_unchecked(bytes_view(string_view)) })
     }
 }
 
@@ -355,13 +360,14 @@ unsafe impl ReadableNativeElement for &str {
         = &'a str
     where
         Self: 'a;
+    type Error = Utf8Error;
 
     #[inline]
     unsafe fn get<'a, U: NativeElement>(
         reader: &crate::vector::VectorReader<'a, U>,
         physical: usize,
         logical: usize,
-    ) -> Self::Ref<'a>
+    ) -> std::result::Result<Self::Ref<'a>, Self::Error>
     where
         Self: 'a,
     {
@@ -407,16 +413,23 @@ mod tests {
     };
 
     #[test]
-    #[should_panic(expected = "DuckDB VARCHAR is not valid UTF-8")]
-    fn varchar_vector_reports_invalid_utf8() {
-        let env = Environment::new().unwrap();
-        let conn = env.open(StorageLocation::InMemory).unwrap().connect().unwrap();
-        let mut chunk = DataChunk::create(&conn, &[String::logical_type(&conn).unwrap()], true).unwrap();
-        let mut vector = chunk.get_vector_at_mut::<String>(0).unwrap();
-        vector.set_size(1).unwrap();
-        // SAFETY: This writable byte vector is flat and has one row.
-        unsafe { vector.writer().unwrap().write_bytes(0, Some(&[0xff])) }.unwrap();
-        let _ = vector.reader().unwrap().get(0);
+    fn varchar_vector_reports_invalid_utf8() -> Result<()> {
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+        let mut chunk = DataChunk::create(&conn, &[String::logical_type(&conn)?], true)?;
+        let mut vector = chunk.get_vector_at_mut::<String>(0)?;
+        vector.set_size(2)?;
+        // SAFETY: This writable byte vector is flat and has two rows.
+        unsafe { vector.writer()?.write_bytes(0, Some(&[0xff])) }?;
+        vector.writer()?.set(1, "duck")?;
+        let reader = vector.reader()?;
+        let error = reader.get(0).unwrap_err();
+        assert_eq!(error.code, crate::error::DuckDBError::InputInvalid);
+        assert!(error.message.contains("invalid UTF-8"), "{error}");
+        assert_eq!(reader.get(1)?, Some("duck"));
+        assert!(reader.iter().next().unwrap().is_err());
+        assert!(reader.iter().collect::<Result<Vec<_>>>().is_err());
+        Ok(())
     }
 
     #[test]
@@ -439,9 +452,9 @@ mod tests {
             vector.writer()?.set_option(index, *value)?;
             assert_eq!(vector.reader()?.get(index)?, *value);
         }
-        assert_eq!(vector.reader()?.iter().collect::<Vec<_>>(), values);
+        assert_eq!(vector.reader()?.iter().collect::<Result<Vec<_>>>()?, values);
         let checked = chunk.get_vector_at::<String>(0)?;
-        assert_eq!(checked.reader()?.iter().collect::<Vec<_>>(), values);
+        assert_eq!(checked.reader()?.iter().collect::<Result<Vec<_>>>()?, values);
         assert!(chunk.get_vector_at::<BlobValue>(0).is_err());
         Ok(())
     }

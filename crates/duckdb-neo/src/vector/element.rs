@@ -1,7 +1,9 @@
+use std::convert::Infallible;
+
 use crate::data_chunk::VectorCollection;
 use crate::logical_type::{LogicalType, LogicalTypeID};
 use crate::{
-    Result,
+    Error, Result,
     vector::{VectorReader, VectorWriter},
 };
 
@@ -113,6 +115,9 @@ pub unsafe trait ReadableNativeElement: NativeElement {
     where
         Self: 'a;
 
+    /// The error of decoding one row, or [`Infallible`] when every row decodes.
+    type Error: Into<Error>;
+
     /// Borrow a value at its physical and logical indexes.
     ///
     /// Prefer [`VectorReader::get`](crate::vector::VectorReader::get) or
@@ -127,10 +132,14 @@ pub unsafe trait ReadableNativeElement: NativeElement {
     /// # use duckdb_neo::vector::{Vector, ReadableNativeElement};
     /// fn read<'a>(vector: &'a Vector<'_, i8>) -> &'a i64 {
     ///     let reader = vector.reader().unwrap();
-    ///     <i64 as ReadableNativeElement>::get(&reader, 10_000, 0)
+    ///     <i64 as ReadableNativeElement>::get(&reader, 10_000, 0).unwrap()
     /// }
     /// ```
-    unsafe fn get<'a, U: NativeElement>(reader: &VectorReader<'a, U>, physical: usize, logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: NativeElement>(
+        reader: &VectorReader<'a, U>,
+        physical: usize,
+        logical: usize,
+    ) -> std::result::Result<Self::Ref<'a>, Self::Error>
     where
         Self: 'a;
 }
@@ -215,16 +224,18 @@ unsafe impl NativeElement for Unknown {
 // SAFETY: `get` reads nothing.
 unsafe impl ReadableNativeElement for Unknown {
     type Ref<'a> = ();
+    type Error = Infallible;
 
     #[inline]
     unsafe fn get<'a, U: NativeElement>(
         _reader: &VectorReader<'a, U>,
         _physical: usize,
         _logical: usize,
-    ) -> Self::Ref<'a>
+    ) -> std::result::Result<(), Infallible>
     where
         Self: 'a,
     {
+        Ok(())
     }
 }
 

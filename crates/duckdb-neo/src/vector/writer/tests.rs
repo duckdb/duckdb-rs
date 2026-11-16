@@ -36,7 +36,10 @@ fn writer_sets_values_with_preallocated_validity() -> Result<()> {
         writer.set(0, &43)?;
         assert_eq!(unsafe { writer.validity_mut() }.unwrap()[0] & 1, 1);
     }
-    assert_eq!(vector.reader()?.iter().collect::<Vec<_>>(), [Some(&43), Some(&7)]);
+    assert_eq!(
+        vector.reader()?.iter().collect::<Result<Vec<_>>>()?,
+        [Some(&43), Some(&7)]
+    );
     Ok(())
 }
 
@@ -173,7 +176,7 @@ fn writer_rewrites_nulls_across_mask_words() -> Result<()> {
             vector.writer()?.set(count / 2, &((count / 2) as i32))?;
         }
         for (index, value) in vector.reader()?.iter().enumerate() {
-            assert_eq!(value.copied(), Some(index as i32));
+            assert_eq!(value?.copied(), Some(index as i32));
         }
     }
     Ok(())
@@ -205,7 +208,11 @@ fn writer_validity_groups_preserve_neighboring_rows() -> Result<()> {
         }
     }
     assert_eq!(
-        vector.reader()?.iter().map(|value| value.copied()).collect::<Vec<_>>(),
+        vector
+            .reader()?
+            .iter()
+            .map(|value| Ok(value?.copied()))
+            .collect::<Result<Vec<_>>>()?,
         expected
     );
     Ok(())
@@ -240,7 +247,7 @@ fn writer_handles_manual_validity_and_padding() -> Result<()> {
     }
     vector.writer()?.set(64, &64)?;
     for (index, value) in vector.reader()?.iter().enumerate() {
-        assert_eq!(value.copied(), Some(index as i32));
+        assert_eq!(value?.copied(), Some(index as i32));
     }
     Ok(())
 }
@@ -265,7 +272,7 @@ fn writer_restores_validity_after_slow_writes() -> Result<()> {
         writer.set(2, &2)?;
     }
     assert_eq!(
-        vector.reader()?.iter().collect::<Vec<_>>(),
+        vector.reader()?.iter().collect::<Result<Vec<_>>>()?,
         [Some(&0), Some(&1), Some(&2)]
     );
     Ok(())
@@ -351,7 +358,7 @@ fn writer_mutable_slice_preserves_validity() -> Result<()> {
         assert_eq!(unsafe { writer.validity_mut() }.unwrap()[0] & 2, 0);
     }
     assert_eq!(
-        vector.reader()?.iter().collect::<Vec<_>>(),
+        vector.reader()?.iter().collect::<Result<Vec<_>>>()?,
         [Some(&10), None, Some(&30)]
     );
     vector.set_size(0)?;
@@ -415,7 +422,7 @@ fn writer_encodes_raw_strings_in_its_own_arena() -> Result<()> {
         }
     }
     assert_eq!(
-        vector.reader()?.iter().collect::<Vec<_>>(),
+        vector.reader()?.iter().collect::<Result<Vec<_>>>()?,
         [Some("short"), None, Some("longer than DuckDB's inline string storage")]
     );
     Ok(())
@@ -506,9 +513,9 @@ fn writer_reuses_nested_children_across_rows() -> Result<()> {
         assert_eq!(writer.child_offset(), 5003);
     }
     let reader = vector.list_reader()?;
-    assert_eq!(reader.get(0)?.unwrap().iter().collect::<Vec<_>>(), [Some(&42)]);
+    assert_eq!(reader.get(0)?.unwrap().iter().collect::<Result<Vec<_>>>()?, [Some(&42)]);
     assert!(reader.get(1)?.is_none());
-    assert_eq!(reader.get(2)?.unwrap().iter().last(), Some(Some(&4999)));
+    assert_eq!(reader.get(2)?.unwrap().iter().last().transpose()?, Some(Some(&4999)));
     Ok(())
 }
 
@@ -536,16 +543,22 @@ fn writer_nested_nulls_null_descendants() -> Result<()> {
     }
     let reader = vector.array_reader()?;
     assert!(reader.get(0)?.is_none());
-    assert_eq!(reader.get(1)?.unwrap().iter().collect::<Vec<_>>(), [Some(&3), Some(&4)]);
+    assert_eq!(
+        reader.get(1)?.unwrap().iter().collect::<Result<Vec<_>>>()?,
+        [Some(&3), Some(&4)]
+    );
     let child = vector.children().unwrap().get_vector_at::<i32>(0)?;
     assert_eq!(
-        child.reader()?.iter().collect::<Vec<_>>(),
+        child.reader()?.iter().collect::<Result<Vec<_>>>()?,
         [None, None, Some(&3), Some(&4)]
     );
     // A native NULL also nulls the elements.
     vector.writer()?.set_null(1)?;
     let child = vector.children().unwrap().get_vector_at::<i32>(0)?;
-    assert_eq!(child.reader()?.iter().collect::<Vec<_>>(), [None, None, None, None]);
+    assert_eq!(
+        child.reader()?.iter().collect::<Result<Vec<_>>>()?,
+        [None, None, None, None]
+    );
     Ok(())
 }
 
@@ -652,7 +665,7 @@ fn writer_rejects_native_input_layouts() -> Result<()> {
             let reader = vector.reader()?;
             let mut writer = output.writer()?;
             for (index, value) in reader.iter().enumerate() {
-                writer.set_option(index, value)?;
+                writer.set_option(index, value?)?;
             }
             Ok(())
         },
@@ -669,7 +682,8 @@ fn writer_rejects_native_input_layouts() -> Result<()> {
                 .get_vector_at::<i32>(0)?
                 .reader()?
                 .iter()
-                .map(|value| value.copied()),
+                .map(|value| Ok(value?.copied()))
+                .collect::<Result<Vec<_>>>()?,
         );
     }
     assert_eq!(
@@ -791,7 +805,11 @@ fn writer_writes_slices_across_mask_words() -> Result<()> {
         assert!(writer.write_slice(usize::MAX, &values[..2]).is_err());
         writer.write_slice(200, &[])?;
     }
-    let read = vector.reader()?.iter().map(|value| value.copied()).collect::<Vec<_>>();
+    let read = vector
+        .reader()?
+        .iter()
+        .map(|value| Ok(value?.copied()))
+        .collect::<Result<Vec<_>>>()?;
     for (row, value) in read.into_iter().enumerate() {
         let expected = (30..160).contains(&row).then(|| row as i64 - 30);
         assert_eq!(value, expected, "row {row}");
@@ -813,8 +831,8 @@ fn writer_copies_every_storage_layout() -> Result<()> {
             // Pre-fill with garbage values so stale bits would show.
             output.writer()?.write_slice(0, &vec![-1; reader.len()])?;
             output.writer()?.copy_from(&reader)?;
-            let copied = output.reader()?.iter().collect::<Vec<_>>();
-            assert_eq!(copied, reader.iter().collect::<Vec<_>>());
+            let copied = output.reader()?.iter().collect::<Result<Vec<_>>>()?;
+            assert_eq!(copied, reader.iter().collect::<Result<Vec<_>>>()?);
             Ok(())
         },
     )
@@ -845,21 +863,21 @@ fn writer_fills_nested_nulls() -> Result<()> {
     let mut vector = chunk.get_vector_at_mut::<Pair>(0)?;
     vector.set_size(3)?;
     vector.writer()?.fill_null()?;
-    assert!(vector.reader()?.iter().all(|row| row.is_none()));
+    assert!(vector.reader()?.iter().all(|row| matches!(row, Ok(None))));
     let fields = vector.children().unwrap();
     assert!(
         fields
             .get_vector_at::<i32>(0)?
             .reader()?
             .iter()
-            .all(|row| row.is_none())
+            .all(|row| matches!(row, Ok(None)))
     );
     assert!(
         fields
             .get_vector_at::<String>(1)?
             .reader()?
             .iter()
-            .all(|row| row.is_none())
+            .all(|row| matches!(row, Ok(None)))
     );
     Ok(())
 }

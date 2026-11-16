@@ -466,7 +466,7 @@ mod tests {
             let vector = chunk.get_vector_at::<i64>(0)?;
 
             for value in vector.reader()?.iter() {
-                assert_eq!(value, Some(&(i as i64 * 5)));
+                assert_eq!(value?, Some(&(i as i64 * 5)));
                 i += 1;
             }
         }

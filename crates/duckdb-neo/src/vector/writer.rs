@@ -38,7 +38,7 @@ use super::{
 ///         writer.set_row_validity(1, false)?;
 ///     }
 /// }
-/// assert_eq!(vector.reader()?.iter().collect::<Vec<_>>(), [Some(&0), None, Some(&2)]);
+/// assert_eq!(vector.reader()?.iter().collect::<duckdb_neo::Result<Vec<_>>>()?, [Some(&0), None, Some(&2)]);
 /// # Ok(())
 /// # }
 /// ```
@@ -488,7 +488,10 @@ impl<T: PlainNative> VectorWriter<'_, T> {
     /// writer.write_slice(1, &[7, 8, 9])?;
     /// writer.set_null(2)?;
     /// # drop(writer);
-    /// assert_eq!(vector.reader()?.iter().collect::<Vec<_>>(), [Some(&0), Some(&7), None, Some(&9)]);
+    /// assert_eq!(
+    ///     vector.reader()?.iter().collect::<duckdb_neo::Result<Vec<_>>>()?,
+    ///     [Some(&0), Some(&7), None, Some(&9)]
+    /// );
     /// # Ok(())
     /// # }
     /// ```

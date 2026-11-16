@@ -116,18 +116,19 @@ macro_rules! declare_vector_element {
         // SAFETY: `get` reads the validated physical slot.
         unsafe impl $crate::vector::ReadableNativeElement for $type {
             type Ref<'a> = &'a $type;
+            type Error = ::std::convert::Infallible;
 
             #[inline]
             unsafe fn get<'a, U: $crate::vector::NativeElement>(
                 vector: &$crate::vector::VectorReader<'a, U>,
                 physical: usize,
                 _logical: usize,
-            ) -> Self::Ref<'a>
+            ) -> ::std::result::Result<Self::Ref<'a>, Self::Error>
             where
                 Self: Sized + 'a,
             {
                 let data_ptr = vector.as_ptr() as *const $type;
-                unsafe { &*data_ptr.add(physical) }
+                Ok(unsafe { &*data_ptr.add(physical) })
             }
         }
     };
