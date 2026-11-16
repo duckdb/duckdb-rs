@@ -11,7 +11,6 @@
 //! by a [`MultiFileFunctionBuilder`](crate::multi_file::MultiFileFunctionBuilder)
 //! can also implement [`TableGetBindInfoCallbacks`] and [`TableClaimBatchCallbacks`].
 
-use std::cell::OnceCell;
 use std::{any::Any, num::NonZeroUsize};
 
 use crate::ffi;
@@ -86,12 +85,9 @@ fn bind_callback<T: TableFunctionCallbacks>(
 ) -> Result<()> {
     let user_data = get_user_data!(ffi::duckdb_v2_function_bind_get_user_data, info);
 
-    let arguments = BindArguments {
-        handle: &info,
-        len: OnceCell::new(),
-    };
+    let arguments = BindArguments::new(&info);
 
-    let bind_data = T::bind(user_data, context, &arguments, BindFunctionHandle(&result))?;
+    let bind_data = T::bind(user_data, context, arguments, BindFunctionHandle(&result))?;
 
     check_api_call!(
         ffi::duckdb_v2_function_bind_set_bind_data,
@@ -804,7 +800,7 @@ pub trait TableFunctionCallbacks: Send + Sync + 'static {
     fn bind(
         &self,
         context: &Context,
-        arguments: &BindArguments<'_>,
+        arguments: BindArguments<'_>,
         bind_handle: BindFunctionHandle<'_>,
     ) -> Result<Self::BindData>;
 

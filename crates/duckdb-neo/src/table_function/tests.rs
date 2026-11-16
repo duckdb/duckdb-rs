@@ -8,7 +8,7 @@ use std::{
 
 use crate::{
     DuckDBType, Parameters, Result, ToValue,
-    bind_arguments::{BindArgument, BindArguments},
+    bind_arguments::BindArguments,
     connection::{Context, SettingScope},
     data_chunk::DataChunkRef,
     environment::{Environment, StorageLocation},
@@ -50,7 +50,7 @@ fn test_table_function() -> Result<()> {
         fn bind(
             &self,
             context: &Context,
-            arguments: &BindArguments<'_>,
+            arguments: BindArguments<'_>,
             bind_handle: BindFunctionHandle<'_>,
         ) -> Result<Self::BindData> {
             let arg = &arguments.arg(0)?;
@@ -290,7 +290,7 @@ fn test_table_function_partitioning() -> Result<()> {
         fn bind(
             &self,
             context: &Context,
-            _arguments: &BindArguments<'_>,
+            _arguments: BindArguments<'_>,
             bind_handle: BindFunctionHandle<'_>,
         ) -> Result<Self::BindData> {
             bind_handle.add_result_column("part", &i32::logical_type(context)?)?;
@@ -565,10 +565,10 @@ impl TableFunctionCallbacks for ProjectionScan {
     fn bind(
         &self,
         context: &Context,
-        arguments: &BindArguments<'_>,
+        arguments: BindArguments<'_>,
         bind_handle: BindFunctionHandle<'_>,
     ) -> Result<Self::BindData> {
-        let rows = arguments.arg(0)?.resolved_value::<i32>()?.unwrap_or(0);
+        let rows = arguments.arg(0)?.get_constant_value::<i32>()?.unwrap_or(0);
 
         let logical_type = i32::logical_type(context)?;
         bind_handle.add_result_column("first", &logical_type)?;
@@ -746,13 +746,13 @@ impl TableFunctionCallbacks for BatchedRange {
     fn bind(
         &self,
         context: &Context,
-        arguments: &BindArguments<'_>,
+        arguments: BindArguments<'_>,
         bind_handle: BindFunctionHandle<'_>,
     ) -> Result<Self::BindData> {
         let argument = |index: usize| -> Result<Option<usize>> {
             arguments
                 .arg(index)?
-                .resolved_value::<i32>()
+                .get_constant_value::<i32>()
                 .map(|x| x.map(|x| x as usize))
         };
         bind_handle.add_result_column("i", &i64::logical_type(context)?)?;
@@ -895,7 +895,7 @@ fn test_table_function_list_output_child_starts_empty() -> Result<()> {
         type GlobalState = AtomicUsize;
         type LocalState = ();
 
-        fn bind(&self, context: &Context, _: &BindArguments<'_>, bind_handle: BindFunctionHandle<'_>) -> Result<()> {
+        fn bind(&self, context: &Context, _: BindArguments<'_>, bind_handle: BindFunctionHandle<'_>) -> Result<()> {
             bind_handle.add_result_column("l", &List::<i32>::logical_type(context)?)?;
             Ok(())
         }

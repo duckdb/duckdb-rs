@@ -8,10 +8,10 @@
 //!
 //! A pragma without parameters is called as `PRAGMA name`, one with parameters
 //! as `PRAGMA name(...)`. Its arguments are constants, so
-//! [`BindArguments::value`] always folds them. Its signature cannot declare a
+//! [`BindArgument::value`](crate::bind_arguments::BindArgument::value) always folds them. Its signature cannot declare a
 //! return type.
 
-use crate::{FromRaw, ffi};
+use crate::ffi;
 
 use crate::{
     Result,

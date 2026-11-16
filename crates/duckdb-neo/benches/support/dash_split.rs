@@ -5,7 +5,7 @@ use std::sync::Mutex;
 
 use duckdb_neo::{
     DuckDBType, Error, Parameters, Result,
-    bind_arguments::{BindArgument, BindArguments},
+    bind_arguments::BindArguments,
     connection::{Connection, Context},
     data_chunk::DataChunkRef,
     signature::{FunctionParameter, SignatureBuilder},
@@ -36,7 +36,7 @@ impl TableFunctionCallbacks for DashSplit {
     fn bind(
         &self,
         context: &Context,
-        arguments: &BindArguments<'_>,
+        arguments: BindArguments<'_>,
         bind_handle: BindFunctionHandle<'_>,
     ) -> Result<Self::BindData> {
         let constant = |index: usize| {

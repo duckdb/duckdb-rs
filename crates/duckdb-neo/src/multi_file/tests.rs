@@ -10,7 +10,7 @@ use std::{
 
 use crate::{
     DuckDBType, Parameters, Result, ToValue,
-    bind_arguments::{BindArgument, BindArguments},
+    bind_arguments::BindArguments,
     connection::{Connection, Context, SettingScope},
     data_chunk::DataChunkRef,
     environment::{Environment, StorageLocation},
@@ -56,12 +56,12 @@ impl TableFunctionCallbacks for KvReader {
     fn bind(
         &self,
         context: &Context,
-        arguments: &BindArguments<'_>,
+        arguments: BindArguments<'_>,
         bind_handle: BindFunctionHandle<'_>,
     ) -> Result<Self::BindData> {
         let path = arguments
             .arg(0)?
-            .resolved_value::<String>()
+            .get_constant_value::<String>()
             .transpose()
             .ok_or_else(|| Error::invalid_input("expected a file path"))??;
 

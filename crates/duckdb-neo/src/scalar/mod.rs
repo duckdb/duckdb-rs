@@ -302,7 +302,8 @@ pub trait ScalarResolveTypesCallbacks: ScalarCallbacks {
     ///
     /// Runs during query planning, before [`ScalarBindCallbacks::bind`] and before
     /// the arguments are cast to the parameter types, so
-    /// [`BindArguments::logical_type`] reports the types the caller passed.
+    /// [`BindArgument::logical_type`](crate::bind_arguments::BindArgument::logical_type)
+    /// reports the types the caller passed.
     /// The returned type replaces the one declared in the signature.
     fn resolve_types(&self, context: &Context, arguments: BindArguments<'_>) -> Result<LogicalType>;
 }
