@@ -355,8 +355,8 @@ impl DataChunk<'static> {
     ///
     /// A chunk created through a [`Connection`](crate::connection::Connection) or
     /// [`Instance`](crate::instance::Instance) keeps its instance alive. One created through a
-    /// [`Context`](crate::connection::Context) may be kept in callback state, such as bind data,
-    /// but must not outlive the instance, for example in a `static`.
+    /// [`Context`](crate::connection::Context) or [`Extension`](crate::extension::Extension) may be
+    /// kept in callback state, such as bind data, but must not outlive the instance, for example in a `static`.
     #[allow(private_bounds)]
     pub fn create<C: HasFactory + InstanceKeepAlive>(
         link: &C,

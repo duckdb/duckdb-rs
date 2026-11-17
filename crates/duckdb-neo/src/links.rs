@@ -14,7 +14,8 @@ pub(crate) type KeepAlive = Arc<dyn Any + Send + Sync>;
 
 /// What an object allocated through a link must hold to keep its connection and instance alive.
 ///
-/// A [`Context`] gives none: it only exists inside callbacks, whose connection outlives them.
+/// A [`Context`] or [`Extension`] gives none: they only exist inside callbacks or the entrypoint,
+/// whose connection or instance outlives them.
 pub(crate) trait InstanceKeepAlive {
     fn keep_alive(&self) -> Option<KeepAlive>;
 }
@@ -34,6 +35,12 @@ impl InstanceKeepAlive for Instance {
 impl InstanceKeepAlive for Context {
     fn keep_alive(&self) -> Option<KeepAlive> {
         None
+    }
+}
+
+impl InstanceKeepAlive for Extension {
+    fn keep_alive(&self) -> Option<KeepAlive> {
+        self.context.keep_alive()
     }
 }
 
