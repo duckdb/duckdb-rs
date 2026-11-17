@@ -16,10 +16,14 @@ struct ScalarWithData {
 
 impl ScalarBindCallbacks for ScalarWithData {
     fn bind(&self, context: &Context, arguments: BindArguments<'_>) -> Result<Self::BindData> {
-        assert_eq!(arguments.logical_type(0)?, LogicalType::from_text(context, "INTEGER")?);
+        assert_eq!(
+            arguments.arg(0)?.logical_type()?,
+            LogicalType::from_text(context, "INTEGER")?
+        );
         assert!(
             arguments
-                .value(0)?
+                .arg(0)?
+                .value()?
                 .is_some_and(|v| i32::from_value(&v).unwrap() == Some(2))
         );
 
@@ -277,7 +281,7 @@ struct FoldProbe {
 
 impl ScalarBindCallbacks for FoldProbe {
     fn bind(&self, _context: &Context, arguments: BindArguments<'_>) -> Result<Self::BindData> {
-        self.folded.lock().unwrap().push(arguments.value(0)?.is_some());
+        self.folded.lock().unwrap().push(arguments.arg(0)?.value()?.is_some());
         Ok(())
     }
 }
@@ -402,7 +406,7 @@ struct DynamicResolve;
 
 impl ScalarResolveTypesCallbacks for DynamicResolve {
     fn resolve_types(&self, _context: &Context, arguments: BindArguments<'_>) -> Result<LogicalType> {
-        arguments.logical_type(0)
+        arguments.arg(0)?.logical_type()
     }
 }
 

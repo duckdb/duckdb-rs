@@ -17,7 +17,7 @@ use crate::ffi;
 
 use crate::{
     Error, Result,
-    bind_arguments::{BindArgument, BindArguments},
+    bind_arguments::BindArguments,
     builder_helpers::{
         OpaqueHandle, callback_trampoline, ffi_enum_redeclaration, get_bind_data, get_global_state, get_local_state,
         get_user_data, into_opaque, register_callback,
@@ -85,9 +85,9 @@ fn bind_callback<T: TableFunctionCallbacks>(
 ) -> Result<()> {
     let user_data = get_user_data!(ffi::duckdb_v2_function_bind_get_user_data, info);
 
-    let arguments = BindArguments { handle: &info };
+    let arguments = BindArguments::new(&info);
 
-    let bind_data = T::bind(user_data, context, arguments.collect()?, BindFunctionHandle(&result))?;
+    let bind_data = T::bind(user_data, context, arguments, BindFunctionHandle(&result))?;
 
     check_api_call!(
         ffi::duckdb_v2_function_bind_set_bind_data,
@@ -800,7 +800,7 @@ pub trait TableFunctionCallbacks: Send + Sync + 'static {
     fn bind(
         &self,
         context: &Context,
-        arguments: Vec<BindArgument>,
+        arguments: BindArguments<'_>,
         bind_handle: BindFunctionHandle<'_>,
     ) -> Result<Self::BindData>;
 

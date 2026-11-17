@@ -38,7 +38,7 @@ fn resolve_types_callback<T: ScalarResolveTypesCallbacks>(
     result: ffi::duckdb_v2_scalar_function_resolve_types_info_handle,
 ) -> Result<()> {
     let user_data = get_user_data!(ffi::duckdb_v2_function_bind_get_user_data, info);
-    let arguments = BindArguments { handle: &info };
+    let arguments = BindArguments::new(&info);
     let return_type = T::resolve_types(user_data, context, arguments)?;
 
     check_api_call!(
@@ -54,7 +54,7 @@ fn bind_callback<T: ScalarBindCallbacks>(
     result: ffi::duckdb_v2_scalar_function_bind_info_handle,
 ) -> Result<()> {
     let user_data = get_user_data!(ffi::duckdb_v2_function_bind_get_user_data, info);
-    let arguments = BindArguments { handle: &info };
+    let arguments = BindArguments::new(&info);
     let data = T::bind(user_data, context, arguments)?;
 
     check_api_call!(
@@ -302,7 +302,8 @@ pub trait ScalarResolveTypesCallbacks: ScalarCallbacks {
     ///
     /// Runs during query planning, before [`ScalarBindCallbacks::bind`] and before
     /// the arguments are cast to the parameter types, so
-    /// [`BindArguments::logical_type`] reports the types the caller passed.
+    /// [`BindArgument::logical_type`](crate::bind_arguments::BindArgument::logical_type)
+    /// reports the types the caller passed.
     /// The returned type replaces the one declared in the signature.
     fn resolve_types(&self, context: &Context, arguments: BindArguments<'_>) -> Result<LogicalType>;
 }
