@@ -22,7 +22,7 @@ use duckdb_neo::{
     copy_function::{
         CopyFromBindInfo, CopyFromFunctionCallbacks, CopyFunctionBuilder, CopyToBindInfo, CopyToFunctionCallbacks,
     },
-    data_chunk::DataChunkRef,
+    data_chunk::DataChunk,
     file::{File, FileBuilder, FileSystem},
     logical_type::{LogicalType, LogicalTypeID},
     types::UncheckedString,
@@ -203,7 +203,7 @@ impl CopyToFunctionCallbacks for Base56 {
         let mut encoded = Vec::new();
         let mut scan = input.to_scan(context)?;
         while let Some(chunk) = scan.next_chunk()? {
-            encode_chunk(columns, &chunk, &mut encoded)?;
+            encode_chunk(columns, chunk, &mut encoded)?;
         }
         Ok(encoded)
     }
@@ -259,7 +259,7 @@ impl ColumnReader<'_> {
     }
 }
 
-fn encode_chunk(columns: &[Column], chunk: &DataChunkRef<'_>, out: &mut Vec<u8>) -> Result<()> {
+fn encode_chunk(columns: &[Column], chunk: &DataChunk<'_>, out: &mut Vec<u8>) -> Result<()> {
     let readers = columns
         .iter()
         .enumerate()
@@ -352,7 +352,7 @@ impl CopyFromFunctionCallbacks for Base56 {
         (_, columns): &Self::BindData,
         batch: Option<&mut Self::LocalState>,
         reader: Option<&Self::GlobalState>,
-        mut output: DataChunkRef<'_>,
+        output: &mut DataChunk<'_>,
     ) -> Result<()> {
         let reader = reader.expect("init_global_state sets the reader");
         let batch = batch.expect("init_local_state sets the batch");
@@ -361,7 +361,7 @@ impl CopyFromFunctionCallbacks for Base56 {
         for (index, column) in columns.iter().enumerate() {
             let fields = batch.fields.iter().skip(index).step_by(columns.len());
             let fields = fields.map(|range| &reader.data[range.clone()]);
-            let (output, bytes) = (&mut output, &mut batch.bytes);
+            let (output, bytes) = (&mut *output, &mut batch.bytes);
             match column {
                 Column::Boolean => decode_column::<bool>(output, index, rows, fields, bytes)?,
                 Column::Integer => decode_column::<i32>(output, index, rows, fields, bytes)?,
@@ -457,7 +457,7 @@ impl FixedWidth for bool {
 }
 
 fn decode_column<'f, T>(
-    output: &mut DataChunkRef<'_>,
+    output: &mut DataChunk<'_>,
     index: usize,
     rows: usize,
     fields: impl Iterator<Item = &'f [u8]>,
@@ -485,7 +485,7 @@ where
 }
 
 fn decode_strings<'f>(
-    output: &mut DataChunkRef<'_>,
+    output: &mut DataChunk<'_>,
     index: usize,
     rows: usize,
     fields: impl Iterator<Item = &'f [u8]>,

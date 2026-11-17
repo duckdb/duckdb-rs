@@ -37,6 +37,12 @@ impl InstanceKeepAlive for Context {
     }
 }
 
+impl<T: InstanceKeepAlive + ?Sized> InstanceKeepAlive for &T {
+    fn keep_alive(&self) -> Option<KeepAlive> {
+        (**self).keep_alive()
+    }
+}
+
 /// The connection a link belongs to, if it is one.
 ///
 /// Used to check that a collection is registered only on the connection whose buffer manager it uses.

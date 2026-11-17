@@ -21,7 +21,7 @@ use crate::{
     check_api_call,
     column_data_collection::ColumnDataCollection,
     connection::Context,
-    data_chunk::DataChunkRef,
+    data_chunk::DataChunk,
     ffi,
     handles::{CopyFunctionBuilderHandle, CopyFunctionBuilderLink},
     logical_type::LogicalType,
@@ -621,12 +621,19 @@ fn exec_from_callback<T: CopyFromFunctionCallbacks>(
     let global_state = get_global_state!(ffi::duckdb_v2_copy_from_exec_get_global_state, info);
     let local_state = get_local_state!(ffi::duckdb_v2_copy_from_exec_get_local_state, info);
 
-    let output_chunk = DataChunkRef::new(
+    let mut output_chunk = DataChunk::borrowed(
         check_api_call!(ffi::duckdb_v2_copy_from_exec_get_output_chunk, info, RET)?,
         true,
     )?;
 
-    T::exec(user_data, context, bind_data, local_state, global_state, output_chunk)?;
+    T::exec(
+        user_data,
+        context,
+        bind_data,
+        local_state,
+        global_state,
+        &mut output_chunk,
+    )?;
 
     Ok(())
 }
@@ -782,7 +789,7 @@ pub trait CopyFromFunctionCallbacks: Send + Sync + 'static {
         bind_data: &Self::BindData,
         local_state: Option<&mut Self::LocalState>,
         global_state: Option<&Self::GlobalState>,
-        output: DataChunkRef<'_>,
+        output: &mut DataChunk<'_>,
     ) -> Result<()>;
 
     /// **Initialize global:** create shared read state.

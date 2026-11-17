@@ -5,7 +5,7 @@ use std::ops::Deref;
 
 use duckdb_loadable_macros::AsRaw;
 
-use crate::connection::{Connection, Context, HasFactory};
+use crate::connection::{Factory, HasFactory};
 use crate::error::check_api_call_no_err;
 use crate::ffi;
 use crate::links::{InstanceKeepAlive, KeepAlive};
@@ -33,57 +33,6 @@ fn collect_array<V, const N: usize>(results: [Result<V>; N]) -> Result<[V; N]> {
     match vectors.try_into() {
         Ok(array) => Ok(array),
         Err(_) => unreachable!("collected exactly N vectors"),
-    }
-}
-
-/// A chunk that DuckDB may change in place, e.g. by flattening nested columns.
-///
-/// Implemented for owned and borrowed chunks without handing out `&mut DataChunkRef`
-/// for an owned chunk: swapping that out would separate the chunk from its keep-alive.
-pub(crate) trait DataChunkMut {
-    fn chunk_handle(&self) -> ffi::duckdb_v2_data_chunk_handle;
-
-    /// Drop cached views after DuckDB changed the chunk's vectors.
-    fn evict_cached(&mut self);
-}
-
-impl DataChunkMut for DataChunkRef<'_> {
-    fn chunk_handle(&self) -> ffi::duckdb_v2_data_chunk_handle {
-        self.handle
-    }
-
-    fn evict_cached(&mut self) {
-        self.vectors.evict_all();
-    }
-}
-
-impl DataChunkMut for DataChunk<'_> {
-    fn chunk_handle(&self) -> ffi::duckdb_v2_data_chunk_handle {
-        self.chunk.handle
-    }
-
-    fn evict_cached(&mut self) {
-        self.chunk.evict_cached();
-    }
-}
-
-trait DataChunkLink {
-    fn copy_data_chunk(&self, chunk: &DataChunkRef<'_>) -> crate::Result<DataChunk<'static>>;
-}
-
-impl DataChunkLink for Connection {
-    fn copy_data_chunk(&self, chunk: &DataChunkRef<'_>) -> crate::Result<DataChunk<'static>> {
-        let handle = check_api_call!(ffi::duckdb_v2_data_chunk_copy, self.factory()?.raw(), chunk.handle, RET)?;
-        Ok(DataChunk::new(handle, true)?.keep_alive(self))
-    }
-}
-
-impl DataChunkLink for Context {
-    fn copy_data_chunk(&self, chunk: &DataChunkRef<'_>) -> crate::Result<DataChunk<'static>> {
-        DataChunk::new(
-            check_api_call!(ffi::duckdb_v2_data_chunk_copy, self.factory()?.raw(), chunk.handle, RET)?,
-            true,
-        )
     }
 }
 
@@ -256,7 +205,7 @@ impl VectorCollection {
     /// Return the number of rows, read from DuckDB on every call.
     ///
     /// This is the batch size for callback inputs, the chunk size for a
-    /// [`DataChunkRef`], and the first child's size for child vectors.
+    /// [`DataChunk`], and the first child's size for child vectors.
     pub fn row_count(&self) -> Result<usize> {
         let rows: ffi::idx_t = match self.rows {
             RowCount::Fixed(rows) => return Ok(rows),
@@ -273,7 +222,7 @@ impl VectorCollection {
     ///
     /// The chunk's vectors reference the input's storage, so the chunk borrows
     /// this collection, cannot outlive the callback, and is read-only.
-    /// Use [`DataChunkRef::copy`] to keep or change the data.
+    /// Use [`DataChunk::copy`] to keep or change the data.
     pub fn to_data_chunk<'a, C: HasFactory + 'a>(&'a mut self, link: &'a C) -> crate::Result<DataChunk<'a>> {
         let mut logical_types = Vec::with_capacity(self.col_count());
         for index in 0..self.col_count() {
@@ -281,18 +230,7 @@ impl VectorCollection {
         }
         self.evict_all();
 
-        let type_handles = logical_types
-            .iter()
-            .map(|logical_type| logical_type.handle)
-            .collect::<Vec<_>>();
-        let handle = check_api_call!(
-            ffi::duckdb_v2_data_chunk_create,
-            link.factory()?.raw(),
-            type_handles.as_ptr(),
-            type_handles.len() as u64,
-            RET
-        )?;
-        let chunk: DataChunk<'a> = DataChunk::new(handle, false)?;
+        let chunk = DataChunk::allocate(link.factory()?, &logical_types, false)?;
 
         for (i, handle) in self.handles.iter().enumerate() {
             let chunk_handle = chunk.get_vector_handle_at(i);
@@ -344,29 +282,11 @@ impl ChildrenMut<'_> {
     }
 }
 
-/// A non-owning view of a DuckDB data chunk.
-///
-/// Provides vector access for both owned [`DataChunk`] values and borrowed
-/// callback chunks. Vectors borrowed from this view cannot outlive it.
-#[derive(AsRaw)]
-pub struct DataChunkRef<'a> {
-    pub(crate) handle: ffi::duckdb_v2_data_chunk_handle,
-    vectors: VectorCollection,
-    _marker: std::marker::PhantomData<&'a ()>,
-}
-
-impl std::fmt::Debug for DataChunkRef<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DataChunkRef")
-            .field("handle", &self.handle)
-            .finish_non_exhaustive()
-    }
-}
-
 /// A columnar batch whose vectors share one row count.
 ///
-/// Chunks may be returned by queries and callbacks or created with
-/// [`DataChunk::create`]. Vectors borrow the chunk and cannot outlive it.
+/// Chunks returned by queries or made with [`DataChunk::create`] or [`DataChunk::copy`] are
+/// owned. Callbacks that fill a chunk DuckDB owns receive it as `&mut DataChunk`. Vectors
+/// borrow the chunk and cannot outlive it.
 ///
 /// # Example
 /// ```
@@ -392,39 +312,87 @@ impl std::fmt::Debug for DataChunkRef<'_> {
 /// # }
 /// ```
 ///
-/// Only copies return `DataChunk<'static>`; [`Self::create`] borrows its link,
-/// and [`VectorCollection::to_data_chunk`] borrows its link and source for `'a`.
+/// The lifetime is `'static` unless the chunk borrows storage it does not own: a callback's
+/// output, a [`ColumnDataCollectionScan`](crate::column_data_collection::ColumnDataCollectionScan)
+/// chunk, or [`VectorCollection::to_data_chunk`].
 ///
-/// The inner [`DataChunkRef`] is only reachable by shared reference, so it
-/// cannot be swapped away from the chunk that owns and keeps it alive:
-///
-/// ```compile_fail,E0596
-/// # use duckdb_neo::{DuckDBType, data_chunk::DataChunk, environment::{Environment, StorageLocation}};
-/// # fn main() -> duckdb_neo::Result<()> {
-/// # let env = Environment::new()?;
-/// # let conn = env.open(StorageLocation::InMemory)?.connect()?;
-/// let mut a = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
-/// let mut b = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
-/// std::mem::swap(&mut *a, &mut *b);
-/// # Ok(())
-/// # }
-/// ```
-///
-/// ```compile_fail,E0614
-/// # use duckdb_neo::data_chunk::DataChunk;
-/// fn raw_handle(chunk: DataChunk<'_>) {
-///     let raw = **chunk;
-/// }
-/// ```
-#[derive(Debug)]
+/// Swapping a borrowed chunk with another only swaps the Rust values; DuckDB keeps using the
+/// chunk it lent, and each chunk is still destroyed only by its owner.
+#[derive(AsRaw)]
 pub struct DataChunk<'a> {
-    pub(crate) chunk: DataChunkRef<'a>,
+    pub(crate) handle: ffi::duckdb_v2_data_chunk_handle,
+    vectors: VectorCollection,
+    /// `None` for a borrowed chunk. Destroying through a field, not a `Drop` impl on the chunk,
+    /// lets a borrowed chunk's borrow end at its last use.
+    owner: Option<ChunkOwner>,
+    _marker: std::marker::PhantomData<&'a ()>,
+}
+
+struct ChunkOwner {
+    handle: ffi::duckdb_v2_data_chunk_handle,
     /// Keeps the instance behind a connection allocator alive; dropped after the chunk is destroyed.
     instance: Option<KeepAlive>,
 }
 
-impl<'a> DataChunkRef<'a> {
+impl Drop for ChunkOwner {
+    fn drop(&mut self) {
+        check_api_call_no_err!(ffi::duckdb_v2_data_chunk_destroy, &mut self.handle).unwrap();
+    }
+}
+
+impl std::fmt::Debug for DataChunk<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DataChunk")
+            .field("handle", &self.handle)
+            .field("owned", &self.owner.is_some())
+            .finish_non_exhaustive()
+    }
+}
+
+impl DataChunk<'static> {
+    /// Create an empty chunk; with `writable`, call [`Vector::set_size`] before writing rows.
+    /// Without it, vectors only accept storage references through unsafe [`Vector::reference`].
+    ///
+    /// A chunk created through a [`Connection`](crate::connection::Connection) or
+    /// [`Instance`](crate::instance::Instance) keeps its instance alive. One created through a
+    /// [`Context`](crate::connection::Context) may be kept in callback state, such as bind data,
+    /// but must not outlive the instance, for example in a `static`.
+    #[allow(private_bounds)]
+    pub fn create<C: HasFactory + InstanceKeepAlive>(
+        link: &C,
+        types: impl AsRef<[LogicalType]>,
+        writable: bool,
+    ) -> Result<Self> {
+        Ok(Self::allocate(link.factory()?, types.as_ref(), writable)?.keep_alive(link))
+    }
+
+    /// Create a chunk without a keep-alive; the caller must not let it outlive the factory's instance.
+    pub(crate) fn allocate(factory: &Factory, types: &[LogicalType], writable: bool) -> Result<Self> {
+        let type_handles = types.iter().map(|lt| lt.handle).collect::<Vec<_>>();
+        let handle = check_api_call!(
+            ffi::duckdb_v2_data_chunk_create,
+            factory.raw(),
+            type_handles.as_ptr(),
+            type_handles.len() as u64,
+            RET
+        )?;
+        Self::new(handle, writable)
+    }
+}
+
+impl<'a> DataChunk<'a> {
+    /// Take ownership of `handle`, destroying it if wrapping fails.
     pub(crate) fn new(handle: ffi::duckdb_v2_data_chunk_handle, is_writable: bool) -> Result<Self> {
+        let owner = ChunkOwner { handle, instance: None };
+        Self::wrap(handle, is_writable, Some(owner))
+    }
+
+    /// Borrow `handle`, which its owner keeps alive and destroys.
+    pub(crate) fn borrowed(handle: ffi::duckdb_v2_data_chunk_handle, is_writable: bool) -> Result<Self> {
+        Self::wrap(handle, is_writable, None)
+    }
+
+    fn wrap(handle: ffi::duckdb_v2_data_chunk_handle, is_writable: bool, owner: Option<ChunkOwner>) -> Result<Self> {
         let count: ffi::idx_t = check_api_call!(ffi::duckdb_v2_data_chunk_get_vector_count, handle, RET)?;
         let mut handles = Vec::with_capacity(count as usize);
         for index in 0..count {
@@ -444,8 +412,16 @@ impl<'a> DataChunkRef<'a> {
         Ok(Self {
             handle,
             vectors: VectorCollection::new(handles, access, RowCount::Chunk(handle)),
+            owner,
             _marker: std::marker::PhantomData,
         })
+    }
+
+    fn keep_alive(mut self, link: &impl InstanceKeepAlive) -> Self {
+        if let Some(owner) = &mut self.owner {
+            owner.instance = link.keep_alive();
+        }
+        self
     }
 
     /// Return the maximum number of rows the chunk can hold.
@@ -532,87 +508,30 @@ impl<'a> DataChunkRef<'a> {
         self.vectors.handles[index]
     }
 
-    /// Deep-copy this chunk into a new, writable chunk owned by `link`'s connection or context.
+    /// Drop cached views after DuckDB changed the chunk's vectors.
+    pub(crate) fn evict_cached(&mut self) {
+        self.vectors.evict_all();
+    }
+
+    /// Deep-copy this chunk into a new, writable chunk owned by the caller.
     ///
-    /// A copy made through a [`Connection`] keeps its instance alive. A copy made through a [`Context`]
-    /// may be kept in callback state but must not outlive the instance, for example in a `static`.
+    /// The copy keeps its instance alive under the same rules as [`DataChunk::create`].
     #[allow(private_bounds)]
-    pub fn copy<C: DataChunkLink>(&self, link: &C) -> Result<DataChunk<'static>> {
-        link.copy_data_chunk(self)
-    }
-}
-
-impl<'a> DataChunk<'a> {
-    pub(crate) fn new(handle: ffi::duckdb_v2_data_chunk_handle, is_writable: bool) -> Result<Self> {
-        let chunk = match DataChunkRef::new(handle, is_writable) {
-            Ok(chunk) => chunk,
-            Err(err) => {
-                let mut handle = handle;
-                let _ = check_api_call_no_err!(ffi::duckdb_v2_data_chunk_destroy, &mut handle);
-                return Err(err);
-            }
-        };
-        Ok(Self { chunk, instance: None })
+    pub fn copy<C: HasFactory + InstanceKeepAlive>(&self, link: &C) -> Result<DataChunk<'static>> {
+        let handle = check_api_call!(ffi::duckdb_v2_data_chunk_copy, link.factory()?.raw(), self.handle, RET)?;
+        Ok(DataChunk::new(handle, true)?.keep_alive(link))
     }
 
-    fn keep_alive(mut self, link: &impl InstanceKeepAlive) -> Self {
-        self.instance = link.keep_alive();
-        self
-    }
-
-    /// Create an empty chunk; with `writable`, call [`Vector::set_size`] before writing rows.
-    /// Without it, vectors only accept storage references through unsafe [`Vector::reference`].
-    pub fn create<C: HasFactory>(link: &'a C, types: impl AsRef<[LogicalType]>, writable: bool) -> Result<Self> {
-        let types = types.as_ref();
-        let len = types.len();
-        let type_handles = types
-            .iter()
-            .map(|lt| lt.handle)
-            .collect::<Vec<ffi::duckdb_v2_logical_type_handle>>();
-
-        check_api_call!(
-            ffi::duckdb_v2_data_chunk_create,
-            link.factory()?.raw(),
-            type_handles.as_ptr(),
-            len as u64,
-            RET
-        )
-        .map(|handle| DataChunk::new(handle, writable))?
-    }
-
-    /// See [`DataChunkRef::get_vector_at_mut`].
-    pub fn get_vector_at_mut<T: NativeElement>(&mut self, index: usize) -> Result<Vector<'_, T>> {
-        self.chunk.get_vector_at_mut(index)
-    }
-
-    /// See [`DataChunkRef::get_vector_array_mut`].
-    pub fn get_vector_array_mut<const N: usize>(&mut self, indices: [usize; N]) -> Result<[Vector<'_, Unknown>; N]> {
-        self.chunk.get_vector_array_mut(indices)
-    }
-
-    /// Reset the row count to zero and drop cached views, preserving writability.
+    /// Empty the chunk: the row count becomes 0 and every vector gets its own empty flat buffer again.
+    /// Writability is kept. On a borrowed chunk, such as a callback's output, this discards its rows.
     pub fn clear(&mut self) -> Result<()> {
         self.evict_cached();
         check_api_call!(ffi::duckdb_v2_data_chunk_clear, self.handle)
     }
 }
 
-impl Drop for DataChunk<'_> {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_data_chunk_destroy, &mut self.chunk.handle).unwrap();
-    }
-}
-
-impl<'a> Deref for DataChunk<'a> {
-    type Target = DataChunkRef<'a>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.chunk
-    }
-}
-
-// SAFETY: owned chunks have no thread affinity and their allocators free thread-safely.
-// Borrowed chunks keep their source collection exclusive through the mutable borrow.
+// SAFETY: chunks have no thread affinity and their allocators free thread-safely. A borrowed
+// chunk is exclusive to its holder for its lifetime, as its lender does not touch it meanwhile.
 unsafe impl Send for DataChunk<'_> {}
 
 #[cfg(test)]
@@ -640,11 +559,23 @@ mod tests {
         assert_eq!(data_chunk.row_count()?, 0);
         assert_eq!(data_chunk.col_count(), 1);
         assert_eq!(data_chunk.capacity()?, 2048);
-        // SAFETY: both handles are borrowed while the chunk is alive and are never destroyed.
-        assert_eq!(unsafe { crate::AsRaw::get_raw(&*data_chunk) }, data_chunk.chunk.handle);
         // SAFETY: this only compares the borrowed handle and does not mutate the chunk.
-        assert_eq!(unsafe { data_chunk.get_raw() }, data_chunk.chunk.handle);
+        assert_eq!(unsafe { data_chunk.get_raw() }, data_chunk.handle);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_created_chunk_outlives_its_connection() -> crate::Result<()> {
+        let mut chunk = {
+            let env = Environment::new()?;
+            let conn = env.open(StorageLocation::InMemory)?.connect()?;
+            DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?
+        };
+        let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
+        vector.set_size(1)?;
+        vector.writer()?.set(0, &7)?;
+        assert_eq!(chunk.get_vector_at::<i32>(0)?.reader()?.get(0)?, Some(&7));
         Ok(())
     }
 

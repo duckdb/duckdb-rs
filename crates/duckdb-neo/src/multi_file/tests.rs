@@ -12,7 +12,7 @@ use crate::{
     DuckDBType, Parameters, Result, ToValue,
     bind_arguments::BindArguments,
     connection::{Connection, Context, SettingScope},
-    data_chunk::DataChunkRef,
+    data_chunk::DataChunk,
     environment::{Environment, StorageLocation},
     error::Error,
     file::{FileBuilder, FileSystem},
@@ -116,7 +116,7 @@ impl TableFunctionCallbacks for KvReader {
         bind_data: &Self::BindData,
         local_state: Option<&mut Self::LocalState>,
         _global_state: Option<&Self::GlobalState>,
-        mut output: DataChunkRef<'_>,
+        output: &mut DataChunk<'_>,
         column_info: ExecColumnInfo<'_>,
     ) -> Result<()> {
         // A batch is produced in one go; the empty chunk after it ends the batch.

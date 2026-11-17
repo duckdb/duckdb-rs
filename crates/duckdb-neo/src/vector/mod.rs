@@ -19,7 +19,7 @@
 //! [`Vector`] carries only its chunk lifetime and logical element type. Storage
 //! representation and writability remain runtime properties reported by DuckDB.
 //!
-//! A column returned by [`crate::data_chunk::DataChunkRef::get_vector_at`] is
+//! A column returned by [`crate::data_chunk::DataChunk::get_vector_at`] is
 //! narrowed to its logical type before reading:
 //!
 //! ```
@@ -545,7 +545,7 @@ impl<'a, T: NativeElement> Vector<'a, T> {
     /// Explicitly materialize the vector as flat storage.
     ///
     /// The vector must be borrowed mutably, e.g. through
-    /// [`crate::data_chunk::DataChunkRef::get_vector_at_mut`], since flattening
+    /// [`crate::data_chunk::DataChunk::get_vector_at_mut`], since flattening
     /// replaces storage that other wrappers could still reference.
     pub fn flatten(&mut self) -> Result<()> {
         if self.kind == StorageKind::Flat {

@@ -24,7 +24,7 @@ use crate::{
     },
     check_api_call,
     connection::{Context, FFILink},
-    data_chunk::DataChunkRef,
+    data_chunk::DataChunk,
     expression::Expression,
     handles::{TableFunctionBuilderHandle, TableFunctionBuilderLink},
     logical_type::LogicalType,
@@ -136,7 +136,7 @@ fn exec_callback<T: TableFunctionCallbacks>(
     let global_state = get_global_state!(ffi::duckdb_v2_table_function_exec_get_global_state, info);
     let local_state = get_local_state!(ffi::duckdb_v2_table_function_exec_get_local_state, info);
 
-    let output_chunk = DataChunkRef::new(
+    let mut output_chunk = DataChunk::borrowed(
         check_api_call!(ffi::duckdb_v2_table_function_exec_get_output_chunk, info, RET)?,
         true,
     )?;
@@ -147,7 +147,7 @@ fn exec_callback<T: TableFunctionCallbacks>(
         bind_data,
         local_state,
         global_state,
-        output_chunk,
+        &mut output_chunk,
         ExecColumnInfo { handle: &info },
     )?;
 
@@ -792,7 +792,7 @@ pub trait TableFunctionCallbacks: Send + Sync + 'static {
         bind_data: &Self::BindData,
         local_state: Option<&mut Self::LocalState>,
         global_state: Option<&Self::GlobalState>,
-        output: DataChunkRef<'_>,
+        output: &mut DataChunk<'_>,
         column_info: ExecColumnInfo<'_>,
     ) -> Result<()>;
 
