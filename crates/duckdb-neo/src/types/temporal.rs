@@ -246,6 +246,28 @@ unsafe impl WritableNativeElement for IntervalValue {
     }
 }
 
+#[cfg(any(feature = "chrono", feature = "jiff"))]
+fn precision_error() -> crate::Error {
+    crate::Error::invalid_input("timestamp precision cannot be represented exactly")
+}
+
+#[cfg(any(feature = "chrono", feature = "jiff"))]
+fn checked_timestamp_units(nanos: i128, units_per_second: i64) -> Result<i64> {
+    let nanos_per_unit = i128::from(1_000_000_000 / units_per_second);
+    if nanos % nanos_per_unit != 0 {
+        return Err(precision_error());
+    }
+    let units =
+        i64::try_from(nanos / nanos_per_unit).map_err(|_| crate::Error::invalid_input("timestamp is out of range"))?;
+    if units == i64::MAX || units == -i64::MAX {
+        return Err(crate::Error::invalid_input("timestamp is reserved for infinity"));
+    }
+    Ok(units)
+}
+
+#[cfg(feature = "jiff")]
+mod jiff;
+
 #[cfg(feature = "chrono")]
 mod external {
     use ::chrono::Timelike;
@@ -286,18 +308,13 @@ mod external {
     }
 
     fn checked_timestamp_units(seconds: i64, nanos: u32, units_per_second: i64) -> crate::Result<i64> {
-        let nanos_per_unit = 1_000_000_000 / units_per_second;
-        if nanos >= 1_000_000_000 || i64::from(nanos) % nanos_per_unit != 0 {
-            return Err(crate::Error::invalid_input(
-                "timestamp precision cannot be represented exactly",
-            ));
+        if nanos >= 1_000_000_000 {
+            return Err(super::precision_error());
         }
-        let units = i128::from(seconds) * i128::from(units_per_second) + i128::from(nanos) / i128::from(nanos_per_unit);
-        let units = i64::try_from(units).map_err(|_| crate::Error::invalid_input("timestamp is out of range"))?;
-        if units == i64::MAX || units == -i64::MAX {
-            return Err(crate::Error::invalid_input("timestamp is reserved for infinity"));
-        }
-        Ok(units)
+        super::checked_timestamp_units(
+            i128::from(seconds) * 1_000_000_000 + i128::from(nanos),
+            units_per_second,
+        )
     }
 
     impl TryFrom<::chrono::NaiveTime> for TimeValue {
