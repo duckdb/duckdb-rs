@@ -10,7 +10,7 @@ use crate::{
     DuckDBType, Parameters, Result, ToValue,
     bind_arguments::BindArguments,
     connection::{Context, SettingScope},
-    data_chunk::DataChunkRef,
+    data_chunk::DataChunk,
     environment::{Environment, StorageLocation},
     error::Error,
     expression::ExpressionType,
@@ -135,7 +135,7 @@ fn test_table_function() -> Result<()> {
             bind_data: &Self::BindData,
             local_state: Option<&mut Self::LocalState>,
             global_state: Option<&Self::GlobalState>,
-            mut output: DataChunkRef<'_>,
+            output: &mut DataChunk<'_>,
             _column_info: ExecColumnInfo<'_>,
         ) -> Result<()> {
             let mut output_vector = output.get_vector_at_mut::<i32>(0)?;
@@ -337,7 +337,7 @@ fn test_table_function_partitioning() -> Result<()> {
             _bind_data: &Self::BindData,
             local_state: Option<&mut Self::LocalState>,
             global_state: Option<&Self::GlobalState>,
-            mut output: DataChunkRef<'_>,
+            output: &mut DataChunk<'_>,
             _column_info: ExecColumnInfo<'_>,
         ) -> Result<()> {
             let batch_index = global_state.unwrap().fetch_add(1, Ordering::SeqCst);
@@ -624,7 +624,7 @@ impl TableFunctionCallbacks for ProjectionScan {
         bind_data: &Self::BindData,
         local_state: Option<&mut Self::LocalState>,
         global_state: Option<&Self::GlobalState>,
-        mut output: DataChunkRef<'_>,
+        output: &mut DataChunk<'_>,
         columns: ExecColumnInfo<'_>,
     ) -> Result<()> {
         assert_eq!(global_state.is_some(), self.states);
@@ -793,7 +793,7 @@ impl TableFunctionCallbacks for BatchedRange {
         _bind_data: &Self::BindData,
         local_state: Option<&mut Self::LocalState>,
         _global_state: Option<&Self::GlobalState>,
-        mut output: DataChunkRef<'_>,
+        output: &mut DataChunk<'_>,
         _column_info: ExecColumnInfo<'_>,
     ) -> Result<()> {
         self.exec_calls.fetch_add(1, Ordering::SeqCst);
@@ -919,7 +919,7 @@ fn test_table_function_list_output_child_starts_empty() -> Result<()> {
             _: &(),
             _: Option<&mut ()>,
             global_state: Option<&AtomicUsize>,
-            mut output: DataChunkRef<'_>,
+            output: &mut DataChunk<'_>,
             _: ExecColumnInfo<'_>,
         ) -> Result<()> {
             let call = global_state.unwrap().fetch_add(1, Ordering::SeqCst);
@@ -949,5 +949,89 @@ fn test_table_function_list_output_child_starts_empty() -> Result<()> {
     assert_eq!(chunk.get_vector_at::<i64>(0)?.reader()?.get(0)?, Some(&expected));
     let entries = entries.lock().unwrap().clone();
     assert!(entries.iter().all(|&entry| entry == (0, 0)), "{entries:?}");
+    Ok(())
+}
+
+#[test]
+fn test_table_function_bind_data_chunk_and_swapped_output() -> Result<()> {
+    struct CachedRows;
+
+    impl TableFunctionCallbacks for CachedRows {
+        type BindData = Mutex<DataChunk<'static>>;
+        type GlobalState = AtomicBool;
+        type LocalState = ();
+
+        fn bind(
+            &self,
+            context: &Context,
+            _: BindArguments<'_>,
+            bind_handle: BindFunctionHandle<'_>,
+        ) -> Result<Self::BindData> {
+            bind_handle.add_result_column("v", &i32::logical_type(context)?)?;
+            let mut rows = DataChunk::create(context, [i32::logical_type(context)?], true)?;
+            let mut vector = rows.get_vector_at_mut::<i32>(0)?;
+            vector.set_size(3)?;
+            for row in 0..3 {
+                vector.writer()?.set(row, &(row as i32 + 1))?;
+            }
+            Ok(Mutex::new(rows))
+        }
+
+        fn init_global_state(
+            &self,
+            _: &Context,
+            _: &Self::BindData,
+            _: InitColumnData<'_>,
+        ) -> Result<Option<AtomicBool>> {
+            Ok(Some(AtomicBool::new(false)))
+        }
+
+        fn max_threads(
+            &self,
+            _: &Context,
+            _: &Self::BindData,
+            _: Option<&AtomicBool>,
+            _: InitColumnData<'_>,
+        ) -> Result<Option<NonZeroUsize>> {
+            Ok(NonZeroUsize::new(1))
+        }
+
+        fn exec(
+            &self,
+            context: &Context,
+            bind_data: &Self::BindData,
+            _: Option<&mut ()>,
+            global_state: Option<&AtomicBool>,
+            output: &mut DataChunk<'_>,
+            _: ExecColumnInfo<'_>,
+        ) -> Result<()> {
+            if global_state.unwrap().swap(true, Ordering::SeqCst) {
+                return Ok(());
+            }
+            // DuckDB keeps reading the chunk it lent, wherever its view was swapped to.
+            let mut lent = DataChunk::create(context, [i32::logical_type(context)?], true)?;
+            std::mem::swap(output, &mut lent);
+            output.get_vector_at_mut::<i32>(0)?.set_size(1)?;
+
+            let rows = bind_data.lock().unwrap();
+            let source = rows.get_vector_at::<i32>(0)?.reader()?;
+            let mut target = lent.get_vector_at_mut::<i32>(0)?;
+            target.set_size(source.len())?;
+            for row in 0..source.len() {
+                target.writer()?.set_option(row, source.get(row)?)?;
+            }
+            Ok(())
+        }
+    }
+
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    TableFunctionBuilder::new("cached_rows", SignatureBuilder::new(), CachedRows).register(&conn)?;
+    let mut result = conn.query(
+        "SELECT list(v ORDER BY v)::VARCHAR FROM cached_rows()",
+        Parameters::None,
+    )?;
+    let chunk = result.next_chunk()?.unwrap();
+    assert_eq!(chunk.get_vector_at::<String>(0)?.reader()?.get(0)?, Some("[1, 2, 3]"));
     Ok(())
 }

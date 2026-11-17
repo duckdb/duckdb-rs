@@ -8,7 +8,7 @@ use crate::{
         CopyFromCardinality, CopyFromFunctionCallbacks, CopyFunctionBuilder, CopyToFunctionCallbacks, CopyToStatistics,
         CopyToStatisticsCallbacks,
     },
-    data_chunk::{DataChunk, DataChunkRef},
+    data_chunk::DataChunk,
     environment::{Environment, StorageLocation},
     file::{File, FileBuilder, FileSystem},
     logical_type::LogicalTypeID,
@@ -65,7 +65,7 @@ impl CopyToFunctionCallbacks for RapidCopy {
         let mut scanner = input.to_scan(context)?;
         let mut result = Vec::new();
         let mut to_append = ColumnDataCollection::new(context, [i64::logical_type(context)?])?.to_append()?;
-        while let Some(mut chunk) = scanner.next_chunk()? {
+        while let Some(mut chunk) = scanner.next_chunk_mut()? {
             to_append.append(&mut chunk)?;
         }
 
@@ -431,7 +431,7 @@ impl CopyFromFunctionCallbacks for RangeSource {
         _bind_data: &Self::BindData,
         local_state: Option<&mut Self::LocalState>,
         _global_state: Option<&Self::GlobalState>,
-        mut output: DataChunkRef<'_>,
+        output: &mut DataChunk<'_>,
     ) -> crate::Result<()> {
         let produced = local_state.expect("local state must be set");
         let remaining = self.total_rows.saturating_sub(*produced);
@@ -629,7 +629,7 @@ impl CopyFromFunctionCallbacks for EchoFormat {
         _bind_data: &Self::BindData,
         local_state: Option<&mut Self::LocalState>,
         _global_state: Option<&Self::GlobalState>,
-        mut output: DataChunkRef<'_>,
+        output: &mut DataChunk<'_>,
     ) -> crate::Result<()> {
         let produced = local_state.expect("local state must be set");
         let batch = if *produced == 0 { 2 } else { 0 };

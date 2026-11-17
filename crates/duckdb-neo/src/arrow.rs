@@ -12,7 +12,7 @@ use std::mem::ManuallyDrop;
 use crate::{
     DropHandle, Result, check_api_call,
     connection::{Connection, Context},
-    data_chunk::{DataChunk, DataChunkRef},
+    data_chunk::DataChunk,
     ffi,
     logical_type::LogicalType,
     raw::RawExt,
@@ -185,7 +185,7 @@ impl<'ctx> ArrowExporter<'ctx> {
     ///
     /// Accepts an owned [`DataChunk`] or a chunk borrowed from a callback; the
     /// chunk is only read.
-    pub fn append(&mut self, chunk: &DataChunkRef<'_>, flush: bool) -> Result<()> {
+    pub fn append(&mut self, chunk: &DataChunk<'_>, flush: bool) -> Result<()> {
         // With `consume` false DuckDB leaves the handle untouched, so a local copy suffices.
         let mut handle = chunk.handle;
         check_api_call!(
