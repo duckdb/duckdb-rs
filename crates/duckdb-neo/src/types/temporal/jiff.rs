@@ -3,16 +3,12 @@ use ::jiff::{
     civil::{Date, DateTime, Time},
 };
 
-use super::{checked_timestamp_units, precision_error};
+use super::helpers::{checked_timestamp_units, finite, precision_error};
 use crate::types::{DateValue, IntervalValue, TimeNsValue, TimeValue};
 use crate::types::{TimestampMsValue, TimestampNsValue, TimestampSecValue, TimestampValue};
 use crate::types::{TimestampTzNsValue, TimestampTzValue};
 
 const UNIX_EPOCH: DateTime = DateTime::constant(1970, 1, 1, 0, 0, 0, 0);
-
-fn finite(units: i64) -> Option<i64> {
-    (units != i64::MAX && units != -i64::MAX).then_some(units)
-}
 
 /// Returns `None` for infinity or dates outside jiff's range.
 impl From<DateValue> for Option<Date> {
