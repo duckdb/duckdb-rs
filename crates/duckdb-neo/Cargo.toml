@@ -27,6 +27,7 @@ default = [
 ]
 # Features
 chrono = ["dep:chrono"]
+jiff = ["dep:jiff"]
 r2d2 = ["dep:r2d2"]
 uuid = ["dep:uuid"]
 rust_decimal = ["dep:rust_decimal"]
@@ -60,6 +61,7 @@ build-extension-static = []
 [dependencies]
 chrono = { workspace = true, optional = true }
 duckdb-loadable-macros = { workspace = true, features = ["neo"] }
+jiff = { workspace = true, optional = true }
 libduckdb-sys = { workspace = true, features = ["capi-v2"] }
 paste = { workspace = true }
 r2d2 = { workspace = true, optional = true }
@@ -74,7 +76,7 @@ rustyline = { version = "15", features = ["case_insensitive_history_search"] }
 tempfile = { workspace = true }
 
 [package.metadata.docs.rs]
-features = ["chrono", "r2d2", "rust_decimal", "uuid"]
+features = ["chrono", "jiff", "r2d2", "rust_decimal", "uuid"]
 all-features = false
 no-default-features = true
 default-target = "x86_64-unknown-linux-gnu"

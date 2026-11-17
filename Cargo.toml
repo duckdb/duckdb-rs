@@ -41,6 +41,7 @@ fallible-iterator = "0.3"
 fallible-streaming-iterator = "0.1"
 flate2 = "1.0"
 hashlink = "0.10"
+jiff = { version = "1.0", default-features = false, features = ["std"] }
 libc = "0.2"
 num = { version = "0.4", default-features = false }
 num-integer = "0.1.46"
