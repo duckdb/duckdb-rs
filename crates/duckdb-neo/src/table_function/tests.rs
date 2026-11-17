@@ -53,10 +53,11 @@ fn test_table_function() -> Result<()> {
             arguments: BindArguments<'_>,
             bind_handle: BindFunctionHandle<'_>,
         ) -> Result<Self::BindData> {
-            let arg = &arguments.arg(0)?;
+            let arg = arguments.arg(0)?;
+            let value = arg.value()?.unwrap();
 
             assert_eq!(arg.logical_type()?.id()?, LogicalTypeID::Integer);
-            assert_eq!(arg.value()?.as_ref().unwrap().dbg_string()?, "10");
+            assert_eq!(value.dbg_string()?, "10");
 
             bind_handle.add_result_column("out", &i32::logical_type(context)?)?;
 
@@ -64,7 +65,7 @@ fn test_table_function() -> Result<()> {
             bind_handle.set_order(OrderPreservation::None)?;
 
             Ok(BindData {
-                size: arg.value()?.as_ref().unwrap().get::<i32>()?.unwrap() as usize,
+                size: value.get::<i32>()?.unwrap() as usize,
                 accepted_threshold: Mutex::new(None),
             })
         }
@@ -568,7 +569,7 @@ impl TableFunctionCallbacks for ProjectionScan {
         arguments: BindArguments<'_>,
         bind_handle: BindFunctionHandle<'_>,
     ) -> Result<Self::BindData> {
-        let rows = arguments.arg(0)?.get_constant_value::<i32>()?.unwrap_or(0);
+        let rows = arguments.arg(0)?.resolved_value::<i32>()?.flatten().unwrap_or(0);
 
         let logical_type = i32::logical_type(context)?;
         bind_handle.add_result_column("first", &logical_type)?;
@@ -750,10 +751,8 @@ impl TableFunctionCallbacks for BatchedRange {
         bind_handle: BindFunctionHandle<'_>,
     ) -> Result<Self::BindData> {
         let argument = |index: usize| -> Result<Option<usize>> {
-            arguments
-                .arg(index)?
-                .get_constant_value::<i32>()
-                .map(|x| x.map(|x| x as usize))
+            let value = arguments.arg(index)?.resolved_value::<i32>()?;
+            Ok(value.flatten().map(|x| x as usize))
         };
         bind_handle.add_result_column("i", &i64::logical_type(context)?)?;
         Ok((argument(0)?.unwrap(), argument(1)?))

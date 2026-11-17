@@ -61,9 +61,9 @@ impl TableFunctionCallbacks for KvReader {
     ) -> Result<Self::BindData> {
         let path = arguments
             .arg(0)?
-            .get_constant_value::<String>()
-            .transpose()
-            .ok_or_else(|| Error::invalid_input("expected a file path"))??;
+            .resolved_value::<String>()?
+            .flatten()
+            .ok_or_else(|| Error::invalid_input("expected a file path"))?;
 
         let fs = FileSystem::new(context)?;
         let file = FileBuilder::new(&fs, &path)?.read().open()?;

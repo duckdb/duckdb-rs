@@ -64,9 +64,9 @@ impl<T: Display + Send + Sync + 'static> AggregateCallbacks for BasicAggregate<T
 
         result_type_handle.override_return(LogicalType::from_text(context, "VARCHAR")?)?;
 
-        for index in 0..arguments.len()? {
-            assert_eq!(arguments.arg(index)?.logical_type()?, i32::logical_type(context)?);
-            assert!(arguments.arg(index)?.value()?.is_none());
+        for arg in arguments.iter()? {
+            assert_eq!(arg.logical_type()?, i32::logical_type(context)?);
+            assert!(arg.value()?.is_none());
         }
 
         bind_data.push(1.2);

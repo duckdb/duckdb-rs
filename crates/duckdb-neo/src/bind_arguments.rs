@@ -72,11 +72,11 @@ impl<'a> BindArguments<'a> {
     /// Find an argument case-insensitively, skipping positional-only parameters.
     /// Return `Ok(None)` if no argument matches the name.
     pub fn arg_by_name(&self, name: &str) -> Result<Option<BindArgument<'_>>> {
-        self.index(name)?.map(|index| self.arg(index)).transpose()
+        self.find(name)?.map(|index| self.arg(index)).transpose()
     }
 
     /// Like [`Self::arg_by_name`], but return the argument's index.
-    pub fn index(&self, name: &str) -> Result<Option<usize>> {
+    pub fn find(&self, name: &str) -> Result<Option<usize>> {
         let mut index: ffi::idx_t = 0;
         let mut found = false;
         check_api_call!(
@@ -90,7 +90,7 @@ impl<'a> BindArguments<'a> {
     }
 
     /// Iterate over every argument in order.
-    pub fn iter(&self) -> Result<impl ExactSizeIterator<Item = BindArgument<'_>>> {
+    pub fn iter(&self) -> Result<impl ExactSizeIterator + DoubleEndedIterator<Item = BindArgument<'_>>> {
         let handle = self.handle;
         Ok((0..self.len()?).map(move |index| BindArgument {
             handle,
@@ -165,16 +165,10 @@ impl BindArgument<'_> {
         }
     }
 
-    /// Fold the argument to a constant and convert it to `T`; SQL NULL is `Ok(None)`.
-    /// Unlike [`Self::value`], a non-constant argument is an error.
-    pub fn get_constant_value<T: FromValue>(&self) -> Result<Option<T>> {
-        match self.value()? {
-            Some(value) => T::from_value(&value),
-            None => Err(Error::invalid_input(format!(
-                "argument {} must be a constant",
-                self.index
-            ))),
-        }
+    /// Like [`Self::value`], but convert the constant to `T`.
+    /// The outer `None` means not constant, the inner `None` means SQL NULL.
+    pub fn resolved_value<T: FromValue>(&self) -> Result<Option<Option<T>>> {
+        self.value()?.map(|value| T::from_value(&value)).transpose()
     }
 }
 
@@ -212,14 +206,14 @@ mod tests {
         let args = arguments
             .iter()?
             .map(|arg| {
-                let value = arg.value()?.map(|value| value.get::<i32>()).transpose()?.flatten();
+                let value = arg.resolved_value::<i32>()?.flatten();
                 Ok((arg.index(), arg.name()?, arg.logical_type()?.id()?, value))
             })
             .collect::<Result<_>>()?;
         let lookups = ["fixed", "args", "NAMED", "extra", "more", "missing"]
             .into_iter()
             .map(|name| {
-                let index = arguments.index(name)?;
+                let index = arguments.find(name)?;
                 assert_eq!(arguments.arg_by_name(name)?.map(|arg| arg.index()), index);
                 Ok((name, index))
             })
@@ -291,7 +285,18 @@ mod tests {
     const KWARGS: &[(&str, i32)] = &[("more", 6), ("extra", 5)];
 
     type Snapshots = Arc<Mutex<Vec<Snapshot>>>;
-    type Constants = Arc<Mutex<Vec<std::result::Result<Option<i32>, DuckDBError>>>>;
+    type Constants = Arc<Mutex<Vec<Option<Option<i32>>>>>;
+
+    // Debug builds of DuckDB verify the plan by binding it again, so one statement may record several binds.
+    fn drain_binds<T: std::fmt::Debug + PartialEq>(log: &Mutex<Vec<T>>) -> T {
+        let mut binds = log.lock().unwrap().drain(..).collect::<Vec<_>>();
+        assert!(!binds.is_empty(), "expected at least one bind");
+        assert!(
+            binds.windows(2).all(|pair| pair[0] == pair[1]),
+            "binds differ: {binds:?}"
+        );
+        binds.swap_remove(0)
+    }
 
     fn connect() -> Result<(Environment, Connection)> {
         let env = Environment::new()?;
@@ -339,7 +344,7 @@ mod tests {
         }
     }
 
-    /// Records each bind's snapshot, plus `get_constant_value` for argument 0.
+    /// Records each bind's snapshot, plus `resolved_value` for argument 0.
     struct ScalarProbe {
         snapshots: Snapshots,
         constants: Constants,
@@ -348,7 +353,7 @@ mod tests {
     impl ScalarBindCallbacks for ScalarProbe {
         fn bind(&self, _context: &Context, arguments: BindArguments<'_>) -> Result<()> {
             self.snapshots.lock().unwrap().push(snapshot(&arguments)?);
-            let constant = arguments.arg(0)?.get_constant_value::<i32>().map_err(|e| e.code);
+            let constant = arguments.arg(0)?.resolved_value::<i32>()?;
             self.constants.lock().unwrap().push(constant);
             Ok(())
         }
@@ -428,13 +433,13 @@ mod tests {
             format!("SELECT probe{}", all_kinds_call(KWARGS, ":=")),
             Parameters::None,
         )?;
-        assert_eq!(*snapshots.lock().unwrap(), [all_kinds_expected(KWARGS)]);
-        assert_eq!(*constants.lock().unwrap(), [Ok(Some(1))]);
+        assert_eq!(drain_binds(&snapshots), all_kinds_expected(KWARGS));
+        assert_eq!(drain_binds(&constants), Some(Some(1)));
         Ok(())
     }
 
     #[test]
-    fn get_constant_value_requires_a_constant() -> Result<()> {
+    fn resolved_value_distinguishes_null_from_non_constant() -> Result<()> {
         let (_env, conn) = connect()?;
         let probe = ScalarProbe {
             snapshots: Snapshots::default(),
@@ -451,8 +456,12 @@ mod tests {
             .register(&conn)?;
 
         conn.execute("SELECT probe(NULL::INTEGER)", Parameters::None)?;
+        assert_eq!(drain_binds(&constants), Some(None));
         conn.execute("SELECT probe(x::INTEGER) FROM range(3) t(x)", Parameters::None)?;
-        assert_eq!(*constants.lock().unwrap(), [Ok(None), Err(DuckDBError::InputInvalid)]);
+        assert_eq!(drain_binds(&constants), None);
+        let statement = conn.parse("SELECT probe(?::INTEGER)")?.next().unwrap()?;
+        statement.prepare(&conn, true)?;
+        assert_eq!(drain_binds(&constants), None);
         Ok(())
     }
 }

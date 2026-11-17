@@ -48,7 +48,7 @@ struct Shift;
 
 impl PragmaQueryCallbacks for Shift {
     fn query(&self, _context: &Context, arguments: BindArguments<'_>) -> Result<String> {
-        let shift_by = arguments.index("shift_by")?.expect("the shift_by argument is present");
+        let shift_by = arguments.find("shift_by")?.expect("the shift_by argument is present");
         let n = constant::<i32>(&arguments, 0)?.unwrap();
         let by = constant::<i32>(&arguments, shift_by)?.unwrap();
         Ok(format!("SELECT {}::INTEGER", n + by))
