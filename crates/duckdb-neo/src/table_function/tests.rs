@@ -964,7 +964,7 @@ fn test_table_function_bind_data_chunk_and_swapped_output() -> Result<()> {
         fn bind(
             &self,
             context: &Context,
-            _: Vec<BindArgument>,
+            _: BindArguments<'_>,
             bind_handle: BindFunctionHandle<'_>,
         ) -> Result<Self::BindData> {
             bind_handle.add_result_column("v", &i32::logical_type(context)?)?;

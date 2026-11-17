@@ -181,7 +181,7 @@ mod tests {
     use crate::{
         DuckDBType, Parameters,
         connection::{Connection, Context},
-        data_chunk::{DataChunkRef, VectorCollection},
+        data_chunk::{DataChunk, VectorCollection},
         enums::FunctionProperty,
         environment::{Environment, StorageLocation},
         logical_type::LogicalTypeID,
@@ -337,7 +337,7 @@ mod tests {
             _: &(),
             _: Option<&mut ()>,
             _: Option<&()>,
-            _: DataChunkRef<'_>,
+            _: &mut DataChunk<'_>,
             _: ExecColumnInfo<'_>,
         ) -> Result<()> {
             Ok(())
