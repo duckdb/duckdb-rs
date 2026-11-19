@@ -283,6 +283,16 @@ impl<'a, T: NativeElement> Vector<'a, T> {
         self.refresh_buffers()
     }
 
+    /// Replace the row count of a vector whose handle does not carry it, e.g. a nested child.
+    ///
+    /// # Safety
+    /// The vector's storage must hold `len` initialized rows.
+    pub(crate) unsafe fn with_len_unchecked(mut self, len: usize) -> Self {
+        self.len = len;
+        self.view.take();
+        self
+    }
+
     pub(crate) fn cast_unchecked<U: NativeElement>(self) -> Vector<'a, U> {
         Vector {
             handle: self.handle,
@@ -348,10 +358,9 @@ impl<'a, T: NativeElement> Vector<'a, T> {
             ffi::DUCKDB_V2_CAST_MODE::DUCKDB_V2_CAST_MODE_TRY,
             RET,
             &mut cast_err
-        );
-        result?;
+        )?;
 
-        if cast_err.is_null() {
+        if cast_err.is_null() && result == true {
             Ok(None)
         } else {
             let error = unsafe { Error::from_code_and_handle(DuckDBError::TypeConversion.into(), &mut cast_err) };
