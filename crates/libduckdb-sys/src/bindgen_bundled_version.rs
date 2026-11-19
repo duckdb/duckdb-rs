@@ -908,7 +908,7 @@ unsafe extern "C" {
     pub fn duckdb_from_date(date: duckdb_date) -> duckdb_date_struct;
 }
 unsafe extern "C" {
-    #[doc = " Re-compose a `duckdb_date` from year, month and date (`duckdb_date_struct`).\n\n history:\n - stable: v0.2.9\n\n @param date The year, month and date stored in a `duckdb_date_struct`.\n @return duckdb_date"]
+    #[doc = " Re-compose a `duckdb_date` from year, month and date (`duckdb_date_struct`).\n\n If the year, month and day do not form a valid date the result will be 0.\n\n history:\n - stable: v0.2.9\n\n @param date The year, month and date stored in a `duckdb_date_struct`.\n @return duckdb_date"]
     pub fn duckdb_to_date(date: duckdb_date_struct) -> duckdb_date;
 }
 unsafe extern "C" {
@@ -936,7 +936,7 @@ unsafe extern "C" {
     pub fn duckdb_from_timestamp(ts: duckdb_timestamp) -> duckdb_timestamp_struct;
 }
 unsafe extern "C" {
-    #[doc = " Re-compose a `duckdb_timestamp` from a duckdb_timestamp_struct.\n\n history:\n - stable: v0.2.9\n\n @param ts The de-composed elements in a `duckdb_timestamp_struct`.\n @return duckdb_timestamp"]
+    #[doc = " Re-compose a `duckdb_timestamp` from a duckdb_timestamp_struct.\n\n If the date is not valid or the timestamp is out of range the result will be 0.\n\n history:\n - stable: v0.2.9\n\n @param ts The de-composed elements in a `duckdb_timestamp_struct`.\n @return duckdb_timestamp"]
     pub fn duckdb_to_timestamp(ts: duckdb_timestamp_struct) -> duckdb_timestamp;
 }
 unsafe extern "C" {

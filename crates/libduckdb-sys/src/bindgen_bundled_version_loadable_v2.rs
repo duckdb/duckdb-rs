@@ -638,6 +638,14 @@ pub struct _duckdb_v2_schema {
 }
 #[doc = " An owned, ordered list of (name, type) fields. Read with schema_get_count and schema_get_field. Destroy via\n schema_destroy."]
 pub type duckdb_v2_schema_handle = *mut _duckdb_v2_schema;
+#[doc = " A borrowed opaque handle to the statistics of an expression or a column. A stats callback receives it for the result\n it describes and for each of its arguments; it is valid only for the duration of that callback.\n\n The statistics of an argument are read-only, and the setters fail on them. The statistics of the result start out\n unknown, with every kind of value possible, and the callback narrows them through the setters. A callback that leaves\n the result unchanged tells the engine nothing."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _duckdb_v2_stats {
+    pub internal_ptr: *mut ::std::os::raw::c_void,
+}
+#[doc = " A borrowed opaque handle to the statistics of an expression or a column. A stats callback receives it for the result\n it describes and for each of its arguments; it is valid only for the duration of that callback.\n\n The statistics of an argument are read-only, and the setters fail on them. The statistics of the result start out\n unknown, with every kind of value possible, and the callback narrows them through the setters. A callback that leaves\n the result unchanged tells the engine nothing."]
+pub type duckdb_v2_stats_handle = *mut _duckdb_v2_stats;
 #[repr(u32)]
 #[non_exhaustive]
 #[doc = "! The lexical class of a token."]
@@ -688,6 +696,14 @@ pub struct _duckdb_v2_aggregate_function_bind_info {
 }
 #[doc = " A borrowed opaque handle to the result of an aggregate function's \"bind\" phase. The \"bind\" callback receives this\n handle next to a `duckdb_v2_function_bind_info_handle`, which gives access to the arguments, the user data and the\n bind data, and can use it to set the return type of the call site being bound."]
 pub type duckdb_v2_aggregate_function_bind_info_handle = *mut _duckdb_v2_aggregate_function_bind_info;
+#[doc = " A borrowed opaque handle to the arguments supplied to an aggregate function during the \"stats\" phase of query\n optimization. The \"stats\" callback receives this handle and can use it to read the statistics of the arguments of the\n call site and narrow the statistics of its result."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _duckdb_v2_aggregate_function_stats_info {
+    pub internal_ptr: *mut ::std::os::raw::c_void,
+}
+#[doc = " A borrowed opaque handle to the arguments supplied to an aggregate function during the \"stats\" phase of query\n optimization. The \"stats\" callback receives this handle and can use it to read the statistics of the arguments of the\n call site and narrow the statistics of its result."]
+pub type duckdb_v2_aggregate_function_stats_info_handle = *mut _duckdb_v2_aggregate_function_stats_info;
 #[doc = " A borrowed opaque handle to the arguments supplied to an aggregate function during the state sizing \"size\" phase. The\n \"size\" callback receives this handle and must use it to report the size of a single aggregate state in bytes."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -740,6 +756,13 @@ pub type duckdb_v2_aggregate_function_bind_callback_fn = ::std::option::Option<
     unsafe extern "C" fn(
         info: duckdb_v2_function_bind_info_handle,
         result: duckdb_v2_aggregate_function_bind_info_handle,
+        context: duckdb_v2_context_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ),
+>;
+pub type duckdb_v2_aggregate_function_stats_callback_fn = ::std::option::Option<
+    unsafe extern "C" fn(
+        info: duckdb_v2_aggregate_function_stats_info_handle,
         context: duckdb_v2_context_handle,
         err: *mut duckdb_v2_error_info_handle,
     ),
@@ -1323,6 +1346,14 @@ pub struct _duckdb_v2_scalar_function_exec_info {
 }
 #[doc = " A borrowed opaque handle to the arguments supplied to a scalar function during the execution \"exec\" phase. The \"exec\"\n callback receives this handle and can use it to e.g. access the input argument vectors, retrieve the number of rows\n to process, and write results to the output vector."]
 pub type duckdb_v2_scalar_function_exec_info_handle = *mut _duckdb_v2_scalar_function_exec_info;
+#[doc = " A borrowed opaque handle to the arguments supplied to a scalar function during the \"stats\" phase of query\n optimization. The \"stats\" callback receives this handle and can use it to read the statistics of the arguments of the\n call site and narrow the statistics of its result."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _duckdb_v2_scalar_function_stats_info {
+    pub internal_ptr: *mut ::std::os::raw::c_void,
+}
+#[doc = " A borrowed opaque handle to the arguments supplied to a scalar function during the \"stats\" phase of query\n optimization. The \"stats\" callback receives this handle and can use it to read the statistics of the arguments of the\n call site and narrow the statistics of its result."]
+pub type duckdb_v2_scalar_function_stats_info_handle = *mut _duckdb_v2_scalar_function_stats_info;
 pub type duckdb_v2_scalar_function_resolve_types_callback_fn = ::std::option::Option<
     unsafe extern "C" fn(
         info: duckdb_v2_function_bind_info_handle,
@@ -1349,6 +1380,13 @@ pub type duckdb_v2_scalar_function_init_callback_fn = ::std::option::Option<
 pub type duckdb_v2_scalar_function_exec_callback_fn = ::std::option::Option<
     unsafe extern "C" fn(
         info: duckdb_v2_scalar_function_exec_info_handle,
+        context: duckdb_v2_context_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ),
+>;
+pub type duckdb_v2_scalar_function_stats_callback_fn = ::std::option::Option<
+    unsafe extern "C" fn(
+        info: duckdb_v2_scalar_function_stats_info_handle,
         context: duckdb_v2_context_handle,
         err: *mut duckdb_v2_error_info_handle,
     ),
@@ -1574,6 +1612,14 @@ pub struct _duckdb_v2_table_function_partition_data_info {
 }
 #[doc = " A borrowed opaque handle to the arguments supplied to a table function during the \"partition data\" phase. The engine\n invokes the callback on the worker thread that just produced a batch of rows, once per batch, only when a downstream\n operator needs to know the batch's ordering position, the values of a set of partitioning columns, or both; the\n handle reports which of those were actually requested and receives the answer."]
 pub type duckdb_v2_table_function_partition_data_info_handle = *mut _duckdb_v2_table_function_partition_data_info;
+#[doc = " A borrowed opaque handle to the arguments supplied to a table function during the \"stats\" phase of query\n optimization. The engine invokes the callback once per column the query reads, and the callback can use the handle to\n narrow the statistics of that column."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _duckdb_v2_table_function_stats_info {
+    pub internal_ptr: *mut ::std::os::raw::c_void,
+}
+#[doc = " A borrowed opaque handle to the arguments supplied to a table function during the \"stats\" phase of query\n optimization. The engine invokes the callback once per column the query reads, and the callback can use the handle to\n narrow the statistics of that column."]
+pub type duckdb_v2_table_function_stats_info_handle = *mut _duckdb_v2_table_function_stats_info;
 #[doc = " A borrowed opaque handle to the arguments supplied to a table function during the \"partitioning\" phase of query\n optimization. The engine invokes the callback once per candidate `GROUP BY` column set, before execution starts, to\n decide whether the scan can feed a partitioned aggregate directly instead of hashing."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -1670,6 +1716,13 @@ pub type duckdb_v2_table_function_claim_batch_callback_fn = ::std::option::Optio
         err: *mut duckdb_v2_error_info_handle,
     ),
 >;
+pub type duckdb_v2_table_function_stats_callback_fn = ::std::option::Option<
+    unsafe extern "C" fn(
+        info: duckdb_v2_table_function_stats_info_handle,
+        context: duckdb_v2_context_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ),
+>;
 pub type duckdb_v2_table_function_get_bind_info_callback_fn = ::std::option::Option<
     unsafe extern "C" fn(
         info: duckdb_v2_table_function_get_bind_info_info_handle,
@@ -1704,6 +1757,161 @@ pub type duckdb_v2_arrow_result_handle = *mut _duckdb_v2_arrow_result;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct duckdb_ext_api_v2 {
+    pub duckdb_v2_aggregate_function_set_stats_callback: ::std::option::Option<
+        unsafe extern "C" fn(
+            function: duckdb_v2_aggregate_function_handle,
+            callback: duckdb_v2_aggregate_function_stats_callback_fn,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_aggregate_function_stats_get_arg_count: ::std::option::Option<
+        unsafe extern "C" fn(
+            info: duckdb_v2_aggregate_function_stats_info_handle,
+            positional_fixed: *mut idx_t,
+            positional_variadic: *mut idx_t,
+            named_fixed: *mut idx_t,
+            named_variadic: *mut idx_t,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_aggregate_function_stats_get_arg_stats: ::std::option::Option<
+        unsafe extern "C" fn(
+            info: duckdb_v2_aggregate_function_stats_info_handle,
+            index: idx_t,
+            stats: *mut duckdb_v2_stats_handle,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_aggregate_function_stats_get_bind_data: ::std::option::Option<
+        unsafe extern "C" fn(
+            info: duckdb_v2_aggregate_function_stats_info_handle,
+            data: *mut *mut ::std::os::raw::c_void,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_aggregate_function_stats_get_result_stats: ::std::option::Option<
+        unsafe extern "C" fn(
+            info: duckdb_v2_aggregate_function_stats_info_handle,
+            stats: *mut duckdb_v2_stats_handle,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_aggregate_function_stats_get_user_data: ::std::option::Option<
+        unsafe extern "C" fn(
+            info: duckdb_v2_aggregate_function_stats_info_handle,
+            data: *mut *mut ::std::os::raw::c_void,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_scalar_function_set_stats_callback: ::std::option::Option<
+        unsafe extern "C" fn(
+            function: duckdb_v2_scalar_function_handle,
+            callback: duckdb_v2_scalar_function_stats_callback_fn,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_scalar_function_stats_get_arg_count: ::std::option::Option<
+        unsafe extern "C" fn(
+            info: duckdb_v2_scalar_function_stats_info_handle,
+            positional_fixed: *mut idx_t,
+            positional_variadic: *mut idx_t,
+            named_fixed: *mut idx_t,
+            named_variadic: *mut idx_t,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_scalar_function_stats_get_arg_stats: ::std::option::Option<
+        unsafe extern "C" fn(
+            info: duckdb_v2_scalar_function_stats_info_handle,
+            index: idx_t,
+            stats: *mut duckdb_v2_stats_handle,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_scalar_function_stats_get_bind_data: ::std::option::Option<
+        unsafe extern "C" fn(
+            info: duckdb_v2_scalar_function_stats_info_handle,
+            data: *mut *mut ::std::os::raw::c_void,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_scalar_function_stats_get_result_stats: ::std::option::Option<
+        unsafe extern "C" fn(
+            info: duckdb_v2_scalar_function_stats_info_handle,
+            stats: *mut duckdb_v2_stats_handle,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_scalar_function_stats_get_user_data: ::std::option::Option<
+        unsafe extern "C" fn(
+            info: duckdb_v2_scalar_function_stats_info_handle,
+            data: *mut *mut ::std::os::raw::c_void,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_stats_can_have_null: ::std::option::Option<
+        unsafe extern "C" fn(
+            stats: duckdb_v2_stats_handle,
+            out: *mut bool,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_stats_can_have_valid: ::std::option::Option<
+        unsafe extern "C" fn(
+            stats: duckdb_v2_stats_handle,
+            out: *mut bool,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_stats_set_can_have_null: ::std::option::Option<
+        unsafe extern "C" fn(
+            stats: duckdb_v2_stats_handle,
+            value: bool,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_stats_set_can_have_valid: ::std::option::Option<
+        unsafe extern "C" fn(
+            stats: duckdb_v2_stats_handle,
+            value: bool,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_table_function_set_stats_callback: ::std::option::Option<
+        unsafe extern "C" fn(
+            function: duckdb_v2_table_function_handle,
+            callback: duckdb_v2_table_function_stats_callback_fn,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_table_function_stats_get_bind_data: ::std::option::Option<
+        unsafe extern "C" fn(
+            info: duckdb_v2_table_function_stats_info_handle,
+            data: *mut *mut ::std::os::raw::c_void,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_table_function_stats_get_column_index: ::std::option::Option<
+        unsafe extern "C" fn(
+            info: duckdb_v2_table_function_stats_info_handle,
+            column_index: *mut idx_t,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_table_function_stats_get_result_stats: ::std::option::Option<
+        unsafe extern "C" fn(
+            info: duckdb_v2_table_function_stats_info_handle,
+            stats: *mut duckdb_v2_stats_handle,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_table_function_stats_get_user_data: ::std::option::Option<
+        unsafe extern "C" fn(
+            info: duckdb_v2_table_function_stats_info_handle,
+            data: *mut *mut ::std::os::raw::c_void,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
     pub duckdb_v2_arena_allocate: ::std::option::Option<
         unsafe extern "C" fn(
             arena: duckdb_v2_arena_handle,
@@ -2110,6 +2318,7 @@ pub struct duckdb_ext_api_v2 {
         unsafe extern "C" fn(
             conn: duckdb_v2_connection_handle,
             sql: *const ::std::os::raw::c_char,
+            apply_invalidation_policy: bool,
             out_iterator: *mut duckdb_v2_statement_iterator_handle,
             err: *mut duckdb_v2_error_info_handle,
         ) -> DUCKDB_V2_ERROR,
@@ -6071,6 +6280,463 @@ pub struct duckdb_ext_api_v2 {
         ) -> DUCKDB_V2_ERROR,
     >,
 }
+static __DUCKDB_V2_AGGREGATE_FUNCTION_SET_STATS_CALLBACK: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_set_stats_callback(
+    function: duckdb_v2_aggregate_function_handle,
+    callback: duckdb_v2_aggregate_function_stats_callback_fn,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_AGGREGATE_FUNCTION_SET_STATS_CALLBACK
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        function: duckdb_v2_aggregate_function_handle,
+        callback: duckdb_v2_aggregate_function_stats_callback_fn,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(function, callback, err)
+}
+
+static __DUCKDB_V2_AGGREGATE_FUNCTION_STATS_GET_ARG_COUNT: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_stats_get_arg_count(
+    info: duckdb_v2_aggregate_function_stats_info_handle,
+    positional_fixed: *mut idx_t,
+    positional_variadic: *mut idx_t,
+    named_fixed: *mut idx_t,
+    named_variadic: *mut idx_t,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_AGGREGATE_FUNCTION_STATS_GET_ARG_COUNT
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_v2_aggregate_function_stats_info_handle,
+        positional_fixed: *mut idx_t,
+        positional_variadic: *mut idx_t,
+        named_fixed: *mut idx_t,
+        named_variadic: *mut idx_t,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(info, positional_fixed, positional_variadic, named_fixed, named_variadic, err)
+}
+
+static __DUCKDB_V2_AGGREGATE_FUNCTION_STATS_GET_ARG_STATS: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_stats_get_arg_stats(
+    info: duckdb_v2_aggregate_function_stats_info_handle,
+    index: idx_t,
+    stats: *mut duckdb_v2_stats_handle,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_AGGREGATE_FUNCTION_STATS_GET_ARG_STATS
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_v2_aggregate_function_stats_info_handle,
+        index: idx_t,
+        stats: *mut duckdb_v2_stats_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(info, index, stats, err)
+}
+
+static __DUCKDB_V2_AGGREGATE_FUNCTION_STATS_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_stats_get_bind_data(
+    info: duckdb_v2_aggregate_function_stats_info_handle,
+    data: *mut *mut ::std::os::raw::c_void,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_AGGREGATE_FUNCTION_STATS_GET_BIND_DATA
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_v2_aggregate_function_stats_info_handle,
+        data: *mut *mut ::std::os::raw::c_void,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(info, data, err)
+}
+
+static __DUCKDB_V2_AGGREGATE_FUNCTION_STATS_GET_RESULT_STATS: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_stats_get_result_stats(
+    info: duckdb_v2_aggregate_function_stats_info_handle,
+    stats: *mut duckdb_v2_stats_handle,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_AGGREGATE_FUNCTION_STATS_GET_RESULT_STATS
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_v2_aggregate_function_stats_info_handle,
+        stats: *mut duckdb_v2_stats_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(info, stats, err)
+}
+
+static __DUCKDB_V2_AGGREGATE_FUNCTION_STATS_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_stats_get_user_data(
+    info: duckdb_v2_aggregate_function_stats_info_handle,
+    data: *mut *mut ::std::os::raw::c_void,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_AGGREGATE_FUNCTION_STATS_GET_USER_DATA
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_v2_aggregate_function_stats_info_handle,
+        data: *mut *mut ::std::os::raw::c_void,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(info, data, err)
+}
+
+static __DUCKDB_V2_SCALAR_FUNCTION_SET_STATS_CALLBACK: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe extern "C" fn duckdb_v2_scalar_function_set_stats_callback(
+    function: duckdb_v2_scalar_function_handle,
+    callback: duckdb_v2_scalar_function_stats_callback_fn,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_SCALAR_FUNCTION_SET_STATS_CALLBACK
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        function: duckdb_v2_scalar_function_handle,
+        callback: duckdb_v2_scalar_function_stats_callback_fn,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(function, callback, err)
+}
+
+static __DUCKDB_V2_SCALAR_FUNCTION_STATS_GET_ARG_COUNT: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe extern "C" fn duckdb_v2_scalar_function_stats_get_arg_count(
+    info: duckdb_v2_scalar_function_stats_info_handle,
+    positional_fixed: *mut idx_t,
+    positional_variadic: *mut idx_t,
+    named_fixed: *mut idx_t,
+    named_variadic: *mut idx_t,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_SCALAR_FUNCTION_STATS_GET_ARG_COUNT
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_v2_scalar_function_stats_info_handle,
+        positional_fixed: *mut idx_t,
+        positional_variadic: *mut idx_t,
+        named_fixed: *mut idx_t,
+        named_variadic: *mut idx_t,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(info, positional_fixed, positional_variadic, named_fixed, named_variadic, err)
+}
+
+static __DUCKDB_V2_SCALAR_FUNCTION_STATS_GET_ARG_STATS: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe extern "C" fn duckdb_v2_scalar_function_stats_get_arg_stats(
+    info: duckdb_v2_scalar_function_stats_info_handle,
+    index: idx_t,
+    stats: *mut duckdb_v2_stats_handle,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_SCALAR_FUNCTION_STATS_GET_ARG_STATS
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_v2_scalar_function_stats_info_handle,
+        index: idx_t,
+        stats: *mut duckdb_v2_stats_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(info, index, stats, err)
+}
+
+static __DUCKDB_V2_SCALAR_FUNCTION_STATS_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe extern "C" fn duckdb_v2_scalar_function_stats_get_bind_data(
+    info: duckdb_v2_scalar_function_stats_info_handle,
+    data: *mut *mut ::std::os::raw::c_void,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_SCALAR_FUNCTION_STATS_GET_BIND_DATA
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_v2_scalar_function_stats_info_handle,
+        data: *mut *mut ::std::os::raw::c_void,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(info, data, err)
+}
+
+static __DUCKDB_V2_SCALAR_FUNCTION_STATS_GET_RESULT_STATS: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe extern "C" fn duckdb_v2_scalar_function_stats_get_result_stats(
+    info: duckdb_v2_scalar_function_stats_info_handle,
+    stats: *mut duckdb_v2_stats_handle,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_SCALAR_FUNCTION_STATS_GET_RESULT_STATS
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_v2_scalar_function_stats_info_handle,
+        stats: *mut duckdb_v2_stats_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(info, stats, err)
+}
+
+static __DUCKDB_V2_SCALAR_FUNCTION_STATS_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe extern "C" fn duckdb_v2_scalar_function_stats_get_user_data(
+    info: duckdb_v2_scalar_function_stats_info_handle,
+    data: *mut *mut ::std::os::raw::c_void,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_SCALAR_FUNCTION_STATS_GET_USER_DATA
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_v2_scalar_function_stats_info_handle,
+        data: *mut *mut ::std::os::raw::c_void,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(info, data, err)
+}
+
+static __DUCKDB_V2_STATS_CAN_HAVE_NULL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe extern "C" fn duckdb_v2_stats_can_have_null(
+    stats: duckdb_v2_stats_handle,
+    out: *mut bool,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_STATS_CAN_HAVE_NULL
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        stats: duckdb_v2_stats_handle,
+        out: *mut bool,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(stats, out, err)
+}
+
+static __DUCKDB_V2_STATS_CAN_HAVE_VALID: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe extern "C" fn duckdb_v2_stats_can_have_valid(
+    stats: duckdb_v2_stats_handle,
+    out: *mut bool,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_STATS_CAN_HAVE_VALID
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        stats: duckdb_v2_stats_handle,
+        out: *mut bool,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(stats, out, err)
+}
+
+static __DUCKDB_V2_STATS_SET_CAN_HAVE_NULL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe extern "C" fn duckdb_v2_stats_set_can_have_null(
+    stats: duckdb_v2_stats_handle,
+    value: bool,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_STATS_SET_CAN_HAVE_NULL
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        stats: duckdb_v2_stats_handle,
+        value: bool,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(stats, value, err)
+}
+
+static __DUCKDB_V2_STATS_SET_CAN_HAVE_VALID: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe extern "C" fn duckdb_v2_stats_set_can_have_valid(
+    stats: duckdb_v2_stats_handle,
+    value: bool,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_STATS_SET_CAN_HAVE_VALID
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        stats: duckdb_v2_stats_handle,
+        value: bool,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(stats, value, err)
+}
+
+static __DUCKDB_V2_TABLE_FUNCTION_SET_STATS_CALLBACK: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe extern "C" fn duckdb_v2_table_function_set_stats_callback(
+    function: duckdb_v2_table_function_handle,
+    callback: duckdb_v2_table_function_stats_callback_fn,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_TABLE_FUNCTION_SET_STATS_CALLBACK
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        function: duckdb_v2_table_function_handle,
+        callback: duckdb_v2_table_function_stats_callback_fn,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(function, callback, err)
+}
+
+static __DUCKDB_V2_TABLE_FUNCTION_STATS_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe extern "C" fn duckdb_v2_table_function_stats_get_bind_data(
+    info: duckdb_v2_table_function_stats_info_handle,
+    data: *mut *mut ::std::os::raw::c_void,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_TABLE_FUNCTION_STATS_GET_BIND_DATA
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_v2_table_function_stats_info_handle,
+        data: *mut *mut ::std::os::raw::c_void,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(info, data, err)
+}
+
+static __DUCKDB_V2_TABLE_FUNCTION_STATS_GET_COLUMN_INDEX: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe extern "C" fn duckdb_v2_table_function_stats_get_column_index(
+    info: duckdb_v2_table_function_stats_info_handle,
+    column_index: *mut idx_t,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_TABLE_FUNCTION_STATS_GET_COLUMN_INDEX
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_v2_table_function_stats_info_handle,
+        column_index: *mut idx_t,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(info, column_index, err)
+}
+
+static __DUCKDB_V2_TABLE_FUNCTION_STATS_GET_RESULT_STATS: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe extern "C" fn duckdb_v2_table_function_stats_get_result_stats(
+    info: duckdb_v2_table_function_stats_info_handle,
+    stats: *mut duckdb_v2_stats_handle,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_TABLE_FUNCTION_STATS_GET_RESULT_STATS
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_v2_table_function_stats_info_handle,
+        stats: *mut duckdb_v2_stats_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(info, stats, err)
+}
+
+static __DUCKDB_V2_TABLE_FUNCTION_STATS_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe extern "C" fn duckdb_v2_table_function_stats_get_user_data(
+    info: duckdb_v2_table_function_stats_info_handle,
+    data: *mut *mut ::std::os::raw::c_void,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_TABLE_FUNCTION_STATS_GET_USER_DATA
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_v2_table_function_stats_info_handle,
+        data: *mut *mut ::std::os::raw::c_void,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(info, data, err)
+}
+
 static __DUCKDB_V2_ARENA_ALLOCATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
@@ -7409,6 +8075,7 @@ static __DUCKDB_V2_PARSE_SQL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::
 pub unsafe extern "C" fn duckdb_v2_parse_sql(
     conn: duckdb_v2_connection_handle,
     sql: *const ::std::os::raw::c_char,
+    apply_invalidation_policy: bool,
     out_iterator: *mut duckdb_v2_statement_iterator_handle,
     err: *mut duckdb_v2_error_info_handle,
 ) -> DUCKDB_V2_ERROR {
@@ -7420,10 +8087,11 @@ pub unsafe extern "C" fn duckdb_v2_parse_sql(
     let fun: unsafe extern "C" fn(
         conn: duckdb_v2_connection_handle,
         sql: *const ::std::os::raw::c_char,
+        apply_invalidation_policy: bool,
         out_iterator: *mut duckdb_v2_statement_iterator_handle,
         err: *mut duckdb_v2_error_info_handle,
     ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
-    (fun)(conn, sql, out_iterator, err)
+    (fun)(conn, sql, apply_invalidation_policy, out_iterator, err)
 }
 
 static __DUCKDB_V2_RESULT_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
@@ -19478,6 +20146,90 @@ pub unsafe fn duckdb_rs_extension_api_v2_init(
         as *const duckdb_ext_api_v2;
     if p_api.is_null() {
         return Ok(false);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_set_stats_callback {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_SET_STATS_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_stats_get_arg_count {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_STATS_GET_ARG_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_stats_get_arg_stats {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_STATS_GET_ARG_STATS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_stats_get_bind_data {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_STATS_GET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_stats_get_result_stats {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_STATS_GET_RESULT_STATS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_stats_get_user_data {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_STATS_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_scalar_function_set_stats_callback {
+        __DUCKDB_V2_SCALAR_FUNCTION_SET_STATS_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_scalar_function_stats_get_arg_count {
+        __DUCKDB_V2_SCALAR_FUNCTION_STATS_GET_ARG_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_scalar_function_stats_get_arg_stats {
+        __DUCKDB_V2_SCALAR_FUNCTION_STATS_GET_ARG_STATS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_scalar_function_stats_get_bind_data {
+        __DUCKDB_V2_SCALAR_FUNCTION_STATS_GET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_scalar_function_stats_get_result_stats {
+        __DUCKDB_V2_SCALAR_FUNCTION_STATS_GET_RESULT_STATS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_scalar_function_stats_get_user_data {
+        __DUCKDB_V2_SCALAR_FUNCTION_STATS_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_stats_can_have_null {
+        __DUCKDB_V2_STATS_CAN_HAVE_NULL
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_stats_can_have_valid {
+        __DUCKDB_V2_STATS_CAN_HAVE_VALID
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_stats_set_can_have_null {
+        __DUCKDB_V2_STATS_SET_CAN_HAVE_NULL
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_stats_set_can_have_valid {
+        __DUCKDB_V2_STATS_SET_CAN_HAVE_VALID
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_set_stats_callback {
+        __DUCKDB_V2_TABLE_FUNCTION_SET_STATS_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_stats_get_bind_data {
+        __DUCKDB_V2_TABLE_FUNCTION_STATS_GET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_stats_get_column_index {
+        __DUCKDB_V2_TABLE_FUNCTION_STATS_GET_COLUMN_INDEX
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_stats_get_result_stats {
+        __DUCKDB_V2_TABLE_FUNCTION_STATS_GET_RESULT_STATS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_stats_get_user_data {
+        __DUCKDB_V2_TABLE_FUNCTION_STATS_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_v2_arena_allocate {
         __DUCKDB_V2_ARENA_ALLOCATE

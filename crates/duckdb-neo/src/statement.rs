@@ -82,12 +82,18 @@ pub struct Statements {
 
 impl Statements {
     /// Parse SQL using a connection's parser configuration.
-    pub fn parse(conn: &Connection, sql: impl AsRef<str>) -> Result<Statements> {
+    pub fn parse(conn: &Connection, sql: impl AsRef<str>, invalidate: bool) -> Result<Statements> {
         let query_str =
             std::ffi::CString::new(sql.as_ref()).map_err(|_| Error::invalid_input("SQL string contains a NUL byte"))?;
 
-        check_api_call!(ffi::duckdb_v2_parse_sql, conn.raw(), query_str.as_ptr(), RET)
-            .map(|handle| Statements { handle })
+        check_api_call!(
+            ffi::duckdb_v2_parse_sql,
+            conn.raw(),
+            query_str.as_ptr(),
+            invalidate,
+            RET
+        )
+        .map(|handle| Statements { handle })
     }
 }
 
@@ -402,13 +408,50 @@ mod tests {
         Ok(())
     }
 
+    fn parse_error_in_transaction(invalidate: bool) -> crate::Result<i64> {
+        let env = Environment::new()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
+        conn.execute("CREATE TABLE t(i BIGINT)", Parameters::None)?;
+        conn.execute("BEGIN", Parameters::None)?;
+        conn.execute("INSERT INTO t VALUES (1)", Parameters::None)?;
+
+        let error = Statements::parse(&conn, "SELEC 1", invalidate)?
+            .next()
+            .expect("one statement")
+            .expect_err("parse should fail");
+        assert!(error.message.contains("syntax error"), "{error}");
+
+        let insert = conn.execute("INSERT INTO t VALUES (2)", Parameters::None);
+        assert_eq!(insert.is_ok(), !invalidate, "{insert:?}");
+        conn.execute("COMMIT", Parameters::None)?;
+
+        let chunk = conn
+            .query("SELECT count(*)::BIGINT FROM t", Parameters::None)?
+            .next_chunk()?
+            .expect("one chunk");
+        Ok(chunk.get_vector_at::<i64>(0)?.reader()?.get(0)?.copied().unwrap())
+    }
+
+    #[test]
+    fn test_parse_error_without_invalidation_keeps_transaction() -> crate::Result<()> {
+        assert_eq!(parse_error_in_transaction(false)?, 2);
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_error_with_invalidation_aborts_transaction() -> crate::Result<()> {
+        assert_eq!(parse_error_in_transaction(true)?, 0);
+        Ok(())
+    }
+
     #[test]
     fn test_prepared_statement() -> crate::Result<()> {
         let env = Environment::new()?;
         let instance = env.open(StorageLocation::InMemory)?;
         let conn = instance.connect()?;
 
-        let mut statements = Statements::parse(&conn, "SELECT * FROM range(0, 100) as t(x) where x < ?")?;
+        let mut statements = Statements::parse(&conn, "SELECT * FROM range(0, 100) as t(x) where x < ?", true)?;
         let statement = statements.next().unwrap()?.prepare(&conn, true)?;
 
         let mut query = statement.execute(crate::Parameters::Positional(&[&10]))?;
@@ -431,6 +474,7 @@ mod tests {
         let mut statements = Statements::parse(
             &conn,
             "SELECT x FROM range(0, 100) as t(x) WHERE x >= $lo AND x < $hi ORDER BY x",
+            true,
         )?;
         let statement = statements.next().unwrap()?.prepare(&conn, true)?;
 
@@ -456,6 +500,7 @@ mod tests {
         let mut statements = Statements::parse(
             &conn,
             "SELECT x FROM range(0, 10_000) as t(x) WHERE x >= $lo AND x < $hi ORDER BY x",
+            true,
         )?;
         let statement = statements.next().unwrap()?.prepare(&conn, true)?;
 
@@ -500,7 +545,7 @@ mod tests {
 
         let cdc = cdc.to_normal();
 
-        let mut statements = Statements::parse(&conn, "SELECT title from cdc")?;
+        let mut statements = Statements::parse(&conn, "SELECT title from cdc", true)?;
         let statement = statements.next().unwrap()?.add_collection(cdc, "cdc")?;
 
         let mut query = statement.query(&conn, Parameters::None)?;
@@ -533,7 +578,7 @@ mod tests {
         vec.writer()?.set(1, &2)?;
         cdc.append(&mut chunk)?;
 
-        let statement = Statements::parse(&conn, "SELECT sum(x)::BIGINT FROM cdc")?
+        let statement = Statements::parse(&conn, "SELECT sum(x)::BIGINT FROM cdc", true)?
             .next()
             .unwrap()?
             .add_collection(cdc.to_normal(), "cdc")?;
