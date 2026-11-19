@@ -81,7 +81,10 @@ pub struct Statements {
 }
 
 impl Statements {
-    /// Parse SQL using a connection's parser configuration.
+    /// Parse SQL using a connection's parser configuration, without binding.
+    ///
+    /// With `invalidate`, a parse error aborts the active transaction like a failed execution
+    /// would; pass `false` to only inspect the statements. Syntax errors surface from the iterator.
     pub fn parse(conn: &Connection, sql: impl AsRef<str>, invalidate: bool) -> Result<Statements> {
         let query_str =
             std::ffi::CString::new(sql.as_ref()).map_err(|_| Error::invalid_input("SQL string contains a NUL byte"))?;
