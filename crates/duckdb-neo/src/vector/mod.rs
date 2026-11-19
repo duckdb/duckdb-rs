@@ -360,7 +360,7 @@ impl<'a, T: NativeElement> Vector<'a, T> {
             &mut cast_err
         )?;
 
-        if cast_err.is_null() && result == true {
+        if cast_err.is_null() && result {
             Ok(None)
         } else {
             let error = unsafe { Error::from_code_and_handle(DuckDBError::TypeConversion.into(), &mut cast_err) };
