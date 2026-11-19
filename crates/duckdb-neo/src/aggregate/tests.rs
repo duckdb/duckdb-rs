@@ -4,13 +4,15 @@ use crate::ffi::{DUCKDB_V2_FUNCTION_PROPERTY_KEY, DUCKDB_V2_FUNCTION_PROPERTY_VA
 
 use crate::{
     DuckDBType, Parameters,
-    aggregate::{AggregateCallbacks, AggregateFunctionBuilder, ReturnTypeHandle, States},
+    aggregate::{AggregateCallbacks, AggregateFunctionBuilder, AggregateStatsCallbacks, ReturnTypeHandle, States},
     bind_arguments::BindArguments,
+    builder_helpers::ArgCount,
     connection::{Context, SettingScope},
     data_chunk::VectorCollection,
     environment::{Environment, StorageLocation},
     logical_type::LogicalType,
     signature::{FunctionParameter, SignatureBuilder},
+    stats::Stats,
     vector::{Unknown, Vector},
 };
 
@@ -433,6 +435,122 @@ fn aggregate_test_window_with_padded_state() -> crate::Result<()> {
 
     let expected = (1..=100i64).map(|i| (5050, i * (i + 1) / 2)).collect::<Vec<_>>();
     assert_eq!(rows, expected);
+
+    Ok(())
+}
+
+struct StatsSum {
+    calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl AggregateCallbacks for StatsSum {
+    type BindData = i64;
+    type StateItem = i64;
+
+    fn bind(
+        &self,
+        _context: &Context,
+        _arguments: BindArguments<'_>,
+        _result_type_handle: ReturnTypeHandle<'_>,
+    ) -> crate::Result<Self::BindData> {
+        Ok(7)
+    }
+
+    fn init(&self, _bind_data: Option<&Self::BindData>) -> Self::StateItem {
+        0
+    }
+
+    fn update(
+        &self,
+        _bind_data: Option<&Self::BindData>,
+        collection: &mut VectorCollection,
+        mut states: States<'_, Self::StateItem>,
+    ) -> crate::Result<()> {
+        let vec = collection.get_vector_at::<i64>(0)?;
+        for (i, val) in vec.reader()?.iter().enumerate() {
+            states[i] += *val.unwrap_or(&0);
+        }
+        Ok(())
+    }
+
+    fn combine(
+        &self,
+        _bind_data: Option<&Self::BindData>,
+        source: &States<'_, Self::StateItem>,
+        mut dest: States<'_, Self::StateItem>,
+    ) -> crate::Result<()> {
+        for i in 0..dest.len() {
+            dest[i] += source[i];
+        }
+        Ok(())
+    }
+
+    fn finalize(
+        &self,
+        _bind_data: Option<&Self::BindData>,
+        states: &[&Self::StateItem],
+        result: Vector<'_, Unknown>,
+        result_offset: usize,
+    ) -> crate::Result<()> {
+        let mut result = result.cast::<i64>()?;
+        for (index, state) in states.iter().enumerate() {
+            result.writer()?.set(result_offset + index, *state)?;
+        }
+        Ok(())
+    }
+}
+
+impl AggregateStatsCallbacks for StatsSum {
+    fn stats<'a>(
+        &self,
+        _context: &Context,
+        bind_data: Option<&Self::BindData>,
+        stats: &Stats<'a>,
+        arguments: ArgCount,
+        column_stats: impl Fn(usize) -> crate::Result<Stats<'a>>,
+    ) -> crate::Result<()> {
+        assert_eq!(bind_data, Some(&7));
+        assert_eq!(arguments.positional_fixed, 1);
+        assert_eq!(arguments.total(), 1);
+        let column = column_stats(0)?;
+        assert!(!column.can_have_null()?);
+        assert!(column.can_have_valid()?);
+        stats.set_have_null(true)?;
+        stats.set_have_valid(true)?;
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    }
+}
+
+#[test]
+fn aggregate_test_stats_callback() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
+    conn.query(
+        "CREATE TABLE stats_input AS SELECT range AS i FROM range(10)",
+        Parameters::None,
+    )?
+    .drain()?;
+
+    let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    AggregateFunctionBuilder::new(
+        "stats_sum",
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i64>("IN"))
+            .return_type(i64::logical_type(&conn)?),
+        StatsSum { calls: calls.clone() },
+    )
+    .with_stats()
+    .register(&conn)?;
+
+    // A table column carries exact storage statistics into the callback.
+    let chunk = conn
+        .query("SELECT stats_sum(i) FROM stats_input", Parameters::None)?
+        .next_chunk()?
+        .expect("expected a result chunk");
+    assert_eq!(chunk.get_vector_at::<i64>(0)?.reader()?.get(0)?, Some(&45));
+    assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
 
     Ok(())
 }

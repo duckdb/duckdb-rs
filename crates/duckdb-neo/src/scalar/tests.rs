@@ -4,8 +4,9 @@ use crate::{
     environment::{Environment, StorageLocation},
     instance::{AttachBuilder, InstanceBuilder},
     logical_type::LogicalTypeID,
-    signature::{FunctionParameter, SignatureBuilder},
+    signature::{FunctionParameter, FunctionParameterKind, SignatureBuilder},
     types::FromValue,
+    value::Value,
 };
 
 use super::*;
@@ -573,6 +574,96 @@ fn test_scalar_optional_bind_and_init() -> Result<()> {
             .next_chunk()?
             .expect("expected a result chunk");
         assert_eq!(chunk.get_vector_at::<i32>(0)?.reader()?.get(0)?, Some(&42));
+    }
+    Ok(())
+}
+
+struct ScalarStatsCheck {
+    bind: bool,
+    calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl ScalarBindCallbacks for ScalarStatsCheck {
+    fn bind(&self, _context: &Context, _arguments: BindArguments<'_>) -> Result<Self::BindData> {
+        Ok(7)
+    }
+}
+
+impl ScalarCallbacks for ScalarStatsCheck {
+    type BindData = i64;
+    type InitData = ();
+
+    fn exec(
+        &self,
+        context: &Context,
+        _bind_data: Option<&Self::BindData>,
+        _init_data: Option<&mut Self::InitData>,
+        vectors: &mut VectorCollection,
+        output: Vector<'_, Unknown>,
+    ) -> Result<()> {
+        output.make_constant(
+            Value::null(context, &i64::logical_type(context)?)?,
+            vectors.row_count()?,
+        )?;
+        Ok(())
+    }
+}
+
+impl ScalarStatsCallbacks for ScalarStatsCheck {
+    fn stats<'a>(
+        &self,
+        _context: &Context,
+        bind_data: Option<&Self::BindData>,
+        stats: &Stats<'a>,
+        arguments: ArgCount,
+        column_stats: impl Fn(usize) -> Result<Stats<'a>>,
+    ) -> Result<()> {
+        assert_eq!(bind_data.copied(), self.bind.then_some(7));
+        assert_eq!(arguments.total(), 3);
+        let column = column_stats(0)?;
+        assert!(!column.can_have_null()?);
+        assert!(column.can_have_valid()?);
+        stats.set_have_null(true)?;
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    }
+}
+
+#[test]
+fn test_scalar_stats_callback() -> Result<()> {
+    let env = Environment::new()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
+    conn.query(
+        "CREATE TABLE stats_input AS SELECT range AS i FROM range(10)",
+        Parameters::None,
+    )?
+    .drain()?;
+
+    for (name, bind) in [("stats_unbound", false), ("stats_bound", true)] {
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut builder = ScalarFunctionBuilder::new(
+            name,
+            SignatureBuilder::new()
+                .param(FunctionParameter::new::<i64>("param_1").kind(FunctionParameterKind::PositionalOnly))
+                .param(FunctionParameter::new::<i64>("param_2").kind(FunctionParameterKind::Named))
+                .param(FunctionParameter::new::<i64>("param_3").kind(FunctionParameterKind::NamedVariadic))
+                .return_type(i64::logical_type(&conn)?),
+            ScalarStatsCheck {
+                bind,
+                calls: calls.clone(),
+            },
+        )
+        .with_stats();
+        if bind {
+            builder = builder.with_bind();
+        }
+        builder.register(&conn)?;
+
+        // A column argument keeps DuckDB from folding the call into a constant before stats propagation.
+        let sql = format!("SELECT {name}(i, param_2 := 2, param_3 := 3) FROM stats_input");
+        conn.query(sql.as_str(), Parameters::None)?.drain()?;
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
     Ok(())
 }

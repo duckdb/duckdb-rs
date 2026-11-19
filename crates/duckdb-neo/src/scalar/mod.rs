@@ -12,6 +12,7 @@ use std::collections::HashMap;
 
 use crate::ffi;
 
+use crate::bind_arguments::ArgumentCounts;
 use crate::bind_arguments::BindArguments;
 use crate::builder_helpers::{
     ArgCount, OpaqueHandle, callback_trampoline, get_bind_data, get_opaque_data_ref_mut, get_user_data, into_opaque,
@@ -22,11 +23,12 @@ use crate::enums::FunctionProperty;
 use crate::handles::{ScalarFunctionBuilderHandle, ScalarFunctionBuilderLink};
 use crate::logical_type::LogicalType;
 use crate::signature::SignatureBuilder;
+use crate::stats::Stats;
 use crate::vector::{Access, Unknown, Vector};
 use crate::{
     Result, check_api_call,
     connection::{Context, FFILink},
-    raw::RawExt,
+    raw::{FromRaw, RawExt},
 };
 
 mod micro;
@@ -110,6 +112,35 @@ fn exec_callback<T: ScalarCallbacks>(
     Ok(())
 }
 
+fn stats_callback<T: ScalarStatsCallbacks>(
+    context: &Context,
+    info: ffi::duckdb_v2_scalar_function_stats_info_handle,
+) -> Result<()> {
+    let user_data = get_user_data!(ffi::duckdb_v2_scalar_function_stats_get_user_data, info);
+    let bind_data = get_bind_data!(ffi::duckdb_v2_scalar_function_stats_get_bind_data, info);
+
+    let stats = check_api_call!(ffi::duckdb_v2_scalar_function_stats_get_result_stats, info, RET)
+        // SAFETY: DuckDB keeps the result statistics alive until this callback returns.
+        .map(|handle| unsafe { Stats::from_raw(handle) })?;
+
+    let arg_counts = ArgumentCounts::from_func(|pf, pv, nf, nv| {
+        check_api_call!(ffi::duckdb_v2_scalar_function_stats_get_arg_count, info, pf, pv, nf, nv)
+    })?;
+
+    let arg_col_stats_fn = |index: usize| {
+        check_api_call!(
+            ffi::duckdb_v2_scalar_function_stats_get_arg_stats,
+            info,
+            index as u64,
+            RET
+        )
+        // SAFETY: valid until the callback returns; `T::stats`'s generic lifetime keeps them from escaping.
+        .map(|handle| unsafe { Stats::from_raw(handle) })
+    };
+
+    T::stats(user_data, context, bind_data, &stats, arg_counts, arg_col_stats_fn)
+}
+
 /// Builds and registers a user-defined scalar function.
 #[derive(Debug)]
 pub struct ScalarFunctionBuilder<T: ScalarCallbacks> {
@@ -120,6 +151,7 @@ pub struct ScalarFunctionBuilder<T: ScalarCallbacks> {
     bind_callback: ffi::duckdb_v2_scalar_function_bind_callback_fn,
     init_callback: ffi::duckdb_v2_scalar_function_init_callback_fn,
     resolve_types_callback: ffi::duckdb_v2_scalar_function_resolve_types_callback_fn,
+    stats_callback: ffi::duckdb_v2_scalar_function_stats_callback_fn,
 }
 
 impl<T: ScalarBindCallbacks> ScalarFunctionBuilder<T> {
@@ -167,6 +199,18 @@ impl<T: ScalarResolveTypesCallbacks> ScalarFunctionBuilder<T> {
     }
 }
 
+impl<T: ScalarStatsCallbacks> ScalarFunctionBuilder<T> {
+    /// Enable [`ScalarStatsCallbacks::stats`] during query optimization.
+    pub fn with_stats(mut self) -> Self {
+        self.stats_callback = callback_trampoline! {
+            T = ScalarStatsCallbacks,
+            args = (info: ffi::duckdb_v2_scalar_function_stats_info_handle),
+            exec = stats_callback,
+        };
+        self
+    }
+}
+
 impl<T: ScalarCallbacks> ScalarFunctionBuilder<T> {
     /// Create a builder from a name, signature, and callback implementation.
     pub fn new(name: impl Into<String>, signature: SignatureBuilder, implementation: T) -> Self {
@@ -178,6 +222,7 @@ impl<T: ScalarCallbacks> ScalarFunctionBuilder<T> {
             bind_callback: None,
             init_callback: None,
             resolve_types_callback: None,
+            stats_callback: None,
         }
     }
 
@@ -244,6 +289,14 @@ impl<T: ScalarCallbacks> ScalarFunctionBuilder<T> {
             )?;
         }
 
+        if self.stats_callback.is_some() {
+            check_api_call!(
+                ffi::duckdb_v2_scalar_function_set_stats_callback,
+                handle.raw(),
+                self.stats_callback
+            )?;
+        }
+
         Ok(())
     }
 
@@ -306,6 +359,28 @@ pub trait ScalarResolveTypesCallbacks: ScalarCallbacks {
     /// reports the types the caller passed.
     /// The returned type replaces the one declared in the signature.
     fn resolve_types(&self, context: &Context, arguments: BindArguments<'_>) -> Result<LogicalType>;
+}
+
+/// Narrows the statistics of a scalar function's result during query optimization.
+///
+/// Enable the callback with [`ScalarFunctionBuilder::with_stats`]; it is ignored,
+/// and never registered, without it. DuckDB calls it for each bound call site, but
+/// skips it when it can evaluate the call instead, such as when every argument is
+/// a constant.
+///
+/// The result statistics start out unknown. Narrowing them is a guarantee DuckDB
+/// uses to simplify the query: a result that breaks it produces wrong query results.
+pub trait ScalarStatsCallbacks: ScalarCallbacks {
+    /// **Stats:** narrow `stats` using `column_stats(i)` for argument `i < arguments.total()`.
+    /// Argument statistics are read-only; bind data is `None` without `with_bind`.
+    fn stats<'a>(
+        &self,
+        context: &Context,
+        bind_data: Option<&Self::BindData>,
+        stats: &Stats<'a>,
+        arguments: ArgCount,
+        column_stats: impl Fn(usize) -> Result<Stats<'a>>,
+    ) -> Result<()>;
 }
 
 #[cfg(test)]
