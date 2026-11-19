@@ -667,3 +667,57 @@ fn test_scalar_stats_callback() -> Result<()> {
     }
     Ok(())
 }
+
+struct GrowVariant;
+
+impl ScalarCallbacks for GrowVariant {
+    type BindData = ();
+    type InitData = ();
+
+    fn exec(
+        &self,
+        context: &Context,
+        _bind_data: Option<&Self::BindData>,
+        _init_data: Option<&mut Self::InitData>,
+        input: &mut VectorCollection,
+        output: Vector<'_, Unknown>,
+    ) -> Result<()> {
+        let rows = input.row_count()?;
+        let mut output = output.cast::<crate::types::Variant>()?;
+        output.set_size(rows)?;
+        let mut writer = output.writer()?;
+        for row in (0..rows).step_by(2) {
+            writer.set(
+                row,
+                &crate::types::ToValue::value(&crate::types::VariantValue(row as i64), context)?,
+            )?;
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn test_scalar_grown_variant_rows_are_null() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    ScalarFunctionBuilder::new(
+        "grow_variant",
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i64>("x"))
+            .return_type(crate::types::Variant::logical_type(&conn)?),
+        GrowVariant,
+    )
+    .register(&conn)?;
+
+    // Rows left unwritten must be NULL down to VARIANT's hidden children, which the sort reads.
+    for _ in 0..5 {
+        let mut result = conn.query(
+            "SELECT count(*), count(v) FROM (SELECT grow_variant(i) v FROM range(5000) t(i) ORDER BY v)",
+            Parameters::None,
+        )?;
+        let chunk = result.next_chunk()?.expect("one row");
+        assert_eq!(chunk.get_vector_at::<i64>(0)?.reader()?.get(0)?, Some(&5000));
+        assert_eq!(chunk.get_vector_at::<i64>(1)?.reader()?.get(0)?, Some(&2500));
+    }
+    Ok(())
+}
