@@ -99,6 +99,12 @@ impl<T: NativeElement> Vector<'_, T> {
         let size = match self.logical_type.id()? {
             LogicalTypeID::Array => array_size(&self.logical_type)?,
             LogicalTypeID::List | LogicalTypeID::Map => return Ok(()),
+            LogicalTypeID::Variant => {
+                for row in start..end {
+                    check_api_call!(ffi::duckdb_v2_vector_set_null, self.handle, row as u64)?;
+                }
+                return Ok(());
+            }
             _ => 1,
         };
         if let Some(children) = &mut self.children {

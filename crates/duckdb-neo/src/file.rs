@@ -737,7 +737,7 @@ mod tests {
         Ok(())
     }
 
-    // macOS file systems reject names that are not valid UTF-8.
+    // macOS file systems reject names that are not valid UTF-8. DuckDB's glob matcher rejects them too.
     #[cfg(target_os = "linux")]
     #[test]
     fn test_glob_non_utf8_name() -> crate::Result<()> {
@@ -751,7 +751,9 @@ mod tests {
         std::fs::write(dir.path().join(std::ffi::OsStr::from_bytes(b"\xff.txt")), b"").expect("failed to write file");
         let dir = dir.path().to_str().unwrap();
 
-        assert_eq!(fs.glob(&format!("{dir}/*.txt"))?, [format!("{dir}/\u{fffd}.txt")]);
+        let error = fs.glob(&format!("{dir}/*.txt")).unwrap_err();
+        assert_eq!(error.code, crate::error::DuckDBError::InputInvalid);
+        assert!(error.message.contains("invalid UTF-8"), "{}", error.message);
         Ok(())
     }
 }

@@ -224,7 +224,7 @@ Or manually add it to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-duckdb = { version = "~1.20000.2", features = ["bundled"] }
+duckdb = { version = "~1.20001.0", features = ["bundled"] }
 ```
 
 ### Using the development version from git
@@ -264,7 +264,7 @@ You can adjust this behavior in a number of ways:
 
    ```toml
    [dependencies]
-   duckdb = { version = "~1.20000.2", features = ["bundled"] }
+   duckdb = { version = "~1.20001.0", features = ["bundled"] }
    ```
 
 2. If you use the `bundled-cmake` feature, `libduckdb-sys` will build DuckDB from the local checkout in `crates/libduckdb-sys/duckdb-sources` using upstream CMake. This keeps plain `bundled` unchanged while allowing CMake-only extensions such as `httpfs` and `icu`.
@@ -291,7 +291,7 @@ You can adjust this behavior in a number of ways:
 
 3. When linking against a DuckDB library already on the system (so _not_ using any of the `bundled` features), you can set the `DUCKDB_LIB_DIR` environment variable to point to a directory containing the library. You can also set the `DUCKDB_INCLUDE_DIR` variable to point to the directory containing `duckdb.h` (and `duckdb_v2.h` when using `capi-v2` with `buildtime_bindgen`).
 
-   The examples below fetch the same prebuilt build the crate pins in `crates/libduckdb-sys/.duckdb-release` (see step 4). Once DuckDB publishes the v2.0.0 release, its `duckdb-shared-libs-<platform>.tar.gz` assets on GitHub Releases work the same way. Each archive is a flat tarball with the shared library and the public headers.
+   The examples below fetch the same prebuilt build the crate pins in `crates/libduckdb-sys/.duckdb-release` (see step 4). Once DuckDB publishes the v2.0.1 release, its `duckdb-shared-libs-<platform>.tar.gz` assets on GitHub Releases work the same way. Each archive is a flat tarball with the shared library and the public headers.
 
    Linux ARM64 example:
 
@@ -325,7 +325,7 @@ You can adjust this behavior in a number of ways:
 
    On Windows the `windows-amd64` and `windows-arm64` archives contain `duckdb.dll` and its `duckdb.lib` import library; put both in `DUCKDB_LIB_DIR` and add that directory to `PATH`.
 
-4. When none of the `bundled` features is enabled and `DUCKDB_LIB_DIR` is not set, the build script downloads pre-built DuckDB binaries and links against the dynamic library in the archive, effectively automating the manual steps above. Which build it downloads is pinned in `crates/libduckdb-sys/.duckdb-release`: a `DUCKDB_RELEASE_URL` directory holding the `duckdb-shared-libs-<platform>.tar.gz` archives, currently the DuckDB v2.0.0 release, plus a `DUCKDB_RELEASE_VERSION` label and the `DUCKDB_RELEASE_COMMIT` those libraries were built from. `scripts/upgrade.py` updates the pin and vendors the same commit when supplied with `--core-commit`, `--core-url`, and `--core-version` together, so `bundled` and the download agree. Without a pin file the build falls back to the GitHub release matching the DuckDB version encoded in the crate version.
+4. When none of the `bundled` features is enabled and `DUCKDB_LIB_DIR` is not set, the build script downloads pre-built DuckDB binaries and links against the dynamic library in the archive, effectively automating the manual steps above. Which build it downloads is pinned in `crates/libduckdb-sys/.duckdb-release`: a `DUCKDB_RELEASE_URL` directory holding the `duckdb-shared-libs-<platform>.tar.gz` archives, currently the DuckDB v2.0.1 release, plus a `DUCKDB_RELEASE_VERSION` label and the `DUCKDB_RELEASE_COMMIT` those libraries were built from. `scripts/upgrade.py` updates the pin and vendors the same commit when supplied with `--core-commit`, `--core-url`, and `--core-version` together, so `bundled` and the download agree. Without a pin file the build falls back to the GitHub release matching the DuckDB version encoded in the crate version.
 
    Set `DUCKDB_DOWNLOAD_LIB=0` to opt out and probe the system (vcpkg, pkg-config) instead, or `DUCKDB_DOWNLOAD_LIB=1` to force the download. Leave `DUCKDB_STATIC` unset: setting it requests a static `duckdb_static` library, which the downloaded archives do not contain. The archives are cached in `target/duckdb-download/<target>/<version>` and that directory is automatically added to the linker search path.
 

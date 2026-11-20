@@ -139,7 +139,7 @@ mod tests {
         let total_rows: u64 = progress.total_rows;
         assert_eq!(rows_processed, 12_048);
         assert!((progress.percentage - 60.24).abs() < 0.01);
-        assert_eq!(total_rows, 20_001);
+        assert_eq!(total_rows, 20_000);
 
         Ok(())
     }

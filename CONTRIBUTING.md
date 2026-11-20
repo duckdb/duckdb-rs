@@ -198,21 +198,21 @@ current manifest values. To change DuckDB core, supply **all three** named
 options together:
 
 ```shell
-./scripts/upgrade.py 1.20000.1 0.20000.0 \
+./scripts/upgrade.py 1.20001.1 0.20001.0 \
   --core-commit <COMMIT_SHA> \
-  --core-url https://install.duckdb.org/v2.0.0 \
-  --core-version v2.0.0
+  --core-url https://install.duckdb.org/v2.0.1 \
+  --core-version v2.0.1
 ```
 
 - Crate versions must be `MAJOR.MINOR.PATCH` and are used as supplied.
-  For example, `1.20000.1` targets DuckDB `2.0.0`; the final `.1` is the Rust
+  For example, `1.20001.1` targets DuckDB `2.0.1`; the final `.1` is the Rust
   crate patch version, not the DuckDB core patch version.
 - `--core-commit` must be a full 40-character hexadecimal commit.
 - `--core-url` must be an HTTP(S) directory URL containing the per-platform
   `duckdb-shared-libs-<platform>.tar.gz` archives, without credentials, query,
   or fragment.
 - `--core-version` accepts a leading `v` and prerelease/build suffixes, such
-  as `v2.0.0-alpha39998`.
+  as `v2.0.1-alpha39998`.
 
 The script updates crate versions, exact workspace dependency pins, README
 `Cargo.toml` examples, and `Cargo.lock`. With the core options, it also updates
@@ -234,7 +234,7 @@ pin, workflow version references, sources, and bindings unchanged. Omit the
 second positional argument to keep the current duckdb-neo version:
 
 ```shell
-./scripts/upgrade.py 1.20000.1
+./scripts/upgrade.py 1.20001.1
 ```
 
 The script does not run tests; validate the `bundled`, `bundled-cmake`, and linked

@@ -19,7 +19,7 @@ use crate::{
     table_function::{
         BindFunctionHandle, ExecColumnInfo, InitColumnData, OrderPreservation, PartitionData, PartitioningData,
         PushdownData, TableClaimBatchCallbacks, TableFilterPushdownCallbacks, TableFunctionBuilder,
-        TableFunctionCallbacks, TablePartitionInfo, TablePartitioningCallbacks,
+        TableFunctionCallbacks, TablePartitionInfo, TablePartitioningCallbacks, TableStatsCallbacks,
     },
     types::HugeInt,
 };
@@ -1033,5 +1033,106 @@ fn test_table_function_bind_data_chunk_and_swapped_output() -> Result<()> {
     )?;
     let chunk = result.next_chunk()?.unwrap();
     assert_eq!(chunk.get_vector_at::<String>(0)?.reader()?.get(0)?, Some("[1, 2, 3]"));
+    Ok(())
+}
+
+#[test]
+fn test_table_function_stats_callback() -> Result<()> {
+    const ROWS: usize = 3;
+
+    struct NullScan {
+        seen_columns: Arc<Mutex<Vec<usize>>>,
+    }
+
+    impl TableFunctionCallbacks for NullScan {
+        type BindData = i32;
+        type GlobalState = AtomicBool;
+        type LocalState = ();
+
+        fn bind(&self, context: &Context, _: BindArguments<'_>, bind_handle: BindFunctionHandle<'_>) -> Result<i32> {
+            let logical_type = i32::logical_type(context)?;
+            bind_handle.add_result_column("never_null", &logical_type)?;
+            bind_handle.add_result_column("maybe_null", &logical_type)?;
+            Ok(7)
+        }
+
+        fn init_global_state(&self, _: &Context, _: &i32, _: InitColumnData<'_>) -> Result<Option<AtomicBool>> {
+            Ok(Some(AtomicBool::new(false)))
+        }
+
+        fn exec(
+            &self,
+            _: &Context,
+            _: &i32,
+            _: Option<&mut ()>,
+            global_state: Option<&AtomicBool>,
+            output: &mut DataChunk<'_>,
+            columns: ExecColumnInfo<'_>,
+        ) -> Result<()> {
+            let rows = if global_state.unwrap().swap(true, Ordering::SeqCst) {
+                0
+            } else {
+                ROWS
+            };
+            for position in 0..columns.count()? {
+                let mut vector = output.get_vector_at_mut::<i32>(position)?;
+                vector.set_size(rows)?;
+                vector.writer()?.fill_null()?;
+            }
+            Ok(())
+        }
+    }
+
+    impl TableStatsCallbacks for NullScan {
+        fn stats(
+            &self,
+            _: &Context,
+            bind_data: &i32,
+            stats: &crate::stats::Stats<'_>,
+            column_index: usize,
+        ) -> Result<()> {
+            assert_eq!(*bind_data, 7);
+            assert!(stats.can_have_null()?);
+            assert!(stats.can_have_valid()?);
+            if column_index == 0 {
+                stats.set_can_have_null(false)?;
+            }
+            self.seen_columns.lock().unwrap().push(column_index);
+            Ok(())
+        }
+    }
+
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let seen_columns = Arc::new(Mutex::new(Vec::new()));
+    TableFunctionBuilder::new(
+        "null_scan",
+        SignatureBuilder::new(),
+        NullScan {
+            seen_columns: seen_columns.clone(),
+        },
+    )
+    .with_stats()
+    .register(&conn)?;
+
+    // Both columns hold only NULLs, so a folded `IS NULL` shows DuckDB applied the reported stats.
+    let mut result = conn.query(
+        "SELECT never_null IS NULL, maybe_null IS NULL FROM null_scan()",
+        Parameters::None,
+    )?;
+    let mut rows = Vec::new();
+    while let Some(chunk) = result.next_chunk()? {
+        let never_null = chunk.get_vector_at::<bool>(0)?.reader()?;
+        let maybe_null = chunk.get_vector_at::<bool>(1)?.reader()?;
+        for row in 0..never_null.len() {
+            rows.push((never_null.get(row)?.copied(), maybe_null.get(row)?.copied()));
+        }
+    }
+    assert_eq!(rows, vec![(Some(false), Some(true)); ROWS]);
+
+    let mut seen_columns = seen_columns.lock().unwrap().clone();
+    seen_columns.sort_unstable();
+    seen_columns.dedup();
+    assert_eq!(seen_columns, [0, 1]);
     Ok(())
 }
