@@ -8,8 +8,8 @@
 //!
 //! A pragma without parameters is called as `PRAGMA name`, one with parameters
 //! as `PRAGMA name(...)`. Its arguments are constants, so
-//! [`BindArguments::value`] always folds them. Its signature cannot declare a
-//! return type.
+//! [`BindArgument::value`](crate::bind_arguments::BindArgument::value) always folds them.
+//! Its signature cannot declare a return type.
 
 use crate::ffi;
 
@@ -31,7 +31,7 @@ fn query_callback<T: PragmaQueryCallbacks>(
 ) -> Result<()> {
     let user_data = get_user_data!(ffi::duckdb_v2_function_bind_get_user_data, info);
 
-    let query = T::query(user_data, context, BindArguments { handle: &info })?;
+    let query = T::query(user_data, context, BindArguments::new(&info))?;
 
     check_api_call!(ffi::duckdb_v2_pragma_function_query_set_query, result, &(&query).into())
 }
@@ -42,7 +42,7 @@ fn exec_callback<T: PragmaExecCallbacks>(
 ) -> Result<()> {
     let user_data = get_user_data!(ffi::duckdb_v2_function_bind_get_user_data, info);
 
-    T::exec(user_data, context, BindArguments { handle: &info })
+    T::exec(user_data, context, BindArguments::new(&info))
 }
 
 #[derive(Debug)]

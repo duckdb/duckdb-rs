@@ -28,19 +28,32 @@ fn exec_callback<T: CastFunctionCallbacks>(
     info: ffi::duckdb_v2_cast_function_exec_info_handle,
 ) -> Result<()> {
     let user_data = get_user_data!(ffi::duckdb_v2_cast_function_exec_get_user_data, info);
+    // Vectors of nested casts, e.g. a LIST child, do not carry their row count.
+    let row_count = check_api_call!(ffi::duckdb_v2_cast_function_exec_get_row_count, info, RET)? as usize;
 
     let input = Vector::<T::InputType>::from_handle(
         &check_api_call!(ffi::duckdb_v2_cast_function_exec_get_input, info, RET)?,
         Access::Exclusive,
     )?;
+    // SAFETY: DuckDB hands the cast an input holding `row_count` rows.
+    let input = unsafe { input.with_len_unchecked(row_count) };
 
-    let mode = check_api_call!(ffi::duckdb_v2_cast_function_exec_get_mode, info, RET)?;
-    let output = Vector::<T::OutputType>::from_handle(
+    let mode = check_api_call!(ffi::duckdb_v2_cast_function_exec_get_mode, info, RET)?.try_into()?;
+    let mut output = Vector::<T::OutputType>::from_handle(
         &check_api_call!(ffi::duckdb_v2_cast_function_exec_get_output, info, RET)?,
         Access::Writable,
     )?;
+    if output.is_writable() {
+        if output.len() != row_count {
+            output.set_size(row_count)?;
+        }
+        // DuckDB keeps the output of a failed try cast, so rows the callback skips must read as NULL.
+        if mode == CastMode::Try {
+            output.writer()?.fill_null()?;
+        }
+    }
 
-    T::exec(user_data, context, mode.try_into()?, input, output)
+    T::exec(user_data, context, mode, input, output)
 }
 
 fn validate_cast_type<T: NativeElement>(logical_type: &LogicalType) -> Result<()> {
@@ -149,8 +162,9 @@ pub trait CastFunctionCallbacks: Send + Sync + 'static {
 
     /// **Execute:** convert an input batch into the output vector.
     ///
-    /// Normal casts should return conversion errors. Try casts should write
-    /// `NULL` for values that cannot be converted.
+    /// `output` arrives sized to `input.len()` rows, each of which must be written.
+    /// Normal casts should return conversion errors. In try casts, rows left
+    /// unwritten read as `NULL`, also when the callback fails.
     fn exec(
         &self,
         context: &Context,
@@ -320,6 +334,157 @@ mod tests {
             assert_eq!(vector_reader.get(1)?, None);
         }
 
+        Ok(())
+    }
+
+    struct Shout;
+
+    impl CastFunctionCallbacks for Shout {
+        type InputType = String;
+        type OutputType = String;
+
+        fn exec(
+            &self,
+            _context: &crate::connection::Context,
+            _mode: CastMode,
+            input: crate::vector::Vector<'_, Self::InputType>,
+            mut output: crate::vector::Vector<'_, Self::OutputType>,
+        ) -> crate::Result<()> {
+            assert_eq!(input.len(), output.len());
+            let reader = input.reader()?;
+            let mut writer = output.writer()?;
+            for i in 0..reader.len() {
+                match reader.get(i)? {
+                    Some(value) => writer.set(i, &value.to_uppercase())?,
+                    None => writer.set_null(i)?,
+                }
+            }
+            Ok(())
+        }
+    }
+
+    fn query_strings(conn: &crate::connection::Connection, sql: &str) -> crate::Result<Vec<Option<String>>> {
+        let mut result = conn.query(sql, Parameters::None)?;
+        let mut rows = Vec::new();
+        while let Some(chunk) = result.next_chunk()? {
+            let vector = chunk.get_vector_at::<String>(0)?;
+            let reader = vector.reader()?;
+            for i in 0..reader.len() {
+                rows.push(reader.get(i)?.map(str::to_string));
+            }
+        }
+        Ok(rows)
+    }
+
+    #[test]
+    fn test_cast_function_nested() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+
+        custom_type::CustomType::new("TEMPERATURE", f32::logical_type(&conn)?).register(&conn)?;
+        CastFunctionBuilder::new(
+            String::logical_type(&conn)?,
+            f32::logical_type(&conn)?.with_alias(&conn, "TEMPERATURE")?,
+            CastToFloat { offset: 10 },
+        )
+        .register(&conn)?;
+        custom_type::CustomType::new("SHOUT", String::logical_type(&conn)?).register(&conn)?;
+        CastFunctionBuilder::new(
+            String::logical_type(&conn)?,
+            String::logical_type(&conn)?.with_alias(&conn, "SHOUT")?,
+            Shout,
+        )
+        .register(&conn)?;
+
+        for (sql, expected) in [
+            ("SELECT '[32,33]'::TEMPERATURE[]", "[42.0, 43.0]"),
+            ("SELECT ['32', NULL]::TEMPERATURE[]", "[42.0, NULL]"),
+            ("SELECT '{a: 32}'::STRUCT(a TEMPERATURE)", "{'a': 42.0}"),
+            ("SELECT '[32,33]'::TEMPERATURE[2]", "[42.0, 43.0]"),
+            ("SELECT '{1=32}'::MAP(INTEGER, TEMPERATURE)", "{1=42.0}"),
+            ("SELECT '[ab,cd]'::SHOUT[]", "[AB, CD]"),
+            ("SELECT '{a: ab}'::STRUCT(a SHOUT)", "{'a': AB}"),
+            ("SELECT '[ab,cd]'::SHOUT[2]", "[AB, CD]"),
+            ("SELECT '{ab=cd}'::MAP(VARCHAR, SHOUT)", "{ab=CD}"),
+        ] {
+            let sql = format!("SELECT ({sql})::VARCHAR");
+            assert_eq!(query_strings(&conn, &sql)?, [Some(expected.to_string())], "{sql}");
+        }
+
+        let rows = query_strings(
+            &conn,
+            "SELECT x::SHOUT[]::VARCHAR FROM VALUES ('[a,b]'), (NULL), ('[]'), ('[c]') t(x)",
+        )?;
+        let expected = [Some("[A, B]"), None, Some("[]"), Some("[C]")].map(|row| row.map(str::to_string));
+        assert_eq!(rows, expected);
+        Ok(())
+    }
+
+    struct SkipInvalid {
+        panic: bool,
+    }
+
+    impl CastFunctionCallbacks for SkipInvalid {
+        type InputType = String;
+        type OutputType = f32;
+
+        fn exec(
+            &self,
+            _context: &crate::connection::Context,
+            _mode: CastMode,
+            input: crate::vector::Vector<'_, Self::InputType>,
+            mut output: crate::vector::Vector<'_, Self::OutputType>,
+        ) -> crate::Result<()> {
+            let reader = input.reader()?;
+            let mut writer = output.writer()?;
+            let mut failed = false;
+            for i in 0..reader.len() {
+                match reader.get(i)?.map(str::parse::<f32>) {
+                    Some(Ok(value)) => writer.set(i, &value)?,
+                    Some(Err(_)) if self.panic => panic!("invalid temperature"),
+                    Some(Err(_)) => failed = true,
+                    None => writer.set_null(i)?,
+                }
+            }
+            if failed {
+                return Err(crate::Error::invalid_input("invalid temperature"));
+            }
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_try_cast_failed_rows_are_null() -> crate::Result<()> {
+        let env = Environment::new()?;
+        for panic in [false, true] {
+            let conn = env.open(StorageLocation::InMemory)?.connect()?;
+            custom_type::CustomType::new("TEMPERATURE", f32::logical_type(&conn)?).register(&conn)?;
+            CastFunctionBuilder::new(
+                String::logical_type(&conn)?,
+                f32::logical_type(&conn)?.with_alias(&conn, "TEMPERATURE")?,
+                SkipInvalid { panic },
+            )
+            .register(&conn)?;
+
+            let rows = query_strings(
+                &conn,
+                "SELECT TRY_CAST(x AS TEMPERATURE)::VARCHAR FROM VALUES ('32'), ('bad'), (NULL), ('33') t(x)",
+            )?;
+            let expected = if panic {
+                [Some("32.0"), None, None, None]
+            } else {
+                [Some("32.0"), None, None, Some("33.0")]
+            };
+            assert_eq!(rows, expected.map(|row| row.map(str::to_string)), "panic: {panic}");
+
+            let rows = query_strings(&conn, "SELECT TRY_CAST('[32,bad]' AS TEMPERATURE[])::VARCHAR")?;
+            assert_eq!(rows, [Some("[32.0, NULL]".to_string())], "panic: {panic}");
+
+            if !panic {
+                let error = query_strings(&conn, "SELECT CAST(x AS TEMPERATURE) FROM VALUES ('bad') t(x)").unwrap_err();
+                assert!(error.message.contains("invalid temperature"), "{error}");
+            }
+        }
         Ok(())
     }
 }

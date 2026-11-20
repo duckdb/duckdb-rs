@@ -19,7 +19,7 @@
 //! [`Vector`] carries only its chunk lifetime and logical element type. Storage
 //! representation and writability remain runtime properties reported by DuckDB.
 //!
-//! A column returned by [`crate::data_chunk::DataChunkRef::get_vector_at`] is
+//! A column returned by [`crate::data_chunk::DataChunk::get_vector_at`] is
 //! narrowed to its logical type before reading:
 //!
 //! ```
@@ -283,6 +283,16 @@ impl<'a, T: NativeElement> Vector<'a, T> {
         self.refresh_buffers()
     }
 
+    /// Replace the row count of a vector whose handle does not carry it, e.g. a nested child.
+    ///
+    /// # Safety
+    /// The vector's storage must hold `len` initialized rows.
+    pub(crate) unsafe fn with_len_unchecked(mut self, len: usize) -> Self {
+        self.len = len;
+        self.view.take();
+        self
+    }
+
     pub(crate) fn cast_unchecked<U: NativeElement>(self) -> Vector<'a, U> {
         Vector {
             handle: self.handle,
@@ -348,10 +358,9 @@ impl<'a, T: NativeElement> Vector<'a, T> {
             ffi::DUCKDB_V2_CAST_MODE::DUCKDB_V2_CAST_MODE_TRY,
             RET,
             &mut cast_err
-        );
-        result?;
+        )?;
 
-        if cast_err.is_null() {
+        if cast_err.is_null() && result {
             Ok(None)
         } else {
             let error = unsafe { Error::from_code_and_handle(DuckDBError::TypeConversion.into(), &mut cast_err) };
@@ -545,7 +554,7 @@ impl<'a, T: NativeElement> Vector<'a, T> {
     /// Explicitly materialize the vector as flat storage.
     ///
     /// The vector must be borrowed mutably, e.g. through
-    /// [`crate::data_chunk::DataChunkRef::get_vector_at_mut`], since flattening
+    /// [`crate::data_chunk::DataChunk::get_vector_at_mut`], since flattening
     /// replaces storage that other wrappers could still reference.
     pub fn flatten(&mut self) -> Result<()> {
         if self.kind == StorageKind::Flat {

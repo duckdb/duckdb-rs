@@ -12,7 +12,7 @@ use crate::ffi;
 
 use crate::{
     AsRaw, DropHandle, Result, check_api_call,
-    data_chunk::{DataChunk, DataChunkMut, DataChunkRef},
+    data_chunk::DataChunk,
     handles::{
         ColumnDataCollectionAppendLink, ColumnDataCollectionAppendStateHandle, ColumnDataCollectionSharedScanLink,
         ColumnDataCollectionSharedScanStateHandle, ColumnDataCollectionWorkerScanLink,
@@ -303,7 +303,7 @@ impl<'conn> ColumnDataCollectionScan<'conn> {
     fn new<C: HasFactory>(collection: &'conn ColumnDataCollection<'conn>, link: &'conn C) -> Result<Self> {
         let worker_scan_state = collection.create_worker_scan_state()?;
         let shared_scan_state = collection.create_shared_scan_state()?;
-        let chunk = DataChunk::create(link, &collection.logical_types, false)?;
+        let chunk = DataChunk::allocate(link.factory()?, &collection.logical_types, false)?;
 
         Ok(ColumnDataCollectionScan {
             collection,
@@ -317,7 +317,8 @@ impl<'conn> ColumnDataCollectionScan<'conn> {
     ///
     /// The chunk points into buffers the scan keeps pinned, so it
     /// is only valid until the next call. Copy it with
-    /// [`DataChunkRef::copy`] to keep its data longer.
+    /// [`DataChunk::copy`] to keep its data longer, or use
+    /// [`Self::next_chunk_mut`] to append it to another collection.
     ///
     /// The chunk borrows the scan, so it cannot outlive it:
     ///
@@ -336,7 +337,24 @@ impl<'conn> ColumnDataCollectionScan<'conn> {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn next_chunk(&mut self) -> Result<Option<DataChunkRef<'_>>> {
+    pub fn next_chunk(&mut self) -> Result<Option<&DataChunk<'_>>> {
+        Ok(self.advance()?.then_some(&self.chunk))
+    }
+
+    /// Return the next chunk mutably, e.g. to [append](ColumnDataCollectionAppender::append) it
+    /// to another collection or flatten its vectors, or `None` once every chunk has been scanned.
+    ///
+    /// Like [`Self::next_chunk`], the chunk is only valid until the next call. It is a view of
+    /// the scan's chunk rather than `&mut`, so the scan's own chunk cannot be swapped out.
+    pub fn next_chunk_mut(&mut self) -> Result<Option<DataChunk<'_>>> {
+        if !self.advance()? {
+            return Ok(None);
+        }
+        DataChunk::borrowed(self.chunk.handle, false).map(Some)
+    }
+
+    fn advance(&mut self) -> Result<bool> {
+        self.chunk.evict_cached();
         loop {
             let did_produce_chunk: bool = check_api_call!(
                 ffi::duckdb_v2_column_data_collection_scan,
@@ -347,11 +365,10 @@ impl<'conn> ColumnDataCollectionScan<'conn> {
                 RET
             )?;
             if !did_produce_chunk {
-                return Ok(None);
+                return Ok(false);
             }
-            let chunk = DataChunkRef::new(self.chunk.handle, false)?;
-            if chunk.row_count()? > 0 {
-                return Ok(Some(chunk));
+            if self.chunk.row_count()? > 0 {
+                return Ok(true);
             }
         }
     }
@@ -396,18 +413,17 @@ impl<'conn> ColumnDataCollectionAppender<'conn> {
         &self.collection
     }
 
-    /// Append a copy of `chunk`, an owned [`DataChunk`] or a borrowed [`DataChunkRef`], to the collection.
+    /// Append a copy of `chunk` to the collection.
     ///
     /// DuckDB may flatten nested columns of `chunk` in place, so it is borrowed
     /// mutably. A mismatched column count or type returns an error without
     /// copying data.
-    #[allow(private_bounds)]
-    pub fn append<D: DataChunkMut>(&mut self, chunk: &mut D) -> Result<()> {
+    pub fn append(&mut self, chunk: &mut DataChunk<'_>) -> Result<()> {
         let result = check_api_call!(
             ffi::duckdb_v2_column_data_collection_append,
             self.collection.handle,
             self.appender.raw(),
-            chunk.chunk_handle()
+            chunk.handle
         );
         // DuckDB may flatten nested columns in place, even when the append fails.
         chunk.evict_cached();

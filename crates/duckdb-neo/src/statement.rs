@@ -81,13 +81,30 @@ pub struct Statements {
 }
 
 impl Statements {
-    /// Parse SQL using a connection's parser configuration.
+    /// Parse SQL to run, without binding; a syntax error aborts the active transaction like a failed execution.
+    ///
+    /// Uses the connection's parser configuration. Syntax errors surface from the iterator.
     pub fn parse(conn: &Connection, sql: impl AsRef<str>) -> Result<Statements> {
-        let query_str =
-            std::ffi::CString::new(sql.as_ref()).map_err(|_| Error::invalid_input("SQL string contains a NUL byte"))?;
+        Self::parse_sql(conn, sql.as_ref(), true)
+    }
 
-        check_api_call!(ffi::duckdb_v2_parse_sql, conn.raw(), query_str.as_ptr(), RET)
-            .map(|handle| Statements { handle })
+    /// Parse SQL only to inspect it, e.g. with [`Statement::bind`]; a syntax error leaves the transaction usable.
+    pub fn parse_inspect(conn: &Connection, sql: impl AsRef<str>) -> Result<Statements> {
+        Self::parse_sql(conn, sql.as_ref(), false)
+    }
+
+    fn parse_sql(conn: &Connection, sql: &str, invalidate: bool) -> Result<Statements> {
+        let query_str =
+            std::ffi::CString::new(sql).map_err(|_| Error::invalid_input("SQL string contains a NUL byte"))?;
+
+        check_api_call!(
+            ffi::duckdb_v2_parse_sql,
+            conn.raw(),
+            query_str.as_ptr(),
+            invalidate,
+            RET
+        )
+        .map(|handle| Statements { handle })
     }
 }
 
@@ -380,6 +397,7 @@ mod tests {
     use crate::{
         DuckDBType, Parameters,
         column_data_collection::ColumnDataCollection,
+        connection::Connection,
         data_chunk::DataChunk,
         environment::{Environment, StorageLocation},
         ffi,
@@ -399,6 +417,51 @@ mod tests {
         assert_eq!(first, "lo");
         assert_eq!(statement.parameter_names()?, ["lo", "hi"]);
         assert_eq!(statement.parameter_name(0)?.as_ptr(), first.as_ptr());
+        Ok(())
+    }
+
+    fn parse_error_in_transaction(
+        parse: impl Fn(&Connection, &str) -> crate::Result<Statements>,
+        invalidates: bool,
+    ) -> crate::Result<i64> {
+        let env = Environment::new()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
+        conn.execute("CREATE TABLE t(i BIGINT)", Parameters::None)?;
+        conn.execute("BEGIN", Parameters::None)?;
+        conn.execute("INSERT INTO t VALUES (1)", Parameters::None)?;
+
+        let error = parse(&conn, "SELEC 1")?
+            .next()
+            .expect("one statement")
+            .expect_err("parse should fail");
+        assert!(error.message.contains("syntax error"), "{error}");
+
+        let insert = conn.execute("INSERT INTO t VALUES (2)", Parameters::None);
+        assert_eq!(insert.is_ok(), !invalidates, "{insert:?}");
+        conn.execute("COMMIT", Parameters::None)?;
+
+        let chunk = conn
+            .query("SELECT count(*)::BIGINT FROM t", Parameters::None)?
+            .next_chunk()?
+            .expect("one chunk");
+        Ok(chunk.get_vector_at::<i64>(0)?.reader()?.get(0)?.copied().unwrap())
+    }
+
+    #[test]
+    fn test_parse_inspect_error_keeps_transaction() -> crate::Result<()> {
+        assert_eq!(
+            parse_error_in_transaction(|c, s| Statements::parse_inspect(c, s), false)?,
+            2
+        );
+        assert_eq!(parse_error_in_transaction(|c, s| c.parse_inspect(s), false)?, 2);
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_error_aborts_transaction() -> crate::Result<()> {
+        assert_eq!(parse_error_in_transaction(|c, s| Statements::parse(c, s), true)?, 0);
+        assert_eq!(parse_error_in_transaction(|c, s| c.parse(s), true)?, 0);
         Ok(())
     }
 

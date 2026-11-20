@@ -13,11 +13,14 @@ use std::{
 };
 
 use crate::{
-    builder_helpers::ArgCount,
+    builder_helpers::{ArgCount, callback_trampoline},
     ffi,
     handles::{AggregateFunctionBuilderHandle, AggregateFunctionBuilderLink},
     logical_type::LogicalType,
+    stats::Stats,
 };
+
+use crate::bind_arguments::ArgumentCounts;
 
 use crate::{
     Error, Result,
@@ -27,7 +30,7 @@ use crate::{
     connection::{Context, FFILink},
     data_chunk::{RowCount, VectorCollection},
     enums::AggregateFunctionProperty,
-    raw::RawExt,
+    raw::{FromRaw, RawExt},
     signature::SignatureBuilder,
     vector::{Access, Unknown, Vector},
 };
@@ -159,7 +162,7 @@ fn bind_callback<T: AggregateCallbacks>(
     info: ffi::duckdb_v2_function_bind_info_handle,
     result: ffi::duckdb_v2_aggregate_function_bind_info_handle,
 ) -> Result<()> {
-    let arguments = BindArguments { handle: &info };
+    let arguments = BindArguments::new(&info);
 
     let user_data = get_user_data!(ffi::duckdb_v2_function_bind_get_user_data, info);
 
@@ -377,6 +380,42 @@ fn destroy_callback<T: AggregateCallbacks>(info: ffi::duckdb_v2_aggregate_functi
     user_destroy.map(|_| ())
 }
 
+fn stats_callback<T: AggregateStatsCallbacks>(
+    context: &Context,
+    info: ffi::duckdb_v2_aggregate_function_stats_info_handle,
+) -> Result<()> {
+    let user_data = get_user_data!(ffi::duckdb_v2_aggregate_function_stats_get_user_data, info);
+    let bind_data = get_bind_data!(ffi::duckdb_v2_aggregate_function_stats_get_bind_data, info);
+
+    let stats = check_api_call!(ffi::duckdb_v2_aggregate_function_stats_get_result_stats, info, RET)
+        // SAFETY: DuckDB keeps the result statistics alive until this callback returns.
+        .map(|handle| unsafe { Stats::from_raw(handle) })?;
+
+    let arg_counts = ArgumentCounts::from_func(|pf, pv, nf, nv| {
+        check_api_call!(
+            ffi::duckdb_v2_aggregate_function_stats_get_arg_count,
+            info,
+            pf,
+            pv,
+            nf,
+            nv
+        )
+    })?;
+
+    let arg_col_stats_fn = |index: usize| {
+        check_api_call!(
+            ffi::duckdb_v2_aggregate_function_stats_get_arg_stats,
+            info,
+            index as u64,
+            RET
+        )
+        // SAFETY: valid until the callback returns; `T::stats`'s generic lifetime keeps them from escaping.
+        .map(|handle| unsafe { Stats::from_raw(handle) })
+    };
+
+    T::stats(user_data, context, bind_data, &stats, arg_counts, arg_col_stats_fn)
+}
+
 /// Builds and registers a user-defined aggregate function.
 #[derive(Debug)]
 pub struct AggregateFunctionBuilder<T: AggregateCallbacks> {
@@ -384,6 +423,7 @@ pub struct AggregateFunctionBuilder<T: AggregateCallbacks> {
     signature: SignatureBuilder,
     properties: HashMap<ffi::DUCKDB_V2_FUNCTION_PROPERTY_KEY, ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE>,
     user_data: OpaqueHandle<T>,
+    stats_callback: ffi::duckdb_v2_aggregate_function_stats_callback_fn,
 }
 
 impl<T: AggregateCallbacks> AggregateFunctionBuilder<T> {
@@ -394,6 +434,7 @@ impl<T: AggregateCallbacks> AggregateFunctionBuilder<T> {
             signature,
             properties: HashMap::new(),
             user_data: OpaqueHandle::new(implementation),
+            stats_callback: None,
         }
     }
 
@@ -492,7 +533,17 @@ impl<T: AggregateCallbacks> AggregateFunctionBuilder<T> {
             context = none,
             args = (info: ffi::duckdb_v2_aggregate_function_destroy_info_handle),
             exec = destroy_callback,
+        }?;
+
+        if self.stats_callback.is_some() {
+            check_api_call!(
+                ffi::duckdb_v2_aggregate_function_set_stats_callback,
+                handle.raw(),
+                self.stats_callback
+            )?;
         }
+
+        Ok(())
     }
 
     /// Register through a connection or extension, consuming the builder.
@@ -503,6 +554,18 @@ impl<T: AggregateCallbacks> AggregateFunctionBuilder<T> {
         self.build(&handle, link)?;
 
         link.register_aggregate_function(handle)
+    }
+}
+
+impl<T: AggregateStatsCallbacks> AggregateFunctionBuilder<T> {
+    /// Enable [`AggregateStatsCallbacks::stats`] during query optimization.
+    pub fn with_stats(mut self) -> Self {
+        self.stats_callback = callback_trampoline! {
+            T = AggregateStatsCallbacks,
+            args = (info: ffi::duckdb_v2_aggregate_function_stats_info_handle),
+            exec = stats_callback,
+        };
+        self
     }
 }
 
@@ -578,6 +641,28 @@ pub trait AggregateCallbacks: Send + Sync + 'static {
     fn destroy(&self, _bind_data: Option<&Self::BindData>, _states: &States<'_, Self::StateItem>) -> Result<bool> {
         Ok(false)
     }
+}
+
+/// Narrows the statistics of an aggregate function's result during query optimization.
+///
+/// Enable the callback with [`AggregateFunctionBuilder::with_stats`]; it is ignored,
+/// and never registered, without it. DuckDB calls it for each bound call site.
+///
+/// The result statistics start out unknown and describe the result of every group,
+/// including a group without input rows, such as an ungrouped aggregate over an
+/// empty table. Narrowing them is a guarantee DuckDB uses to simplify the query:
+/// a result that breaks it produces wrong query results.
+pub trait AggregateStatsCallbacks: AggregateCallbacks {
+    /// **Stats:** narrow `stats` using `column_stats(i)` for argument `i < arguments.total()`.
+    /// Argument statistics are read-only.
+    fn stats<'a>(
+        &self,
+        context: &Context,
+        bind_data: Option<&Self::BindData>,
+        stats: &Stats<'a>,
+        arguments: ArgCount,
+        column_stats: impl Fn(usize) -> Result<Stats<'a>>,
+    ) -> Result<()>;
 }
 
 #[cfg(test)]

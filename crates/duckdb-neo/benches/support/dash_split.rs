@@ -5,9 +5,9 @@ use std::sync::Mutex;
 
 use duckdb_neo::{
     DuckDBType, Error, Parameters, Result,
-    bind_arguments::BindArgument,
+    bind_arguments::BindArguments,
     connection::{Connection, Context},
-    data_chunk::DataChunkRef,
+    data_chunk::DataChunk,
     signature::{FunctionParameter, SignatureBuilder},
     table_function::{
         BindFunctionHandle, ExecColumnInfo, InitColumnData, TableFunctionBuilder, TableFunctionCallbacks,
@@ -36,13 +36,13 @@ impl TableFunctionCallbacks for DashSplit {
     fn bind(
         &self,
         context: &Context,
-        arguments: Vec<BindArgument>,
+        arguments: BindArguments<'_>,
         bind_handle: BindFunctionHandle<'_>,
     ) -> Result<Self::BindData> {
         let constant = |index: usize| {
-            arguments[index]
-                .value
-                .as_ref()
+            arguments
+                .arg(index)?
+                .value()?
                 .ok_or_else(|| Error::invalid_input("dash_split arguments must be constant"))
         };
         let input = constant(0)?.get::<String>()?;
@@ -93,7 +93,7 @@ impl TableFunctionCallbacks for DashSplit {
         bind_data: &Self::BindData,
         local_state: Option<&mut Self::LocalState>,
         global_state: Option<&Self::GlobalState>,
-        mut output: DataChunkRef<'_>,
+        output: &mut DataChunk<'_>,
         column_info: ExecColumnInfo<'_>,
     ) -> Result<()> {
         let scan = global_state.expect("init_global_state sets the scan");

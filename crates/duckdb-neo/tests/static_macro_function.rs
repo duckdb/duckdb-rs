@@ -22,7 +22,7 @@ fn param_a() -> SignatureBuilder {
     SignatureBuilder::new().param(FunctionParameter::new::<i32>("a"))
 }
 
-#[duckdb_entrypoint_c_api_v2(extension_name = "neo_static_macros", api_version = "v2.0.0")]
+#[duckdb_entrypoint_c_api_v2(extension_name = "neo_static_macros", api_version = "v2.0.1")]
 fn entrypoint(extension: &Extension) -> duckdb_neo::Result<()> {
     MacroFunctionBuilder::new(
         "neo_add",

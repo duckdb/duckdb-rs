@@ -5,22 +5,33 @@
 
 use duckdb_loadable_macros::duckdb_entrypoint_c_api_v2;
 use duckdb_neo::{
-    Parameters,
+    DuckDBType, Parameters,
     connection::Connection,
+    data_chunk::DataChunk,
     environment::{Environment, StorageLocation},
     extension::{Extension, register_static_extension},
     scalar::MicroScalar,
     vector::Vector,
 };
 
-#[duckdb_entrypoint_c_api_v2(extension_name = "neo_static_demo", api_version = "v2.0.0")]
+#[duckdb_entrypoint_c_api_v2(extension_name = "neo_static_demo", api_version = "v2.0.1")]
 fn entrypoint(extension: &Extension) -> duckdb_neo::Result<()> {
+    let mut chunk = DataChunk::create(extension, [i32::logical_type(extension)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
+    vector.set_size(1)?;
+    vector.writer()?.set(0, &10)?;
+    let factor = *chunk
+        .get_vector_at::<i32>(0)?
+        .reader()?
+        .get(0)?
+        .expect("factor was written");
+
     MicroScalar::create(
         "neo_static_times_ten",
-        |_ctx, input: Vector<'_, i32>, mut output: Vector<'_, i32>| {
+        move |_ctx, input: Vector<'_, i32>, mut output: Vector<'_, i32>| {
             let mut writer = output.writer()?;
             for (i, item) in input.reader()?.iter().enumerate() {
-                writer.set_option(i, item.map(|value| value * 10).as_ref())?;
+                writer.set_option(i, item.map(|value| value * factor).as_ref())?;
             }
             Ok(())
         },

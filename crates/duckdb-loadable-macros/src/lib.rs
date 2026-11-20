@@ -31,7 +31,7 @@ struct CEntryPointMacroArgs {
 ///
 /// - `extension_name`: the name DuckDB knows the extension by. A loadable build must be in
 ///   `<extension_name>.duckdb_extension`.
-/// - `api_version`: the C API version the extension needs, such as `"v2.0.0"`.
+/// - `api_version`: the C API version the extension needs, such as `"v2.0.1"`.
 ///
 /// It emits `<extension_name>_init_c_api_v2`, the entrypoint DuckDB calls, and needs one of `duckdb-neo`'s features:
 ///

@@ -81,7 +81,7 @@ mod tests {
     #[test]
     fn test_emits_entrypoint_and_describe() {
         let output = expand(
-            quote!(extension_name = "my_ext", api_version = "v2.0.0"),
+            quote!(extension_name = "my_ext", api_version = "v2.0.1"),
             quote!(
                 fn entrypoint(extension: &Extension) -> Result<()> {
                     Ok(())
@@ -97,7 +97,7 @@ mod tests {
     #[test]
     fn test_rejects_non_function_item() {
         let message = error_message(
-            quote!(extension_name = "my_ext", api_version = "v2.0.0"),
+            quote!(extension_name = "my_ext", api_version = "v2.0.1"),
             quote!(
                 struct NotAFunction;
             ),
@@ -109,7 +109,7 @@ mod tests {
     fn test_rejects_invalid_extension_name() {
         for name in ["my-ext", "1ext", "", "ext name"] {
             let message = error_message(
-                quote!(extension_name = #name, api_version = "v2.0.0"),
+                quote!(extension_name = #name, api_version = "v2.0.1"),
                 quote!(
                     fn entrypoint(extension: &Extension) -> Result<()> {
                         Ok(())

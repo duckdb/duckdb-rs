@@ -40,6 +40,7 @@ fn extension_enabled(extension: &str) -> bool {
     extension == "core_functions"
         || (extension == "parquet" && cfg!(feature = "parquet"))
         || (extension == "json" && cfg!(feature = "json"))
+        || (extension == "icu" && cfg!(feature = "bundled-icu"))
 }
 
 const STATIC_EXTENSION_AUTOREGISTER: &str = "duckdb/extension/loader/static_extension_autoregister.cpp";

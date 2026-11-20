@@ -10,9 +10,9 @@ use std::{
 
 use crate::{
     DuckDBType, Parameters, Result, ToValue,
-    bind_arguments::BindArgument,
+    bind_arguments::BindArguments,
     connection::{Connection, Context, SettingScope},
-    data_chunk::DataChunkRef,
+    data_chunk::DataChunk,
     environment::{Environment, StorageLocation},
     error::Error,
     file::{FileBuilder, FileSystem},
@@ -56,14 +56,14 @@ impl TableFunctionCallbacks for KvReader {
     fn bind(
         &self,
         context: &Context,
-        arguments: Vec<BindArgument>,
+        arguments: BindArguments<'_>,
         bind_handle: BindFunctionHandle<'_>,
     ) -> Result<Self::BindData> {
-        let path = arguments[0]
-            .value
-            .as_ref()
-            .and_then(|value| value.get::<String>().transpose())
-            .ok_or_else(|| Error::invalid_input("expected a file path"))??;
+        let path = arguments
+            .arg(0)?
+            .resolved_value::<String>()?
+            .flatten()
+            .ok_or_else(|| Error::invalid_input("expected a file path"))?;
 
         let fs = FileSystem::new(context)?;
         let file = FileBuilder::new(&fs, &path)?.read().open()?;
@@ -116,7 +116,7 @@ impl TableFunctionCallbacks for KvReader {
         bind_data: &Self::BindData,
         local_state: Option<&mut Self::LocalState>,
         _global_state: Option<&Self::GlobalState>,
-        mut output: DataChunkRef<'_>,
+        output: &mut DataChunk<'_>,
         column_info: ExecColumnInfo<'_>,
     ) -> Result<()> {
         // A batch is produced in one go; the empty chunk after it ends the batch.

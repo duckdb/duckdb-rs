@@ -15,20 +15,21 @@ use std::{any::Any, num::NonZeroUsize};
 
 use crate::ffi;
 
+use crate::stats::Stats;
 use crate::{
     Error, Result,
-    bind_arguments::{BindArgument, BindArguments},
+    bind_arguments::BindArguments,
     builder_helpers::{
         OpaqueHandle, callback_trampoline, ffi_enum_redeclaration, get_bind_data, get_global_state, get_local_state,
         get_user_data, into_opaque, register_callback,
     },
     check_api_call,
     connection::{Context, FFILink},
-    data_chunk::DataChunkRef,
+    data_chunk::DataChunk,
     expression::Expression,
     handles::{TableFunctionBuilderHandle, TableFunctionBuilderLink},
     logical_type::LogicalType,
-    raw::RawExt,
+    raw::{FromRaw, RawExt},
     signature::SignatureBuilder,
     table_function::InitColumnHandle::{Global, Local},
     value::Value,
@@ -85,9 +86,9 @@ fn bind_callback<T: TableFunctionCallbacks>(
 ) -> Result<()> {
     let user_data = get_user_data!(ffi::duckdb_v2_function_bind_get_user_data, info);
 
-    let arguments = BindArguments { handle: &info };
+    let arguments = BindArguments::new(&info);
 
-    let bind_data = T::bind(user_data, context, arguments.collect()?, BindFunctionHandle(&result))?;
+    let bind_data = T::bind(user_data, context, arguments, BindFunctionHandle(&result))?;
 
     check_api_call!(
         ffi::duckdb_v2_function_bind_set_bind_data,
@@ -136,7 +137,7 @@ fn exec_callback<T: TableFunctionCallbacks>(
     let global_state = get_global_state!(ffi::duckdb_v2_table_function_exec_get_global_state, info);
     let local_state = get_local_state!(ffi::duckdb_v2_table_function_exec_get_local_state, info);
 
-    let output_chunk = DataChunkRef::new(
+    let mut output_chunk = DataChunk::borrowed(
         check_api_call!(ffi::duckdb_v2_table_function_exec_get_output_chunk, info, RET)?,
         true,
     )?;
@@ -147,7 +148,7 @@ fn exec_callback<T: TableFunctionCallbacks>(
         bind_data,
         local_state,
         global_state,
-        output_chunk,
+        &mut output_chunk,
         ExecColumnInfo { handle: &info },
     )?;
 
@@ -380,6 +381,24 @@ fn claim_batch_callback<T: TableClaimBatchCallbacks>(
     check_api_call!(ffi::duckdb_v2_table_function_claim_batch_set_claimed, info, result)
 }
 
+fn stats_callback<T: TableStatsCallbacks>(
+    context: &Context,
+    info: ffi::duckdb_v2_table_function_stats_info_handle,
+) -> Result<()> {
+    let user_data = get_user_data!(ffi::duckdb_v2_table_function_stats_get_user_data, info);
+    let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_stats_get_bind_data, info)
+        .ok_or_else(|| Error::api_error("Table function bind data not set"))?;
+
+    let stats = check_api_call!(ffi::duckdb_v2_table_function_stats_get_result_stats, info, RET)
+        // SAFETY: DuckDB keeps the result statistics alive until this callback returns.
+        .map(|handle| unsafe { Stats::from_raw(handle) })?;
+
+    let column_index =
+        check_api_call!(ffi::duckdb_v2_table_function_stats_get_column_index, info, RET).map(|x| x as usize)?;
+
+    T::stats(user_data, context, bind_data, &stats, column_index)
+}
+
 ffi_enum_redeclaration! {
     /// Whether, and how, a scan's partitions line up with a set of columns.
     ///
@@ -551,6 +570,7 @@ pub struct TableFunctionBuilder<T: TableFunctionCallbacks> {
     filter_pushdown_callback: ffi::duckdb_v2_table_function_filter_pushdown_callback_fn,
     partition_data_callback: ffi::duckdb_v2_table_function_partition_data_callback_fn,
     partitioning_callback: ffi::duckdb_v2_table_function_partitioning_callback_fn,
+    stats_callback: ffi::duckdb_v2_table_function_stats_callback_fn,
     claim_batch_callback: ffi::duckdb_v2_table_function_claim_batch_callback_fn,
     get_bind_info_callback: ffi::duckdb_v2_table_function_get_bind_info_callback_fn,
 }
@@ -613,6 +633,18 @@ impl<T: TablePartitioningCallbacks> TableFunctionBuilder<T> {
     }
 }
 
+impl<T: TableStatsCallbacks> TableFunctionBuilder<T> {
+    /// Enable [`TableStatsCallbacks::stats`] during query optimization.
+    pub fn with_stats(mut self) -> Self {
+        self.stats_callback = callback_trampoline! {
+            T = TableStatsCallbacks,
+            args = (info: ffi::duckdb_v2_table_function_stats_info_handle),
+            exec = stats_callback,
+        };
+        self
+    }
+}
+
 impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
     /// Create a builder from a name, signature, and callback implementation.
     pub fn new(name: &str, signature: SignatureBuilder, implementation: T) -> Self {
@@ -626,6 +658,7 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
             partition_data_callback: None,
             partitioning_callback: None,
             claim_batch_callback: None,
+            stats_callback: None,
             get_bind_info_callback: None,
         }
     }
@@ -745,6 +778,14 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
             )?;
         }
 
+        if self.stats_callback.is_some() {
+            check_api_call!(
+                ffi::duckdb_v2_table_function_set_stats_callback,
+                handle.raw(),
+                self.stats_callback
+            )?;
+        }
+
         register_callback! {
             T = TableFunctionCallbacks,
             cb = ffi::duckdb_v2_table_function_set_bind_callback,
@@ -792,7 +833,7 @@ pub trait TableFunctionCallbacks: Send + Sync + 'static {
         bind_data: &Self::BindData,
         local_state: Option<&mut Self::LocalState>,
         global_state: Option<&Self::GlobalState>,
-        output: DataChunkRef<'_>,
+        output: &mut DataChunk<'_>,
         column_info: ExecColumnInfo<'_>,
     ) -> Result<()>;
 
@@ -800,7 +841,7 @@ pub trait TableFunctionCallbacks: Send + Sync + 'static {
     fn bind(
         &self,
         context: &Context,
-        arguments: Vec<BindArgument>,
+        arguments: BindArguments<'_>,
         bind_handle: BindFunctionHandle<'_>,
     ) -> Result<Self::BindData>;
 
@@ -994,6 +1035,25 @@ pub trait TableClaimBatchCallbacks: TableFunctionCallbacks {
         local_state: Option<&mut Self::LocalState>,
         global_state: Option<&Self::GlobalState>,
     ) -> Result<bool>;
+}
+
+/// Narrows the statistics of a table function's columns during query optimization.
+///
+/// Enable the callback with [`TableFunctionBuilder::with_stats`]; it is ignored,
+/// and never registered, without it. DuckDB calls it for each declared column the
+/// query reads, possibly more than once per column.
+///
+/// The column statistics start out unknown. Narrowing them is a guarantee DuckDB
+/// uses to simplify the query: output that breaks it produces wrong query results.
+pub trait TableStatsCallbacks: TableFunctionCallbacks {
+    /// **Stats:** narrow `stats` for the declared column at `column_index`, in declaration order.
+    fn stats(
+        &self,
+        context: &Context,
+        bind_data: &Self::BindData,
+        stats: &Stats<'_>,
+        column_index: usize,
+    ) -> Result<()>;
 }
 
 #[cfg(test)]
