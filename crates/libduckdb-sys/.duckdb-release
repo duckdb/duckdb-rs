@@ -26,5 +26,5 @@
 # --core-url, and --core-version together to update the pin and bundled files.
 
 DUCKDB_RELEASE_COMMIT=8d78114e90a53823803660bf821f6073ac87da8c
-DUCKDB_RELEASE_URL=https://duckdb-staging.duckdb.org/8d78114e90/v2.0.1/duckdb/duckdb/github_release
+DUCKDB_RELEASE_URL=https://install.duckdb.org/v2.0.1
 DUCKDB_RELEASE_VERSION=v2.0.1
