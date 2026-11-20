@@ -47,7 +47,7 @@ BINDING_VARIANTS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
 
 def crate_version(value: str) -> str:
     if not re.fullmatch(VERSION_PATTERN, value):
-        raise argparse.ArgumentTypeError("expected MAJOR.MINOR.PATCH (e.g. 1.20000.0)")
+        raise argparse.ArgumentTypeError("expected MAJOR.MINOR.PATCH (e.g. 1.20001.0)")
     return value
 
 
@@ -129,7 +129,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--core-version",
         metavar="VERSION",
         type=core_version,
-        help="DuckDB build version (e.g. v2.0.0 or v2.0.0-alpha39998)",
+        help="DuckDB build version (e.g. v2.0.1 or v2.0.1-alpha39998)",
     )
     args = parser.parse_args(argv)
     core = (args.core_commit, args.core_url, args.core_version)

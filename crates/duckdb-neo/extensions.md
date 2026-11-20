@@ -8,7 +8,7 @@ it receives:
 use duckdb_loadable_macros::duckdb_entrypoint_c_api_v2;
 use duckdb_neo::extension::Extension;
 
-#[duckdb_entrypoint_c_api_v2(extension_name = "my_ext", api_version = "v2.0.0")]
+#[duckdb_entrypoint_c_api_v2(extension_name = "my_ext", api_version = "v2.0.1")]
 fn entrypoint(extension: &Extension) -> duckdb_neo::Result<()> {
     // Register scalar, aggregate, table, ... functions with `.register(extension)`.
     Ok(())

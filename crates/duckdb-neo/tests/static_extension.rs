@@ -14,7 +14,7 @@ use duckdb_neo::{
     vector::Vector,
 };
 
-#[duckdb_entrypoint_c_api_v2(extension_name = "neo_static_demo", api_version = "v2.0.0")]
+#[duckdb_entrypoint_c_api_v2(extension_name = "neo_static_demo", api_version = "v2.0.1")]
 fn entrypoint(extension: &Extension) -> duckdb_neo::Result<()> {
     let mut chunk = DataChunk::create(extension, [i32::logical_type(extension)?], true)?;
     let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
