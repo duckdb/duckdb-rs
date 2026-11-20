@@ -81,13 +81,21 @@ pub struct Statements {
 }
 
 impl Statements {
-    /// Parse SQL using a connection's parser configuration, without binding.
+    /// Parse SQL to run, without binding; a syntax error aborts the active transaction like a failed execution.
     ///
-    /// With `invalidate`, a parse error aborts the active transaction like a failed execution
-    /// would; pass `false` to only inspect the statements. Syntax errors surface from the iterator.
-    pub fn parse(conn: &Connection, sql: impl AsRef<str>, invalidate: bool) -> Result<Statements> {
+    /// Uses the connection's parser configuration. Syntax errors surface from the iterator.
+    pub fn parse(conn: &Connection, sql: impl AsRef<str>) -> Result<Statements> {
+        Self::parse_sql(conn, sql.as_ref(), true)
+    }
+
+    /// Parse SQL only to inspect it, e.g. with [`Statement::bind`]; a syntax error leaves the transaction usable.
+    pub fn parse_inspect(conn: &Connection, sql: impl AsRef<str>) -> Result<Statements> {
+        Self::parse_sql(conn, sql.as_ref(), false)
+    }
+
+    fn parse_sql(conn: &Connection, sql: &str, invalidate: bool) -> Result<Statements> {
         let query_str =
-            std::ffi::CString::new(sql.as_ref()).map_err(|_| Error::invalid_input("SQL string contains a NUL byte"))?;
+            std::ffi::CString::new(sql).map_err(|_| Error::invalid_input("SQL string contains a NUL byte"))?;
 
         check_api_call!(
             ffi::duckdb_v2_parse_sql,
@@ -389,6 +397,7 @@ mod tests {
     use crate::{
         DuckDBType, Parameters,
         column_data_collection::ColumnDataCollection,
+        connection::Connection,
         data_chunk::DataChunk,
         environment::{Environment, StorageLocation},
         ffi,
@@ -411,7 +420,10 @@ mod tests {
         Ok(())
     }
 
-    fn parse_error_in_transaction(invalidate: bool) -> crate::Result<i64> {
+    fn parse_error_in_transaction(
+        parse: impl Fn(&Connection, &str) -> crate::Result<Statements>,
+        invalidates: bool,
+    ) -> crate::Result<i64> {
         let env = Environment::new()?;
         let instance = env.open(StorageLocation::InMemory)?;
         let conn = instance.connect()?;
@@ -419,14 +431,14 @@ mod tests {
         conn.execute("BEGIN", Parameters::None)?;
         conn.execute("INSERT INTO t VALUES (1)", Parameters::None)?;
 
-        let error = Statements::parse(&conn, "SELEC 1", invalidate)?
+        let error = parse(&conn, "SELEC 1")?
             .next()
             .expect("one statement")
             .expect_err("parse should fail");
         assert!(error.message.contains("syntax error"), "{error}");
 
         let insert = conn.execute("INSERT INTO t VALUES (2)", Parameters::None);
-        assert_eq!(insert.is_ok(), !invalidate, "{insert:?}");
+        assert_eq!(insert.is_ok(), !invalidates, "{insert:?}");
         conn.execute("COMMIT", Parameters::None)?;
 
         let chunk = conn
@@ -437,14 +449,19 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_error_without_invalidation_keeps_transaction() -> crate::Result<()> {
-        assert_eq!(parse_error_in_transaction(false)?, 2);
+    fn test_parse_inspect_error_keeps_transaction() -> crate::Result<()> {
+        assert_eq!(
+            parse_error_in_transaction(|c, s| Statements::parse_inspect(c, s), false)?,
+            2
+        );
+        assert_eq!(parse_error_in_transaction(|c, s| c.parse_inspect(s), false)?, 2);
         Ok(())
     }
 
     #[test]
-    fn test_parse_error_with_invalidation_aborts_transaction() -> crate::Result<()> {
-        assert_eq!(parse_error_in_transaction(true)?, 0);
+    fn test_parse_error_aborts_transaction() -> crate::Result<()> {
+        assert_eq!(parse_error_in_transaction(|c, s| Statements::parse(c, s), true)?, 0);
+        assert_eq!(parse_error_in_transaction(|c, s| c.parse(s), true)?, 0);
         Ok(())
     }
 
@@ -454,7 +471,7 @@ mod tests {
         let instance = env.open(StorageLocation::InMemory)?;
         let conn = instance.connect()?;
 
-        let mut statements = Statements::parse(&conn, "SELECT * FROM range(0, 100) as t(x) where x < ?", true)?;
+        let mut statements = Statements::parse(&conn, "SELECT * FROM range(0, 100) as t(x) where x < ?")?;
         let statement = statements.next().unwrap()?.prepare(&conn, true)?;
 
         let mut query = statement.execute(crate::Parameters::Positional(&[&10]))?;
@@ -477,7 +494,6 @@ mod tests {
         let mut statements = Statements::parse(
             &conn,
             "SELECT x FROM range(0, 100) as t(x) WHERE x >= $lo AND x < $hi ORDER BY x",
-            true,
         )?;
         let statement = statements.next().unwrap()?.prepare(&conn, true)?;
 
@@ -503,7 +519,6 @@ mod tests {
         let mut statements = Statements::parse(
             &conn,
             "SELECT x FROM range(0, 10_000) as t(x) WHERE x >= $lo AND x < $hi ORDER BY x",
-            true,
         )?;
         let statement = statements.next().unwrap()?.prepare(&conn, true)?;
 
@@ -548,7 +563,7 @@ mod tests {
 
         let cdc = cdc.to_normal();
 
-        let mut statements = Statements::parse(&conn, "SELECT title from cdc", true)?;
+        let mut statements = Statements::parse(&conn, "SELECT title from cdc")?;
         let statement = statements.next().unwrap()?.add_collection(cdc, "cdc")?;
 
         let mut query = statement.query(&conn, Parameters::None)?;
@@ -581,7 +596,7 @@ mod tests {
         vec.writer()?.set(1, &2)?;
         cdc.append(&mut chunk)?;
 
-        let statement = Statements::parse(&conn, "SELECT sum(x)::BIGINT FROM cdc", true)?
+        let statement = Statements::parse(&conn, "SELECT sum(x)::BIGINT FROM cdc")?
             .next()
             .unwrap()?
             .add_collection(cdc.to_normal(), "cdc")?;

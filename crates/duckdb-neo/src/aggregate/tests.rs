@@ -515,8 +515,8 @@ impl AggregateStatsCallbacks for StatsSum {
         let column = column_stats(0)?;
         assert!(!column.can_have_null()?);
         assert!(column.can_have_valid()?);
-        stats.set_have_null(true)?;
-        stats.set_have_valid(true)?;
+        stats.set_can_have_null(true)?;
+        stats.set_can_have_valid(true)?;
         self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Ok(())
     }

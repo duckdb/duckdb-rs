@@ -27,12 +27,12 @@ impl Stats<'_> {
     }
 
     /// Set whether a value can be non-NULL; `false` is a guarantee, while `true` is always safe.
-    pub fn set_have_valid(&self, value: bool) -> Result<()> {
+    pub fn set_can_have_valid(&self, value: bool) -> Result<()> {
         check_api_call!(ffi::duckdb_v2_stats_set_can_have_valid, self.raw(), value)
     }
 
     /// Set whether a value can be NULL; `false` is a guarantee, while `true` is always safe.
-    pub fn set_have_null(&self, value: bool) -> Result<()> {
+    pub fn set_can_have_null(&self, value: bool) -> Result<()> {
         check_api_call!(ffi::duckdb_v2_stats_set_can_have_null, self.raw(), value)
     }
 }

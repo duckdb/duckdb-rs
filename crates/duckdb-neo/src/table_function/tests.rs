@@ -1095,7 +1095,7 @@ fn test_table_function_stats_callback() -> Result<()> {
             assert!(stats.can_have_null()?);
             assert!(stats.can_have_valid()?);
             if column_index == 0 {
-                stats.set_have_null(false)?;
+                stats.set_can_have_null(false)?;
             }
             self.seen_columns.lock().unwrap().push(column_index);
             Ok(())

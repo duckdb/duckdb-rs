@@ -55,7 +55,7 @@ pub trait IntoStatement<'a> {
 
 impl<'a> IntoStatement<'a> for &str {
     fn into_statement(self, conn: &Connection) -> Result<Statement<'a>> {
-        Statements::parse(conn, self, true)?.into_statement(conn)
+        Statements::parse(conn, self)?.into_statement(conn)
     }
 }
 
@@ -203,9 +203,14 @@ impl Connection {
         })
     }
 
-    /// Parse SQL into an iterator over its statements.
+    /// Parse SQL to run into an iterator over its statements; see [`Statements::parse`].
     pub fn parse(&self, query: impl AsRef<str>) -> Result<Statements> {
-        Statements::parse(self, query, false)
+        Statements::parse(self, query)
+    }
+
+    /// Parse SQL only to inspect it; see [`Statements::parse_inspect`].
+    pub fn parse_inspect(&self, query: impl AsRef<str>) -> Result<Statements> {
+        Statements::parse_inspect(self, query)
     }
 
     /// Prepare a single statement; `require_cacheable` rejects plans that cannot be reused.
