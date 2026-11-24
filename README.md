@@ -267,6 +267,8 @@ You can adjust this behavior in a number of ways:
    duckdb = { version = "~1.20001.0", features = ["bundled"] }
    ```
 
+   On 64-bit, non-musl Linux targets this also compiles DuckDB's bundled jemalloc and uses it as DuckDB's allocator, matching DuckDB's CMake build. Other targets use DuckDB's standard allocator. Set `DUCKDB_DISABLE_JEMALLOC=1` to force the standard allocator.
+
 2. If you use the `bundled-cmake` feature, `libduckdb-sys` will build DuckDB from the local checkout in `crates/libduckdb-sys/duckdb-sources` using upstream CMake. This keeps plain `bundled` unchanged while allowing CMake-only extensions such as `httpfs` and `icu`.
 
    Example:
@@ -280,7 +282,7 @@ You can adjust this behavior in a number of ways:
    - `bundled-cmake` is _experimental_ and requires a git/workspace checkout. Published crates omit the full `duckdb-sources` tree.
    - It implies `bundled` for conditional-compilation gates, but uses CMake instead of the `cc` backend. Any CMake-only extension feature (e.g. `icu`) enables it automatically.
    - It always links DuckDB's default static extensions (`core_functions` and `parquet`) and therefore implies the `parquet` Cargo feature.
-   - Plain `bundled` uses DuckDB's standard allocator and skips jemalloc. `bundled-cmake` enables upstream jemalloc on supported 64-bit, non-musl Linux targets. Other targets follow DuckDB's CMake checks. Set `DUCKDB_DISABLE_JEMALLOC=1` to force the standard allocator.
+   - Like plain `bundled`, `bundled-cmake` enables jemalloc on supported 64-bit, non-musl Linux targets. Other targets follow DuckDB's CMake checks. `DUCKDB_DISABLE_JEMALLOC=1` forces the standard allocator here too.
    - Extension autoload/autoinstall are enabled to match `bundled`, despite upstream CMake defaults. Set `DUCKDB_DISABLE_EXTENSION_LOAD=1` or `DISABLE_EXTENSION_LOAD=1` to disable external extension install/load support and force autoload/autoinstall off. Statically linked extensions remain available.
    - If `ninja` is on `PATH`, the build uses Ninja by default. Set `CMAKE_GENERATOR` to override.
    - DuckDB builds in `Release` mode by default, even for Rust debug builds, avoiding DuckDB's much slower debug/sanitizer profile. Override with `DUCKDB_CMAKE_BUILD_TYPE` or `CMAKE_BUILD_TYPE`. `DUCKDB_CMAKE_BUILD_TYPE` takes precedence.
