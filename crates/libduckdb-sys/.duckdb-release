@@ -7,9 +7,9 @@
 # DUCKDB_DOWNLOAD_LIB=0, or force the download with DUCKDB_DOWNLOAD_LIB=1.
 #
 # DUCKDB_RELEASE_COMMIT  Full hash of the DuckDB commit the libraries were
-#                        built from. `scripts/upgrade.py` vendors this commit when
-#                        the three core options are supplied together, keeping
-#                        bundled sources and bindings aligned with the download.
+#                        built from. `scripts/upgrade.py` vendors this commit,
+#                        keeping bundled sources and bindings aligned with the
+#                        download.
 # DUCKDB_RELEASE_URL     Directory holding the per-platform tarballs. For
 #                        staging builds this follows DuckDB's upload layout,
 #                        https://duckdb-staging.duckdb.org/<sha10>/<version>/duckdb/duckdb/github_release;
@@ -22,8 +22,10 @@
 #
 # Updated by the `Create Release Version PR` workflow, which DuckDB's release
 # dispatcher (duckdb/duckdb-workflow-trigger, `core_ready` hook) invokes with
-# the commit and version of each new build. Use `scripts/upgrade.py` with --core-commit,
-# --core-url, and --core-version together to update the pin and bundled files.
+# the commit and version of each new build. Use `scripts/upgrade.py` with
+# --core-commit, --core-url, or --core-version to update the pin and bundled
+# files (omitted options keep the values below), or with -b to only rebuild the
+# bundled files from this pin.
 
 DUCKDB_RELEASE_COMMIT=8d78114e90a53823803660bf821f6073ac87da8c
 DUCKDB_RELEASE_URL=https://install.duckdb.org/v2.0.1

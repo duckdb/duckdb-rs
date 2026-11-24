@@ -22,8 +22,7 @@ WORKSPACE_DIR = Path(__file__).resolve().parents[1]
 RELEASE_PIN_FILE = Path("crates/libduckdb-sys/.duckdb-release")
 CRATES = ("duckdb", "libduckdb-sys", "duckdb-loadable-macros")
 EXTENSIONS = ("core_functions", "parquet", "json", "icu")
-# The cc backend cannot compile jemalloc's C sources as C++.
-EXCLUDED_THIRD_PARTY = ("third_party/jemalloc",)
+EXCLUDED_THIRD_PARTY = ()
 # crates.io rejects uploads larger than this.
 CRATES_IO_MAX_UPLOAD_SIZE = 10 * 1024 * 1024
 # A reproducible timestamp that Windows archive tools can restore.
@@ -96,7 +95,11 @@ def core_url(value: str) -> str:
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Bump the duckdb crates and regenerate bundled DuckDB sources and bindings.",
-        epilog="Omitted crate versions keep their current manifest values. Supply all three core options together to update the pin, sources, and bindings; omit them to update only crate versions.",
+        epilog=(
+            "Omitted crate versions keep their current manifest values. "
+            "Core options update .duckdb-release and rebuild the bundle; "
+            "omitted ones keep their pinned values."
+        ),
         allow_abbrev=False,
     )
     parser.add_argument(
@@ -112,6 +115,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         nargs="?",
         type=crate_version,
         help="version for duckdb-neo",
+    )
+    parser.add_argument(
+        "-b",
+        "--bundle",
+        action="store_true",
+        help="regenerate the bundled DuckDB sources and bindings from .duckdb-release",
     )
     parser.add_argument(
         "--core-commit",
@@ -131,15 +140,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=core_version,
         help="DuckDB build version (e.g. v2.0.1 or v2.0.1-alpha39998)",
     )
-    args = parser.parse_args(argv)
-    core = (args.core_commit, args.core_url, args.core_version)
-    if any(value is not None for value in core) and not all(
-        value is not None for value in core
-    ):
-        parser.error(
-            "--core-commit, --core-url, and --core-version must be supplied together"
-        )
-    return args
+    return parser.parse_args(argv)
 
 
 def current_crate_version(path: Path) -> str:
@@ -161,22 +162,44 @@ def read_release_pin(root: Path) -> dict[str, str]:
     path = root / RELEASE_PIN_FILE
     if not path.exists():
         return {}
-    return dict(
-        line.split("=", 1)
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line.startswith("DUCKDB_RELEASE_") and "=" in line
+    return {
+        key: value.strip()
+        for key, value in (
+            line.split("=", 1)
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if line.startswith("DUCKDB_RELEASE_") and "=" in line
+        )
+    }
+
+
+def resolve_core(root: Path, args: argparse.Namespace) -> dict[str, str]:
+    pin = read_release_pin(root)
+    options = (
+        ("DUCKDB_RELEASE_COMMIT", "--core-commit", args.core_commit, core_commit),
+        ("DUCKDB_RELEASE_URL", "--core-url", args.core_url, core_url),
+        ("DUCKDB_RELEASE_VERSION", "--core-version", args.core_version, core_version),
     )
+    core = {}
+    for key, option, value, validate in options:
+        if value is None:
+            if key not in pin:
+                raise ValueError(
+                    f"{option} is required: {RELEASE_PIN_FILE} has no {key}"
+                )
+            try:
+                value = validate(pin[key])
+            except argparse.ArgumentTypeError as error:
+                raise ValueError(
+                    f"{RELEASE_PIN_FILE}: invalid {key}: {error}"
+                ) from error
+        core[key] = value
+    return core
 
 
-def update_release_pin(root: Path, args: argparse.Namespace) -> None:
+def update_release_pin(root: Path, core: dict[str, str]) -> None:
     path = root / RELEASE_PIN_FILE
     text = path.read_text(encoding="utf-8") if path.exists() else ""
-    values = {
-        "DUCKDB_RELEASE_COMMIT": args.core_commit,
-        "DUCKDB_RELEASE_URL": args.core_url,
-        "DUCKDB_RELEASE_VERSION": args.core_version,
-    }
-    for key, value in values.items():
+    for key, value in core.items():
         line = f"{key}={value}"
         text, count = re.subn(rf"(?m)^{key}=[^\n]*$", line.replace("\\", r"\\"), text)
         if not count:
@@ -455,7 +478,7 @@ def write_archive_to(target: Path, archive_path: Path) -> None:
     with (
         archive_path.open("wb") as archive_file,
         gzip.GzipFile(
-            filename="", mode="wb", fileobj=archive_file, mtime=0
+            filename="", mode="wb", fileobj=archive_file, mtime=0, compresslevel=9
         ) as gzip_file,
         tarfile.open(fileobj=gzip_file, mode="w", format=tarfile.PAX_FORMAT) as tar,
     ):
@@ -550,28 +573,33 @@ def upgrade(args: argparse.Namespace, root: Path) -> None:
     current_neo = current_crate_version(root / "crates/duckdb-neo/Cargo.toml")
     version = args.duckdb_rs_version or current
     neo_version = args.neo_version or current_neo
-    if args.core_commit:
+    update_pin = any(
+        value is not None
+        for value in (args.core_commit, args.core_url, args.core_version)
+    )
+    rebuild_bundle = args.bundle or update_pin
+    core = resolve_core(root, args) if rebuild_bundle else {}
+    commit = core.get("DUCKDB_RELEASE_COMMIT")
+    new_core = core.get("DUCKDB_RELEASE_VERSION")
+    if update_pin:
         current_core = read_release_pin(root).get(
             "DUCKDB_RELEASE_VERSION", crate_version_to_core_version(current)
         )
-        print(
-            f"Upgrade DuckDB from {current_core} to {args.core_version} ({args.core_commit})"
-        )
+        print(f"Upgrade DuckDB pin from {current_core} to {new_core} ({commit})")
+    if rebuild_bundle:
+        print(f"Rebuild bundled DuckDB {new_core} ({commit})")
     print(f"Update crate version from {current} to {version}")
     print(f"Update duckdb-neo version from {current_neo} to {neo_version}")
     update_crate_versions(root, version, neo_version)
-    if not args.core_commit:
-        return
-    update_release_pin(root, args)
-
-    workflow = root / ".github/workflows/rust.yaml"
-    text = workflow.read_text(encoding="utf-8")
-    text = re.sub(
-        rf"{re.escape(current_core)}(?![0-9A-Za-z.+-])", args.core_version, text
-    )
-    workflow.write_text(text, encoding="utf-8")
-    regenerate_bundled_sources(root, args.core_commit, args.core_version)
-    check_package_size(root, version)
+    if update_pin:
+        update_release_pin(root, core)
+        workflow = root / ".github/workflows/rust.yaml"
+        text = workflow.read_text(encoding="utf-8")
+        text = re.sub(rf"{re.escape(current_core)}(?![0-9A-Za-z.+-])", new_core, text)
+        workflow.write_text(text, encoding="utf-8")
+    if rebuild_bundle:
+        regenerate_bundled_sources(root, commit, new_core)
+        check_package_size(root, version)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
