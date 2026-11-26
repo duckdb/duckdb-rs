@@ -288,16 +288,30 @@ macro_rules! get_local_state {
 macro_rules! ffi_enum_redeclaration {
     (
         $(#[$meta:meta])*
-        $vis:vis enum $name:ident <- $ffi_ty:path {
+        $vis:vis enum $name:ident <- $ffi_ty:path { $($body:tt)* }
+    ) => {
+        $crate::builder_helpers::ffi_enum_redeclaration! {
+            $(#[$meta])*
+            $vis enum $name: u32 <- $ffi_ty { $($body)* }
+        }
+    };
+    (
+        $(#[$meta:meta])*
+        $vis:vis enum $name:ident: $repr:ident <- $ffi_ty:path {
             $($(#[$variant_meta:meta])* $variant:ident = $ffi_variant:ident),* $(,)?
         }
     ) => {
         $(#[$meta])*
-        #[repr(u32)]
+        #[repr($repr)]
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
         $vis enum $name {
-            $($(#[$variant_meta])* $variant = <$ffi_ty>::$ffi_variant as u32),*
+            $($(#[$variant_meta])* $variant = <$ffi_ty>::$ffi_variant as $repr),*
         }
+
+        // A narrower representation must still hold every FFI value.
+        const _: () = {
+            $(assert!(<$ffi_ty>::$ffi_variant as u64 <= $repr::MAX as u64);)*
+        };
 
         impl From<$name> for $ffi_ty {
             fn from(value: $name) -> Self {

@@ -278,11 +278,8 @@ fn update_callback<T: AggregateCallbacks>(info: ffi::duckdb_v2_aggregate_functio
 
     let states_ptr = check_api_call!(ffi::duckdb_v2_aggregate_function_update_get_states, info, RET)?;
 
-    let row_count = check_api_call!(ffi::duckdb_v2_aggregate_function_update_get_row_count, info, RET)?;
-
     // SAFETY: DuckDB supplies row_count state pointers valid for this callback.
-    let states_slice: &[*mut T::StateItem] =
-        unsafe { state_slice(states_ptr as *const *mut T::StateItem, row_count as usize) };
+    let states_slice: &[*mut T::StateItem] = unsafe { state_slice(states_ptr as *const *mut T::StateItem, row_count) };
 
     // SAFETY: init_callback initialized these states, which DuckDB exclusively lends here.
     let states: States<'_, T::StateItem> = unsafe { States::new(states_slice) };
