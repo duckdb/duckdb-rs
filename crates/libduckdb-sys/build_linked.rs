@@ -1,7 +1,7 @@
 #[cfg(feature = "vcpkg")]
 extern crate vcpkg;
 
-use crate::{HeaderLocation, is_compiler, is_loadable_extension, win_target};
+use crate::{HeaderLocation, build_download_sha, is_compiler, is_loadable_extension, win_target};
 use std::{env, fs, path::Path};
 
 pub fn main(out_dir: &str) {
@@ -161,11 +161,13 @@ fn try_download(_out_dir: &str) -> Option<HeaderLocation> {
 /// Download client for prebuilt libduckdb release artifacts.
 #[cfg(feature = "download-lib")]
 mod download_lib {
+    use sha2::{Digest, Sha256};
     use std::io;
     use std::{env, fs, path::Path};
 
     use super::{
-        HeaderLocation, LibduckdbArchive, copy_libduckdb, emit_link_lib, is_loadable_extension, link_directive,
+        HeaderLocation, LibduckdbArchive, build_download_sha::LIBDUCKDB_SHA_VERSION, copy_libduckdb, emit_link_lib,
+        is_loadable_extension, link_directive,
     };
 
     /// Pin file, next to Cargo.toml, naming the prebuilt DuckDB libraries that
@@ -276,6 +278,7 @@ mod download_lib {
         } else {
             let url = source.archive_url(archive);
             ensure_libduckdb(&url, &archive_path)?;
+            verify_libduckdb(&archive_path, archive, &source)?;
             extract_libduckdb(&archive_path, &download_dir)?;
             if !lib_marker.exists() {
                 return Err(format!(
@@ -326,6 +329,32 @@ mod download_lib {
         io::copy(&mut response.body_mut().as_reader(), &mut tmp_file)?;
         fs::rename(&tmp_path, archive_path)?;
         println!("cargo:warning=Downloaded libduckdb from {url}");
+        Ok(())
+    }
+
+    // The checksums only cover the release that scripts/upgrade.py generated them for.
+    fn verify_libduckdb(
+        archive_path: &Path,
+        archive: &LibduckdbArchive,
+        source: &DownloadSource,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if archive.sha.is_empty() || source.version != LIBDUCKDB_SHA_VERSION {
+            println!(
+                "cargo:warning=No SHA-256 checksum known for {} {}; skipping verification",
+                archive.archive_name, source.version
+            );
+            return Ok(());
+        }
+        let digest = Sha256::digest(fs::read(archive_path)?);
+        let actual: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+        if actual != archive.sha {
+            fs::remove_file(archive_path)?;
+            return Err(format!(
+                "SHA-256 mismatch for {}: expected {}, got {actual}",
+                archive.archive_name, archive.sha
+            )
+            .into());
+        }
         Ok(())
     }
 
@@ -409,6 +438,9 @@ struct LibduckdbArchive {
     #[cfg_attr(not(feature = "download-lib"), allow(dead_code))]
     archive_name: &'static str,
     dynamic_lib: &'static str,
+    // Can be empty for dev builds.
+    #[cfg_attr(not(feature = "download-lib"), allow(dead_code))]
+    sha: &'static str,
 }
 
 impl LibduckdbArchive {
@@ -416,23 +448,39 @@ impl LibduckdbArchive {
         const OSX: LibduckdbArchive = LibduckdbArchive {
             archive_name: "duckdb-shared-libs-osx-universal.tar.gz",
             dynamic_lib: "libduckdb.dylib",
+            sha: build_download_sha::LIBDUCKDB_OSX_SHA,
         };
         const LINUX_AMD64: LibduckdbArchive = LibduckdbArchive {
             archive_name: "duckdb-shared-libs-linux-amd64.tar.gz",
             dynamic_lib: "libduckdb.so",
+            sha: build_download_sha::LIBDUCKDB_LINUX_AMD64_SHA,
         };
         const LINUX_ARM64: LibduckdbArchive = LibduckdbArchive {
             archive_name: "duckdb-shared-libs-linux-arm64.tar.gz",
             dynamic_lib: "libduckdb.so",
+            sha: build_download_sha::LIBDUCKDB_LINUX_ARM64_SHA,
         };
         const WINDOWS_AMD64: LibduckdbArchive = LibduckdbArchive {
             archive_name: "duckdb-shared-libs-windows-amd64.tar.gz",
             dynamic_lib: "duckdb.dll",
+            sha: build_download_sha::LIBDUCKDB_WINDOWS_AMD64_SHA,
         };
         const WINDOWS_ARM64: LibduckdbArchive = LibduckdbArchive {
             archive_name: "duckdb-shared-libs-windows-arm64.tar.gz",
             dynamic_lib: "duckdb.dll",
+            sha: build_download_sha::LIBDUCKDB_WINDOWS_ARM64_SHA,
         };
+        const LINUX_MUSL_AMD64: LibduckdbArchive = LibduckdbArchive {
+            archive_name: "duckdb-static-libs-linux-amd64-musl.tar.gz",
+            dynamic_lib: "libduckdb.so",
+            sha: build_download_sha::LIBDUCKDB_LINUX_MUSL_AMD64_SHA,
+        };
+        const LINUX_MUSL_ARM64: LibduckdbArchive = LibduckdbArchive {
+            archive_name: "duckdb-static-libs-linux-arm64-musl.tar.gz",
+            dynamic_lib: "libduckdb.so",
+            sha: build_download_sha::LIBDUCKDB_LINUX_MUSL_ARM64_SHA,
+        };
+
         match target {
             t if t.ends_with("apple-darwin") => Some(&OSX),
             "x86_64-unknown-linux-gnu" => Some(&LINUX_AMD64),

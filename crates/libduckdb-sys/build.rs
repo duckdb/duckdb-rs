@@ -3,6 +3,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[cfg(not(feature = "bundled"))]
+#[cfg_attr(not(feature = "download-lib"), allow(dead_code))]
+mod build_download_sha;
 #[cfg(not(feature = "bundled-cmake"))]
 #[path = "src/build_paths.rs"]
 mod build_paths;
