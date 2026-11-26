@@ -331,6 +331,8 @@ You can adjust this behavior in a number of ways:
 
    Set `DUCKDB_DOWNLOAD_LIB=0` to opt out and probe the system (vcpkg, pkg-config) instead, or `DUCKDB_DOWNLOAD_LIB=1` to force the download. Leave `DUCKDB_STATIC` unset: setting it requests a static `duckdb_static` library, which the downloaded archives do not contain. The archives are cached in `target/duckdb-download/<target>/<version>` and that directory is automatically added to the linker search path.
 
+   Archives exist for macOS, Linux (glibc and musl) and Windows, on x86_64 and aarch64. Rust's musl targets link statically by default, which rules out the shared library; build with `RUSTFLAGS="-C target-feature=-crt-static"` (and the same `RUSTDOCFLAGS` for doctests) and make sure the target system has `libstdc++` and `libgcc` (e.g. `apk add libstdc++` on Alpine).
+
    ```shell
    cargo test                          # downloads the pinned build on first use
    DUCKDB_DOWNLOAD_LIB=0 cargo test    # use a system DuckDB instead

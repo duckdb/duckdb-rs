@@ -30,8 +30,8 @@ DOWNLOAD_ARCHIVES = (
     ("LIBDUCKDB_LINUX_ARM64_SHA", "duckdb-shared-libs-linux-arm64.tar.gz"),
     ("LIBDUCKDB_WINDOWS_AMD64_SHA", "duckdb-shared-libs-windows-amd64.tar.gz"),
     ("LIBDUCKDB_WINDOWS_ARM64_SHA", "duckdb-shared-libs-windows-arm64.tar.gz"),
-    ("LIBDUCKDB_LINUX_MUSL_AMD64_SHA", "duckdb-static-libs-linux-amd64-musl.tar.gz"),
-    ("LIBDUCKDB_LINUX_MUSL_ARM64_SHA", "duckdb-static-libs-linux-arm64-musl.tar.gz"),
+    ("LIBDUCKDB_LINUX_MUSL_AMD64_SHA", "duckdb-shared-libs-linux-amd64-musl.tar.gz"),
+    ("LIBDUCKDB_LINUX_MUSL_ARM64_SHA", "duckdb-shared-libs-linux-arm64-musl.tar.gz"),
 )
 # Directory URLs serving the assets of a tagged GitHub release, followed by the tag.
 RELEASE_URL_PREFIXES = (

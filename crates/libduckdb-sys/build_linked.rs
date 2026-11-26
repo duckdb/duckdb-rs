@@ -163,6 +163,7 @@ fn try_download(_out_dir: &str) -> Option<HeaderLocation> {
 mod download_lib {
     use sha2::{Digest, Sha256};
     use std::io;
+    use std::process::Command;
     use std::{env, fs, path::Path};
 
     use super::{
@@ -259,6 +260,13 @@ mod download_lib {
         let target = env::var("TARGET")?;
         let archive = LibduckdbArchive::for_target(&target)
             .ok_or_else(|| format!("No pre-built libduckdb available for target '{target}'"))?;
+        if crt_static(&target) && link_directive().starts_with("dylib=") {
+            return Err(format!(
+                "Target '{target}' links statically (crt-static), so it cannot link the pre-built shared \
+                 libduckdb. Build with RUSTFLAGS=\"-C target-feature=-crt-static\", or use the `bundled` feature."
+            )
+            .into());
+        }
 
         let source = DownloadSource::pinned().unwrap_or_else(DownloadSource::from_crate_version);
 
@@ -311,6 +319,24 @@ mod download_lib {
     fn configure_link_search(lib_dir: &Path) {
         println!("cargo:rustc-link-search=native={}", lib_dir.display());
         emit_link_lib(link_directive());
+    }
+
+    // Cargo leaves a target's default crt-static out of CARGO_CFG_TARGET_FEATURE, so ask rustc.
+    // MSVC's crt-static only selects the static CRT, which can still load a DLL.
+    fn crt_static(target: &str) -> bool {
+        if env::var("CARGO_CFG_TARGET_OS").is_ok_and(|os| os != "linux") {
+            return false;
+        }
+        let mut rustc = Command::new(env::var_os("RUSTC").unwrap_or_else(|| "rustc".into()));
+        rustc.args(["--print", "cfg", "--target", target]);
+        if let Ok(flags) = env::var("CARGO_ENCODED_RUSTFLAGS") {
+            rustc.args(flags.split('\x1f').filter(|flag| !flag.is_empty()));
+        }
+        rustc.output().is_ok_and(|output| {
+            String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .any(|line| line == r#"target_feature="crt-static""#)
+        })
     }
 
     // Ensures the libduckdb archive exists: reuses an existing archive or
@@ -471,12 +497,12 @@ impl LibduckdbArchive {
             sha: build_download_sha::LIBDUCKDB_WINDOWS_ARM64_SHA,
         };
         const LINUX_MUSL_AMD64: LibduckdbArchive = LibduckdbArchive {
-            archive_name: "duckdb-static-libs-linux-amd64-musl.tar.gz",
+            archive_name: "duckdb-shared-libs-linux-amd64-musl.tar.gz",
             dynamic_lib: "libduckdb.so",
             sha: build_download_sha::LIBDUCKDB_LINUX_MUSL_AMD64_SHA,
         };
         const LINUX_MUSL_ARM64: LibduckdbArchive = LibduckdbArchive {
-            archive_name: "duckdb-static-libs-linux-arm64-musl.tar.gz",
+            archive_name: "duckdb-shared-libs-linux-arm64-musl.tar.gz",
             dynamic_lib: "libduckdb.so",
             sha: build_download_sha::LIBDUCKDB_LINUX_MUSL_ARM64_SHA,
         };
@@ -485,6 +511,8 @@ impl LibduckdbArchive {
             t if t.ends_with("apple-darwin") => Some(&OSX),
             "x86_64-unknown-linux-gnu" => Some(&LINUX_AMD64),
             "aarch64-unknown-linux-gnu" => Some(&LINUX_ARM64),
+            "x86_64-unknown-linux-musl" => Some(&LINUX_MUSL_AMD64),
+            "aarch64-unknown-linux-musl" => Some(&LINUX_MUSL_ARM64),
             "x86_64-pc-windows-msvc" => Some(&WINDOWS_AMD64),
             "aarch64-pc-windows-msvc" => Some(&WINDOWS_ARM64),
             _ => None,
