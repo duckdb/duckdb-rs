@@ -126,6 +126,48 @@ jobs:
           cargo test -p duckdb --features extensions-full --lib extension::test --locked
           cargo test -p duckdb-neo --features bundled --locked
           cargo test -p libduckdb-sys --features extensions-full --lib build_version::tests --locked
+          cargo test -p libduckdb-sys --features extensions-full --lib tests::bundled_allocator_is_jemalloc --locked -- --exact
+
+  musl:
+    # Linked mode against the musl libduckdb.so. Alpine's g++ provides the musl libstdc++
+    # it needs; GitHub's JS actions only run in Alpine containers on x64.
+    name: Test (Linux musl)
+    runs-on: ubuntu-latest
+    container: rust:1.98-alpine
+    env:
+      DUCKDB_DOWNLOAD_LIB: "1"
+      # Rust's musl targets link statically by default, which cannot load a shared libduckdb.
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: -D warnings -C target-feature=-crt-static
+      RUSTDOCFLAGS: -C target-feature=-crt-static
+    steps:
+      - name: Install build dependencies
+        run: apk add --no-cache build-base git
+      - uses: actions/checkout@v5
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: false
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Test duckdb
+        run: cargo test -p duckdb --features "modern-full vscalar vtab-full" --locked
+
+      - name: Build loadable extension
+        run: cargo build --example hello-ext --features="loadable-extension" --locked
+
+      - name: Test duckdb-neo
+        run: cargo test -p duckdb-neo --features "chrono jiff uuid r2d2 rust_decimal" --locked
+
+      - name: Test duckdb-neo static extension
+        run: cargo test -p duckdb-neo --features build-extension-static --test static_extension --test static_macro_function --locked
+
+      - name: Build duckdb-neo loadable extension
+        run: cargo build -p duckdb-neo --example 002-extension --features build-extension --locked
+
+      - name: Test libduckdb-sys
+        run: cargo test -p libduckdb-sys --locked
+
+      - name: Test duckdb-loadable-macros
+        run: cargo test -p duckdb-loadable-macros --features neo --locked
 
   cmake:
     # Slow bundled C++ build; only start once the fast linked-mode tests pass.

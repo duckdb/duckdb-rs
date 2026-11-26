@@ -39,7 +39,7 @@ winduckdb = []
 # Download a pre-built libduckdb (by default when a `.duckdb-release` pin ships with the
 # crate, or when DUCKDB_DOWNLOAD_LIB=1). Pulls an HTTP client into the build script.
 # Not needed with `bundled`; opt out with `default-features = false`.
-download-lib = ["dep:ureq"]
+download-lib = ["dep:ureq", "dep:sha2"]
 # Warning: experimental feature
 loadable-extension = ["prettyplease", "quote", "syn", "capi-v1"]
 loadable-extension-v2 = ["prettyplease", "quote", "syn", "capi-v2"]

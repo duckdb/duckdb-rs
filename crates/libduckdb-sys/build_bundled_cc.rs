@@ -1,4 +1,6 @@
-use crate::{build_static_extension_autoregister, is_compiler, link_windows_system_libs, win_target, write_bindings};
+use crate::{
+    build_static_extension_autoregister, env_flag, is_compiler, link_windows_system_libs, win_target, write_bindings,
+};
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
@@ -44,6 +46,30 @@ fn extension_enabled(extension: &str) -> bool {
 }
 
 const STATIC_EXTENSION_AUTOREGISTER: &str = "duckdb/extension/loader/static_extension_autoregister.cpp";
+const JEMALLOC_NEW_DELETE: &str = "duckdb/third_party/jemalloc/src/jemalloc_cpp.cpp";
+
+// Mirrors the JEMALLOC_ENABLED platform check in duckdb-sources/CMakeLists.txt.
+fn jemalloc_enabled() -> bool {
+    println!("cargo:rerun-if-env-changed=DUCKDB_DISABLE_JEMALLOC");
+    let target = |name: &str| std::env::var(name).unwrap_or_default();
+    !env_flag("DUCKDB_DISABLE_JEMALLOC")
+        && target("CARGO_CFG_TARGET_OS") == "linux"
+        && target("CARGO_CFG_TARGET_POINTER_WIDTH") == "64"
+        && target("CARGO_CFG_TARGET_ENV") != "musl"
+}
+
+// jemalloc is C, so it gets its own build; its objects go into libduckdb like CMake's duckdb_static.
+fn compile_jemalloc(source_root: &Path, c_files: &[String], is_debug: bool) -> Vec<std::path::PathBuf> {
+    let mut cfg = cc::Build::new();
+    cfg.include(source_root.join("duckdb/third_party/jemalloc/include"))
+        .files(c_files.iter().map(|file| source_root.join(file)))
+        .flag_if_supported("-std=gnu99")
+        .flag_if_supported("-pthread")
+        .warnings(false)
+        .flag_if_supported("-w")
+        .define(if is_debug { "DEBUG" } else { "NDEBUG" }, None);
+    cfg.compile_intermediates()
+}
 
 pub fn main(out_dir: &str) {
     let source_root = crate::bundled_sources::unpack(Path::new("duckdb.tar.gz"), Path::new(out_dir))
@@ -99,7 +125,10 @@ pub fn main(out_dir: &str) {
 
     let mut cpp_files_vec: Vec<String> = cpp_files.into_iter().collect();
     cpp_files_vec.sort();
-    for f in cpp_files_vec.into_iter().map(|file| source_root.join(file)) {
+    let (c_files, cpp_files_vec): (Vec<_>, Vec<_>) = cpp_files_vec.into_iter().partition(|file| file.ends_with(".c"));
+    // Only needed for OVERRIDE_NEW_DELETE, which DuckDB leaves off by default.
+    let cpp_files_vec = cpp_files_vec.into_iter().filter(|file| file != JEMALLOC_NEW_DELETE);
+    for f in cpp_files_vec.map(|file| source_root.join(file)) {
         cfg.file(f);
     }
 
@@ -137,6 +166,17 @@ pub fn main(out_dir: &str) {
 
     if win_target() {
         cfg.define("DUCKDB_BUILD_LIBRARY", None);
+    }
+    // The unity allocator source picks allocator_jemalloc.cpp or allocator_standard.cpp from this define.
+    if jemalloc_enabled() {
+        assert!(
+            !c_files.is_empty(),
+            "duckdb.tar.gz lacks DuckDB's jemalloc sources; regenerate it with scripts/upgrade.py -b \
+             or set DUCKDB_DISABLE_JEMALLOC=1"
+        );
+        cfg.define("DUCKDB_ENABLE_JEMALLOC", None);
+        cfg.objects(compile_jemalloc(&source_root, &c_files, is_debug));
+        println!("cargo:rustc-cfg=duckdb_jemalloc");
     }
     cfg.compile("duckdb");
 

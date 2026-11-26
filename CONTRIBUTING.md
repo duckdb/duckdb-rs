@@ -183,7 +183,7 @@ Which DuckDB the crates target is pinned in
 `crates/libduckdb-sys/.duckdb-release` (`DUCKDB_RELEASE_COMMIT`,
 `DUCKDB_RELEASE_URL` and `DUCKDB_RELEASE_VERSION`). Linked-mode builds download
 the prebuilt libraries from that URL. `scripts/upgrade.py` updates the pin and vendors
-the same commit into the bundled sources when given the three core options.
+the same commit into the bundled sources when given core options.
 
 Normally the pin moves on its own: DuckDB's release dispatcher
 (`duckdb/duckdb-workflow-trigger`, `core_ready` hook) invokes the
@@ -194,8 +194,8 @@ that build.
 
 The upgrade script requires Python 3.11 or newer. Supply the duckdb-rs and
 duckdb-neo versions as optional positional arguments; omitted versions keep their
-current manifest values. To change DuckDB core, supply **all three** named
-options together:
+current manifest values. To change DuckDB core, supply the named core options;
+omitted ones keep their values from `.duckdb-release`:
 
 ```shell
 ./scripts/upgrade.py 1.20001.1 0.20001.0 \
@@ -215,9 +215,9 @@ options together:
   as `v2.0.1-alpha39998`.
 
 The script updates crate versions, exact workspace dependency pins, README
-`Cargo.toml` examples, and `Cargo.lock`. With the core options, it also updates
+`Cargo.toml` examples, and `Cargo.lock`. With core options, it also updates
 `.duckdb-release` and workflow DuckDB version references, then checks out the
-specified commit and regenerates sources and all four binding variants.
+pinned commit and regenerates sources and all four binding variants.
 Supply libraries built from that same commit, and keep the
 encoded DuckDB version in each crate version consistent with the core version.
 Omit both crate versions to change only the core build:
@@ -229,7 +229,14 @@ Omit both crate versions to change only the core build:
   --core-version <CORE_VERSION>
 ```
 
-Omit all three core options for a crate-only release. This leaves the core
+Use `-b`/`--bundle` to regenerate sources and bindings from the current pin
+without changing it, e.g. after changing the packaging:
+
+```shell
+./scripts/upgrade.py -b
+```
+
+Omit `-b` and the core options for a crate-only release. This leaves the core
 pin, workflow version references, sources, and bindings unchanged. Omit the
 second positional argument to keep the current duckdb-neo version:
 

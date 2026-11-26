@@ -3,6 +3,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[cfg(not(feature = "bundled"))]
+#[cfg_attr(not(feature = "download-lib"), allow(dead_code))]
+mod build_download_sha;
 #[cfg(not(feature = "bundled-cmake"))]
 #[path = "src/build_paths.rs"]
 mod build_paths;
@@ -33,6 +36,7 @@ fn is_compiler(compiler_name: &str) -> bool {
 
 fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
+    println!("cargo:rustc-check-cfg=cfg(duckdb_jemalloc)");
     #[cfg(feature = "bundled")]
     build_bundled_backend::main(&out_dir);
     #[cfg(not(feature = "bundled"))]
@@ -124,6 +128,37 @@ pub(crate) fn link_windows_system_libs() {
     } else {
         println!("cargo:rustc-link-lib=dylib=stdc++");
     }
+}
+
+#[cfg(feature = "bundled")]
+fn env_var(name: &str) -> Option<String> {
+    match env::var(name) {
+        Ok(value) => Some(value),
+        Err(env::VarError::NotPresent) => None,
+        Err(env::VarError::NotUnicode(_)) => {
+            panic!("libduckdb-sys expects a valid UTF-8 value for environment variable `{name}`")
+        }
+    }
+}
+
+#[cfg(feature = "bundled")]
+fn parse_env_flag(name: &str) -> Option<bool> {
+    match env_var(name).as_deref() {
+        Some("1" | "true" | "on" | "yes") => Some(true),
+        Some("0" | "false" | "off" | "no") => Some(false),
+        Some(other) => {
+            println!(
+                "cargo:warning=Ignoring unsupported {name} value {other:?}; expected true/false or 1/0, yes/no, on/off"
+            );
+            None
+        }
+        None => None,
+    }
+}
+
+#[cfg(feature = "bundled")]
+fn env_flag(name: &str) -> bool {
+    parse_env_flag(name).unwrap_or(false)
 }
 
 #[cfg(not(feature = "buildtime_bindgen"))]

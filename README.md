@@ -267,6 +267,8 @@ You can adjust this behavior in a number of ways:
    duckdb = { version = "~1.20001.0", features = ["bundled"] }
    ```
 
+   On 64-bit, non-musl Linux targets this also compiles DuckDB's bundled jemalloc and uses it as DuckDB's allocator, matching DuckDB's CMake build. Other targets use DuckDB's standard allocator. Set `DUCKDB_DISABLE_JEMALLOC=1` to force the standard allocator.
+
 2. If you use the `bundled-cmake` feature, `libduckdb-sys` will build DuckDB from the local checkout in `crates/libduckdb-sys/duckdb-sources` using upstream CMake. This keeps plain `bundled` unchanged while allowing CMake-only extensions such as `httpfs` and `icu`.
 
    Example:
@@ -280,7 +282,7 @@ You can adjust this behavior in a number of ways:
    - `bundled-cmake` is _experimental_ and requires a git/workspace checkout. Published crates omit the full `duckdb-sources` tree.
    - It implies `bundled` for conditional-compilation gates, but uses CMake instead of the `cc` backend. Any CMake-only extension feature (e.g. `icu`) enables it automatically.
    - It always links DuckDB's default static extensions (`core_functions` and `parquet`) and therefore implies the `parquet` Cargo feature.
-   - Plain `bundled` uses DuckDB's standard allocator and skips jemalloc. `bundled-cmake` enables upstream jemalloc on supported 64-bit, non-musl Linux targets. Other targets follow DuckDB's CMake checks. Set `DUCKDB_DISABLE_JEMALLOC=1` to force the standard allocator.
+   - Like plain `bundled`, `bundled-cmake` enables jemalloc on supported 64-bit, non-musl Linux targets. Other targets follow DuckDB's CMake checks. `DUCKDB_DISABLE_JEMALLOC=1` forces the standard allocator here too.
    - Extension autoload/autoinstall are enabled to match `bundled`, despite upstream CMake defaults. Set `DUCKDB_DISABLE_EXTENSION_LOAD=1` or `DISABLE_EXTENSION_LOAD=1` to disable external extension install/load support and force autoload/autoinstall off. Statically linked extensions remain available.
    - If `ninja` is on `PATH`, the build uses Ninja by default. Set `CMAKE_GENERATOR` to override.
    - DuckDB builds in `Release` mode by default, even for Rust debug builds, avoiding DuckDB's much slower debug/sanitizer profile. Override with `DUCKDB_CMAKE_BUILD_TYPE` or `CMAKE_BUILD_TYPE`. `DUCKDB_CMAKE_BUILD_TYPE` takes precedence.
@@ -325,9 +327,11 @@ You can adjust this behavior in a number of ways:
 
    On Windows the `windows-amd64` and `windows-arm64` archives contain `duckdb.dll` and its `duckdb.lib` import library; put both in `DUCKDB_LIB_DIR` and add that directory to `PATH`.
 
-4. When none of the `bundled` features is enabled and `DUCKDB_LIB_DIR` is not set, the build script downloads pre-built DuckDB binaries and links against the dynamic library in the archive, effectively automating the manual steps above. Which build it downloads is pinned in `crates/libduckdb-sys/.duckdb-release`: a `DUCKDB_RELEASE_URL` directory holding the `duckdb-shared-libs-<platform>.tar.gz` archives, currently the DuckDB v2.0.1 release, plus a `DUCKDB_RELEASE_VERSION` label and the `DUCKDB_RELEASE_COMMIT` those libraries were built from. `scripts/upgrade.py` updates the pin and vendors the same commit when supplied with `--core-commit`, `--core-url`, and `--core-version` together, so `bundled` and the download agree. Without a pin file the build falls back to the GitHub release matching the DuckDB version encoded in the crate version.
+4. When none of the `bundled` features is enabled and `DUCKDB_LIB_DIR` is not set, the build script downloads pre-built DuckDB binaries and links against the dynamic library in the archive, effectively automating the manual steps above. Which build it downloads is pinned in `crates/libduckdb-sys/.duckdb-release`: a `DUCKDB_RELEASE_URL` directory holding the `duckdb-shared-libs-<platform>.tar.gz` archives, currently the DuckDB v2.0.1 release, plus a `DUCKDB_RELEASE_VERSION` label and the `DUCKDB_RELEASE_COMMIT` those libraries were built from. `scripts/upgrade.py` updates the pin and vendors the same commit when supplied with `--core-commit`, `--core-url`, or `--core-version`, so `bundled` and the download agree. Without a pin file the build falls back to the GitHub release matching the DuckDB version encoded in the crate version.
 
    Set `DUCKDB_DOWNLOAD_LIB=0` to opt out and probe the system (vcpkg, pkg-config) instead, or `DUCKDB_DOWNLOAD_LIB=1` to force the download. Leave `DUCKDB_STATIC` unset: setting it requests a static `duckdb_static` library, which the downloaded archives do not contain. The archives are cached in `target/duckdb-download/<target>/<version>` and that directory is automatically added to the linker search path.
+
+   Archives exist for macOS, Linux (glibc and musl) and Windows, on x86_64 and aarch64. Rust's musl targets link statically by default, which rules out the shared library; build with `RUSTFLAGS="-C target-feature=-crt-static"` (and the same `RUSTDOCFLAGS` for doctests) and make sure the target system has `libstdc++` and `libgcc` (e.g. `apk add libstdc++` on Alpine).
 
    ```shell
    cargo test                          # downloads the pinned build on first use
