@@ -84,63 +84,65 @@ impl<'arena> DuckDBBytes<'arena> {
         Self::from_parts(&[value], || Ok(arena))
     }
 
+    /// Encode `parts` concatenated, copying long values into the arena `arena` returns.
     #[inline(always)]
     pub(crate) fn from_parts<P: AsRef<[u8]> + ?Sized>(
         parts: &[&P],
         arena: impl FnOnce() -> Result<&'arena Arena>,
     ) -> Result<Self> {
-        let length = parts
-            .iter()
-            .try_fold(0u32, |length, part| {
-                length.checked_add(u32::try_from(part.as_ref().len()).ok()?)
-            })
-            .ok_or_else(|| Error {
-                code: DuckDBError::InputOutOfRange,
-                message: format!("combined byte length exceeds the maximum of {} bytes", u32::MAX),
-            })?;
+        let mut bytes = std::mem::MaybeUninit::uninit();
+        // SAFETY: the local is valid for one write, which write_parts performs on success.
+        unsafe {
+            Self::write_parts(bytes.as_mut_ptr(), parts, arena)?;
+            Ok(bytes.assume_init())
+        }
+    }
 
-        let encoded = if length <= ffi::DUCKDB_V2_BYTES_INLINE_LENGTH {
-            let mut inlined = DuckDBV2BytesInlined {
-                length,
-                inlined: [0; ffi::DUCKDB_V2_BYTES_INLINE_LENGTH as usize],
-            };
-            let mut offset = 0;
-            for part in parts {
-                let part = part.as_ref();
-                unsafe {
-                    std::ptr::copy_nonoverlapping(
-                        part.as_ptr(),
-                        inlined.inlined.as_mut_ptr().cast::<u8>().add(offset),
-                        part.len(),
-                    );
-                }
-                offset += part.len();
-            }
-            DuckDBV2BytesUnion { inlined }
-        } else {
-            let mut pointer = DuckDBV2BytesPointer {
-                length,
-                prefix: Default::default(),
-                ptr: arena()?.allocate(length as usize)?.cast(),
-            };
-            let mut offset = 0;
-            for part in parts {
-                let part = part.as_ref();
-                unsafe {
-                    std::ptr::copy_nonoverlapping(part.as_ptr(), pointer.ptr.cast::<u8>().add(offset), part.len());
-                }
-                offset += part.len();
-            }
-            // The prefix may span several parts, including empty ones.
+    /// As [`Self::from_parts`], encoding straight into `slot`.
+    ///
+    /// Building a value elsewhere and copying it would reload fresh stores with a wider load,
+    /// which stalls store forwarding.
+    ///
+    /// # Safety
+    /// `slot` must be valid for writes of one `DuckDBBytes`.
+    #[inline(always)]
+    pub(crate) unsafe fn write_parts<P: AsRef<[u8]> + ?Sized>(
+        slot: *mut Self,
+        parts: &[&P],
+        arena: impl FnOnce() -> Result<&'arena Arena>,
+    ) -> Result<()> {
+        let length = total_length(parts)?;
+        if length <= ffi::DUCKDB_V2_BYTES_INLINE_LENGTH {
+            // SAFETY: the caller guarantees the slot; the parts fit the inline buffer after the length.
             unsafe {
-                std::ptr::copy_nonoverlapping(pointer.ptr, pointer.prefix.as_mut_ptr(), pointer.prefix.len());
+                slot.cast::<[u64; 2]>().write([0, 0]);
+                slot.cast::<u32>().write(length);
+                let inlined = slot
+                    .cast::<u8>()
+                    .add(std::mem::offset_of!(DuckDBV2BytesInlined, inlined));
+                copy_parts(parts, inlined, length as usize);
             }
-            DuckDBV2BytesUnion { pointer }
+            return Ok(());
+        }
+
+        let mut pointer = DuckDBV2BytesPointer {
+            length,
+            prefix: Default::default(),
+            ptr: arena()?.allocate(length as usize)?.cast(),
         };
-        Ok(Self {
-            data: ffi::duckdb_v2_bytes { value: encoded },
-            _marker: PhantomData,
-        })
+        // SAFETY: the allocation holds `length` bytes, and the prefix is a local of its size. The prefix
+        // comes from the parts rather than the fresh arena copy, for the reason above.
+        unsafe {
+            copy_parts(parts, pointer.ptr.cast(), length as usize);
+            copy_parts(parts, pointer.prefix.as_mut_ptr().cast(), pointer.prefix.len());
+            slot.write(Self {
+                data: ffi::duckdb_v2_bytes {
+                    value: DuckDBV2BytesUnion { pointer },
+                },
+                _marker: PhantomData,
+            });
+        }
+        Ok(())
     }
 
     /// Return the payload length in bytes.
@@ -166,6 +168,36 @@ impl<'arena> DuckDBBytes<'arena> {
                 )
             }
         }
+    }
+}
+
+#[inline(always)]
+fn total_length<P: AsRef<[u8]> + ?Sized>(parts: &[&P]) -> Result<u32> {
+    parts
+        .iter()
+        .try_fold(0u32, |length, part| {
+            length.checked_add(u32::try_from(part.as_ref().len()).ok()?)
+        })
+        .ok_or_else(|| Error {
+            code: DuckDBError::InputOutOfRange,
+            message: format!("combined byte length exceeds the maximum of {} bytes", u32::MAX),
+        })
+}
+
+/// # Safety
+/// `destination` must be valid for writes of `limit` bytes, and `parts` must hold at least as many.
+#[inline(always)]
+unsafe fn copy_parts<P: AsRef<[u8]> + ?Sized>(parts: &[&P], destination: *mut u8, limit: usize) {
+    let mut offset = 0;
+    for part in parts {
+        if offset == limit {
+            break;
+        }
+        let part = part.as_ref();
+        let take = part.len().min(limit - offset);
+        // SAFETY: `offset + take <= limit`, within the destination.
+        unsafe { std::ptr::copy_nonoverlapping(part.as_ptr(), destination.add(offset), take) };
+        offset += take;
     }
 }
 
