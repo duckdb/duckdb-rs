@@ -1,8 +1,10 @@
-use crate::{build_static_extension_autoregister, is_compiler, link_windows_system_libs, win_target, write_bindings};
+use crate::{
+    build_static_extension_autoregister, env_flag, env_var, is_compiler, link_windows_system_libs, parse_env_flag,
+    win_target, write_bindings,
+};
 use std::{
     collections::BTreeSet,
-    env::{self, VarError},
-    fs, io,
+    env, fs, io,
     path::{Path, PathBuf},
 };
 
@@ -315,34 +317,6 @@ fn find_program(candidates: &[&str]) -> (Option<String>, Option<which::Error>) {
         }
     }
     (None, last_error)
-}
-
-fn env_var(name: &str) -> Option<String> {
-    match env::var(name) {
-        Ok(value) => Some(value),
-        Err(VarError::NotPresent) => None,
-        Err(VarError::NotUnicode(_)) => {
-            panic!("bundled-cmake expects a valid UTF-8 value for environment variable `{name}`")
-        }
-    }
-}
-
-fn parse_env_flag(name: &str) -> Option<bool> {
-    match env_var(name).as_deref() {
-        Some("1" | "true" | "on" | "yes") => Some(true),
-        Some("0" | "false" | "off" | "no") => Some(false),
-        Some(other) => {
-            cargo_warning(&format!(
-                "Ignoring unsupported {name} value {other:?}; expected true/false or 1/0, yes/no, on/off"
-            ));
-            None
-        }
-        None => None,
-    }
-}
-
-fn env_flag(name: &str) -> bool {
-    parse_env_flag(name).unwrap_or(false)
 }
 
 fn env_flag_aliases(names: &[&str]) -> bool {

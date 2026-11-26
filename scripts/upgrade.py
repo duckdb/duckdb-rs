@@ -41,7 +41,6 @@ RELEASE_URL_PREFIXES = (
 GITHUB_RELEASE_API = "https://api.github.com/repos/duckdb/duckdb/releases/tags/"
 CRATES = ("duckdb", "libduckdb-sys", "duckdb-loadable-macros")
 EXTENSIONS = ("core_functions", "parquet", "json", "icu")
-EXCLUDED_THIRD_PARTY = ()
 # crates.io rejects uploads larger than this.
 CRATES_IO_MAX_UPLOAD_SIZE = 10 * 1024 * 1024
 # A reproducible timestamp that Windows archive tools can restore.
@@ -406,11 +405,6 @@ def regenerate_bindings(
         temp_path.unlink(missing_ok=True)
 
 
-def is_excluded(path: str) -> bool:
-    normalized = Path(path).as_posix()
-    return any(f"/{excluded}" in f"/{normalized}" for excluded in EXCLUDED_THIRD_PARTY)
-
-
 def get_sources(
     package_build: ModuleType,
     sys_dir: Path,
@@ -429,11 +423,7 @@ def get_sources(
         loader.unlink(missing_ok=True)
 
     prefix = f"{sys_dir.as_posix()}/"
-    sources = {path.removeprefix(prefix) for path in source_list}
-    return (
-        {path for path in sources if not is_excluded(path)},
-        {path for path in include_list if not is_excluded(path)},
-    )
+    return {path.removeprefix(prefix) for path in source_list}, set(include_list)
 
 
 def package_sources(root: Path, version: str) -> None:
@@ -493,8 +483,6 @@ def package_sources(root: Path, version: str) -> None:
             },
             "extensions": extension_sources,
         }
-        for excluded in EXCLUDED_THIRD_PARTY:
-            shutil.rmtree(target / excluded, ignore_errors=True)
         with (target / "manifest.json").open(
             "w", encoding="utf-8", newline="\n"
         ) as file:

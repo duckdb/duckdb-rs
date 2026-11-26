@@ -126,6 +126,7 @@ jobs:
           cargo test -p duckdb --features extensions-full --lib extension::test --locked
           cargo test -p duckdb-neo --features bundled --locked
           cargo test -p libduckdb-sys --features extensions-full --lib build_version::tests --locked
+          cargo test -p libduckdb-sys --features extensions-full --lib tests::bundled_allocator_is_jemalloc --locked -- --exact
 
   musl:
     # Linked mode against the musl libduckdb.so. Alpine's g++ provides the musl libstdc++

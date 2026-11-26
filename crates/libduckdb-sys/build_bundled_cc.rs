@@ -1,4 +1,6 @@
-use crate::{build_static_extension_autoregister, is_compiler, link_windows_system_libs, win_target, write_bindings};
+use crate::{
+    build_static_extension_autoregister, env_flag, is_compiler, link_windows_system_libs, win_target, write_bindings,
+};
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
@@ -50,8 +52,7 @@ const JEMALLOC_NEW_DELETE: &str = "duckdb/third_party/jemalloc/src/jemalloc_cpp.
 fn jemalloc_enabled() -> bool {
     println!("cargo:rerun-if-env-changed=DUCKDB_DISABLE_JEMALLOC");
     let target = |name: &str| std::env::var(name).unwrap_or_default();
-    let disabled = std::env::var("DUCKDB_DISABLE_JEMALLOC").is_ok_and(|v| !v.is_empty() && v != "0");
-    !disabled
+    !env_flag("DUCKDB_DISABLE_JEMALLOC")
         && target("CARGO_CFG_TARGET_OS") == "linux"
         && target("CARGO_CFG_TARGET_POINTER_WIDTH") == "64"
         && target("CARGO_CFG_TARGET_ENV") != "musl"
@@ -167,9 +168,15 @@ pub fn main(out_dir: &str) {
         cfg.define("DUCKDB_BUILD_LIBRARY", None);
     }
     // The unity allocator source picks allocator_jemalloc.cpp or allocator_standard.cpp from this define.
-    if !c_files.is_empty() && jemalloc_enabled() {
+    if jemalloc_enabled() {
+        assert!(
+            !c_files.is_empty(),
+            "duckdb.tar.gz lacks DuckDB's jemalloc sources; regenerate it with scripts/upgrade.py -b \
+             or set DUCKDB_DISABLE_JEMALLOC=1"
+        );
         cfg.define("DUCKDB_ENABLE_JEMALLOC", None);
         cfg.objects(compile_jemalloc(&source_root, &c_files, is_debug));
+        println!("cargo:rustc-cfg=duckdb_jemalloc");
     }
     cfg.compile("duckdb");
 

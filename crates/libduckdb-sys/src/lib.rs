@@ -461,4 +461,50 @@ mod tests {
             duckdb_destroy_prepare(&mut stmt);
         }
     }
+
+    #[cfg(duckdb_jemalloc)]
+    unsafe fn jemalloc_allocated_bytes() -> usize {
+        use std::ffi::{c_int, c_void};
+        unsafe extern "C" {
+            fn duckdb_je_mallctl(
+                name: *const c_char,
+                oldp: *mut c_void,
+                oldlenp: *mut usize,
+                newp: *mut c_void,
+                newlen: usize,
+            ) -> c_int;
+        }
+        unsafe {
+            // jemalloc only refreshes its statistics when the epoch advances.
+            let mut epoch: u64 = 1;
+            let epoch_ptr = (&raw mut epoch).cast();
+            let status = duckdb_je_mallctl(
+                c"epoch".as_ptr(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                epoch_ptr,
+                mem::size_of::<u64>(),
+            );
+            assert_eq!(status, 0);
+            let mut allocated: usize = 0;
+            let mut len = mem::size_of::<usize>();
+            let allocated_ptr = (&raw mut allocated).cast();
+            let status = duckdb_je_mallctl(c"stats.allocated".as_ptr(), allocated_ptr, &mut len, ptr::null_mut(), 0);
+            assert_eq!(status, 0);
+            allocated
+        }
+    }
+
+    #[cfg(duckdb_jemalloc)]
+    #[test]
+    fn bundled_allocator_is_jemalloc() {
+        unsafe {
+            let db = TestDb::open();
+            let before = jemalloc_allocated_bytes();
+            let mut result = db.query_result("SELECT range FROM range(10000000)");
+            let held = jemalloc_allocated_bytes().saturating_sub(before);
+            duckdb_destroy_result(&mut result);
+            assert!(held > 40 << 20, "jemalloc holds only {held} bytes of an 80 MB result");
+        }
+    }
 }

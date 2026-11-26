@@ -260,10 +260,11 @@ mod download_lib {
         let target = env::var("TARGET")?;
         let archive = LibduckdbArchive::for_target(&target)
             .ok_or_else(|| format!("No pre-built libduckdb available for target '{target}'"))?;
-        if crt_static(&target) && link_directive().starts_with("dylib=") {
+        if !is_loadable_extension() && link_directive().starts_with("dylib=") && crt_static(&target) {
             return Err(format!(
                 "Target '{target}' links statically (crt-static), so it cannot link the pre-built shared \
-                 libduckdb. Build with RUSTFLAGS=\"-C target-feature=-crt-static\", or use the `bundled` feature."
+                 libduckdb. Build with RUSTFLAGS=\"-C target-feature=-crt-static\" (and the same RUSTDOCFLAGS \
+                 for doctests), or use the `bundled` feature."
             )
             .into());
         }
@@ -326,6 +327,9 @@ mod download_lib {
     fn crt_static(target: &str) -> bool {
         if env::var("CARGO_CFG_TARGET_OS").is_ok_and(|os| os != "linux") {
             return false;
+        }
+        if env::var("CARGO_CFG_TARGET_FEATURE").is_ok_and(|features| features.split(',').any(|f| f == "crt-static")) {
+            return true;
         }
         let mut rustc = Command::new(env::var_os("RUSTC").unwrap_or_else(|| "rustc".into()));
         rustc.args(["--print", "cfg", "--target", target]);
