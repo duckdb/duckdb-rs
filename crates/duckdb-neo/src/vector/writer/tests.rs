@@ -457,6 +457,27 @@ fn writer_sets_string_parts() -> Result<()> {
 }
 
 #[test]
+fn writer_zeroes_inline_padding_over_long_values() -> Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[String::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<String>(0)?;
+    vector.set_size(1)?;
+    {
+        let mut writer = vector.writer()?;
+        writer.set(0, "a value too long to be inlined")?;
+        writer.set_parts(0, Some(&["ab", "c"]))?;
+    }
+    let reader = vector.reader()?;
+    assert_eq!(reader.get(0)?, Some("abc"));
+    // DuckDB compares inlined values bytewise, padding included.
+    // SAFETY: row 0 is an initialized 16-byte string slot.
+    let slot = unsafe { *reader.as_ptr().cast::<[u8; 16]>() };
+    assert_eq!(slot, [3, 0, 0, 0, b'a', b'b', b'c', 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    Ok(())
+}
+
+#[test]
 fn writer_sets_blob_parts() -> Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;

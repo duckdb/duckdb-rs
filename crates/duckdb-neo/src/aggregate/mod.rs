@@ -265,16 +265,16 @@ fn update_callback<T: AggregateCallbacks>(info: ffi::duckdb_v2_aggregate_functio
         )
     })?;
 
-    let mut handles = Vec::with_capacity(arg_count.total());
-    for i in 0..arg_count.total() {
-        handles.push(check_api_call!(
-            ffi::duckdb_v2_aggregate_function_update_get_arg,
-            info,
-            i as u64,
-            RET
-        )?);
-    }
-    let mut vector_collection = VectorCollection::new(handles, Access::Exclusive, RowCount::Fixed(row_count));
+    // SAFETY: DuckDB keeps the update info and its arguments alive until this callback returns.
+    let mut vector_collection = unsafe {
+        VectorCollection::arguments(
+            info.cast(),
+            arg_count.total(),
+            update_arg,
+            Access::Exclusive,
+            RowCount::Fixed(row_count),
+        )
+    };
 
     let states_ptr = check_api_call!(ffi::duckdb_v2_aggregate_function_update_get_states, info, RET)?;
 
@@ -285,6 +285,15 @@ fn update_callback<T: AggregateCallbacks>(info: ffi::duckdb_v2_aggregate_functio
     let states: States<'_, T::StateItem> = unsafe { States::new(states_slice) };
 
     T::update(user_data, bind_data, &mut vector_collection, states)
+}
+
+fn update_arg(info: *mut std::ffi::c_void, index: usize) -> Result<ffi::duckdb_v2_vector_handle> {
+    check_api_call!(
+        ffi::duckdb_v2_aggregate_function_update_get_arg,
+        info.cast(),
+        index as u64,
+        RET
+    )
 }
 
 fn combine_callback<T: AggregateCallbacks>(info: ffi::duckdb_v2_aggregate_function_combine_info_handle) -> Result<()> {

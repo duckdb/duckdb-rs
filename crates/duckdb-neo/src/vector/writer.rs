@@ -676,11 +676,11 @@ impl<T: HasDuckDBBytes> VectorWriter<'_, T> {
 
     #[inline(always)]
     unsafe fn write_byte_parts<P: AsRef<[u8]> + ?Sized>(&mut self, index: usize, parts: &[&P]) -> Result<()> {
-        let data = self.data.cast::<DuckDBBytes<'_>>();
-        let encoded = DuckDBBytes::from_parts(parts, || self.arena())?;
-        // SAFETY: The row is in bounds, and the bytes belong to this vector's arena.
-        unsafe { data.add(index).write(encoded) };
-        Ok(())
+        // SAFETY: The row is in bounds, and long bytes are copied into this vector's arena.
+        unsafe {
+            let slot = self.data.cast::<DuckDBBytes<'_>>().add(index);
+            DuckDBBytes::write_parts(slot, parts, || self.arena())
+        }
     }
 }
 
