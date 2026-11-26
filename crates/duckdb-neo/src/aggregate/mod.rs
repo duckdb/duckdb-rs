@@ -1,8 +1,9 @@
 //! User-defined aggregate functions and their execution state.
 //!
 //! Implement [`AggregateCallbacks`] to define binding, state initialization,
-//! update, combine, finalization, and optional destruction. Register the
-//! implementation with [`AggregateFunctionBuilder`]. During execution,
+//! update, combine, and finalization, and [`AggregateDestroyCallbacks`] for
+//! custom destruction. Register the implementation with
+//! [`AggregateFunctionBuilder`]. During execution,
 //! [`States`] provides borrowed access to DuckDB's per-group state pointers.
 
 use std::{
@@ -349,7 +350,34 @@ fn finalize_callback<T: AggregateCallbacks>(
     T::finalize(user_data, bind_data, states, result_vector, result_offset)
 }
 
-fn destroy_callback<T: AggregateCallbacks>(info: ffi::duckdb_v2_aggregate_function_destroy_info_handle) -> Result<()> {
+fn drop_states<T>(states: &States<'_, T>) {
+    for state in states.as_ptrs() {
+        // SAFETY: DuckDB supplies each initialized state once, to its final destruction callback.
+        unsafe {
+            state.drop_in_place();
+        }
+    }
+}
+
+fn drop_callback<T: AggregateCallbacks>(info: ffi::duckdb_v2_aggregate_function_destroy_info_handle) -> Result<()> {
+    let states_count: u64 = check_api_call!(ffi::duckdb_v2_aggregate_function_destroy_get_state_count, info, RET)?;
+
+    let states_ptr: *mut *mut std::ffi::c_void =
+        check_api_call!(ffi::duckdb_v2_aggregate_function_destroy_get_states, info, RET)?;
+
+    // SAFETY: DuckDB supplies states_count state pointers valid for this callback.
+    let states: &[*mut T::StateItem] =
+        unsafe { state_slice(states_ptr as *const *mut T::StateItem, states_count as usize) };
+
+    // SAFETY: the initialized states are exclusively lent to their final destruction callback.
+    drop_states(&unsafe { States::new(states) });
+
+    Ok(())
+}
+
+fn destroy_callback<T: AggregateDestroyCallbacks>(
+    info: ffi::duckdb_v2_aggregate_function_destroy_info_handle,
+) -> Result<()> {
     let user_data = get_user_data!(ffi::duckdb_v2_aggregate_function_destroy_get_user_data, info);
 
     let bind_data = get_bind_data!(ffi::duckdb_v2_aggregate_function_destroy_get_bind_data, info);
@@ -369,12 +397,7 @@ fn destroy_callback<T: AggregateCallbacks>(info: ffi::duckdb_v2_aggregate_functi
     let user_destroy = T::destroy(user_data, bind_data, &states);
 
     if !matches!(user_destroy, Ok(true)) {
-        for state in states.as_ptrs() {
-            // SAFETY: DuckDB supplies each initialized state once; user_destroy did not claim cleanup.
-            unsafe {
-                state.drop_in_place();
-            }
-        }
+        drop_states(&states);
     }
 
     user_destroy.map(|_| ())
@@ -424,17 +447,33 @@ pub struct AggregateFunctionBuilder<T: AggregateCallbacks> {
     properties: HashMap<ffi::DUCKDB_V2_FUNCTION_PROPERTY_KEY, ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE>,
     user_data: OpaqueHandle<T>,
     stats_callback: ffi::duckdb_v2_aggregate_function_stats_callback_fn,
+    destroy_callback: ffi::duckdb_v2_aggregate_function_destroy_callback_fn,
 }
 
 impl<T: AggregateCallbacks> AggregateFunctionBuilder<T> {
     /// Create a builder from a name, signature, and callback implementation.
+    ///
+    /// States that need no drop register no destroy callback, which lets DuckDB stream running window aggregates.
     pub fn new(name: impl Into<String>, signature: SignatureBuilder, implementation: T) -> Self {
+        let destroy_callback: ffi::duckdb_v2_aggregate_function_destroy_callback_fn =
+            if std::mem::needs_drop::<T::StateItem>() {
+                callback_trampoline! {
+                    T = AggregateCallbacks,
+                    context = none,
+                    args = (info: ffi::duckdb_v2_aggregate_function_destroy_info_handle),
+                    exec = drop_callback,
+                }
+            } else {
+                None
+            };
+
         Self {
             name: name.into(),
             signature,
             properties: HashMap::new(),
             user_data: OpaqueHandle::new(implementation),
             stats_callback: None,
+            destroy_callback,
         }
     }
 
@@ -526,14 +565,13 @@ impl<T: AggregateCallbacks> AggregateFunctionBuilder<T> {
             exec = finalize_callback,
         }?;
 
-        register_callback! {
-            T = AggregateCallbacks,
-            cb = ffi::duckdb_v2_aggregate_function_set_destroy_callback,
-            handle = handle.raw(),
-            context = none,
-            args = (info: ffi::duckdb_v2_aggregate_function_destroy_info_handle),
-            exec = destroy_callback,
-        }?;
+        if self.destroy_callback.is_some() {
+            check_api_call!(
+                ffi::duckdb_v2_aggregate_function_set_destroy_callback,
+                handle.raw(),
+                self.destroy_callback
+            )?;
+        }
 
         if self.stats_callback.is_some() {
             check_api_call!(
@@ -569,11 +607,26 @@ impl<T: AggregateStatsCallbacks> AggregateFunctionBuilder<T> {
     }
 }
 
+impl<T: AggregateDestroyCallbacks> AggregateFunctionBuilder<T> {
+    /// Enable [`AggregateDestroyCallbacks::destroy`] when DuckDB releases states.
+    /// A destroy callback stops DuckDB from streaming running window aggregates.
+    pub fn with_destroy(mut self) -> Self {
+        self.destroy_callback = callback_trampoline! {
+            T = AggregateDestroyCallbacks,
+            context = none,
+            args = (info: ffi::duckdb_v2_aggregate_function_destroy_info_handle),
+            exec = destroy_callback,
+        };
+        self
+    }
+}
+
 /// Callback lifecycle for a user-defined aggregate function.
 ///
 /// DuckDB binds each call site, creates one state per group, updates states
 /// from input batches, combines partial states, and finalizes them into result
-/// vectors. [`Self::destroy`] may override automatic Rust state cleanup.
+/// vectors. States are dropped when DuckDB releases them; implement
+/// [`AggregateDestroyCallbacks`] to customize that.
 pub trait AggregateCallbacks: Send + Sync + 'static {
     /// Data shared from binding through execution.
     type BindData: Any + Send + Sync + PartialEq;
@@ -635,12 +688,16 @@ pub trait AggregateCallbacks: Send + Sync + 'static {
         result: Vector<'_, Unknown>,
         result_offset: usize,
     ) -> Result<()>;
+}
 
-    /// Return `Ok(true)` only after destroying every state to skip automatic cleanup.
+/// Customizes how DuckDB releases an aggregate function's states.
+///
+/// Enable the callback with [`AggregateFunctionBuilder::with_destroy`]; it is ignored,
+/// and never registered, without it. Without it, states are still dropped in place.
+pub trait AggregateDestroyCallbacks: AggregateCallbacks {
+    /// **Destroy:** return `Ok(true)` only after destroying every state to skip automatic cleanup.
     /// An `Err` is ignored but still cleans up; a panic skips cleanup and leaks the states.
-    fn destroy(&self, _bind_data: Option<&Self::BindData>, _states: &States<'_, Self::StateItem>) -> Result<bool> {
-        Ok(false)
-    }
+    fn destroy(&self, bind_data: Option<&Self::BindData>, states: &States<'_, Self::StateItem>) -> Result<bool>;
 }
 
 /// Narrows the statistics of an aggregate function's result during query optimization.

@@ -1,13 +1,22 @@
-use std::fmt::Display;
+use std::{
+    fmt::Display,
+    sync::{
+        Arc,
+        atomic::{AtomicIsize, AtomicUsize, Ordering},
+    },
+};
 
 use crate::ffi::{DUCKDB_V2_FUNCTION_PROPERTY_KEY, DUCKDB_V2_FUNCTION_PROPERTY_VALUE};
 
 use crate::{
     DuckDBType, Parameters,
-    aggregate::{AggregateCallbacks, AggregateFunctionBuilder, AggregateStatsCallbacks, ReturnTypeHandle, States},
+    aggregate::{
+        AggregateCallbacks, AggregateDestroyCallbacks, AggregateFunctionBuilder, AggregateStatsCallbacks,
+        ReturnTypeHandle, States,
+    },
     bind_arguments::BindArguments,
     builder_helpers::ArgCount,
-    connection::{Context, SettingScope},
+    connection::{Connection, Context, SettingScope},
     data_chunk::VectorCollection,
     environment::{Environment, StorageLocation},
     logical_type::LogicalType,
@@ -551,6 +560,240 @@ fn aggregate_test_stats_callback() -> crate::Result<()> {
         .expect("expected a result chunk");
     assert_eq!(chunk.get_vector_at::<i64>(0)?.reader()?.get(0)?, Some(&45));
     assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+    Ok(())
+}
+
+impl AggregateDestroyCallbacks for PaddedSum {
+    fn destroy(
+        &self,
+        _bind_data: Option<&Self::BindData>,
+        _states: &States<'_, Self::StateItem>,
+    ) -> crate::Result<bool> {
+        Ok(false)
+    }
+}
+
+const RUNNING_SUM: &str = "SELECT padded_sum(i::INTEGER) OVER (ROWS UNBOUNDED PRECEDING) FROM range(1, 101) AS t(i)";
+
+fn explain(conn: &Connection, sql: &str) -> crate::Result<String> {
+    let mut plan = conn.query(format!("EXPLAIN {sql}"), Parameters::None)?;
+    let mut text = String::new();
+    while let Some(chunk) = plan.next_chunk()? {
+        let plans = chunk.get_vector_at::<String>(1)?.reader()?;
+        for row in 0..plans.len() {
+            text += plans.get(row)?.expect("EXPLAIN plan is not NULL");
+        }
+    }
+    Ok(text)
+}
+
+fn register_padded_sum(conn: &Connection, with_destroy: bool) -> crate::Result<()> {
+    let builder = AggregateFunctionBuilder::new(
+        "padded_sum",
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("IN"))
+            .return_type(i64::logical_type(conn)?),
+        PaddedSum,
+    );
+    if with_destroy { builder.with_destroy() } else { builder }.register(conn)
+}
+
+#[test]
+fn aggregate_test_plain_state_streams_running_window() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
+    register_padded_sum(&conn, false)?;
+
+    assert!(explain(&conn, RUNNING_SUM)?.contains("Streaming Window"));
+
+    let mut result = conn.query(RUNNING_SUM, Parameters::None)?;
+    let mut running = Vec::new();
+    while let Some(chunk) = result.next_chunk()? {
+        let sums = chunk.get_vector_at::<i64>(0)?.reader()?;
+        for row in 0..sums.len() {
+            running.push(*sums.get(row)?.unwrap());
+        }
+    }
+    assert_eq!(running, (1..=100i64).map(|i| i * (i + 1) / 2).collect::<Vec<_>>());
+
+    Ok(())
+}
+
+#[test]
+fn aggregate_test_with_destroy_disables_streaming_window() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
+    register_padded_sum(&conn, true)?;
+
+    let plan = explain(&conn, RUNNING_SUM)?;
+    assert!(plan.contains("Window") && !plan.contains("Streaming Window"), "{plan}");
+
+    Ok(())
+}
+
+/// A state that tracks how many instances are alive.
+struct Tracked {
+    sum: i64,
+    live: Arc<AtomicIsize>,
+}
+
+impl Drop for Tracked {
+    fn drop(&mut self) {
+        self.live.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+#[derive(Default)]
+struct TrackedSum {
+    live: Arc<AtomicIsize>,
+    destroyed: Arc<AtomicUsize>,
+    claim_cleanup: bool,
+}
+
+impl AggregateCallbacks for TrackedSum {
+    type BindData = ();
+    type StateItem = Tracked;
+
+    fn bind(
+        &self,
+        _context: &Context,
+        _arguments: BindArguments<'_>,
+        _result_type_handle: ReturnTypeHandle<'_>,
+    ) -> crate::Result<Self::BindData> {
+        Ok(())
+    }
+
+    fn init(&self, _bind_data: Option<&Self::BindData>) -> Self::StateItem {
+        self.live.fetch_add(1, Ordering::SeqCst);
+        Tracked {
+            sum: 0,
+            live: self.live.clone(),
+        }
+    }
+
+    fn update(
+        &self,
+        _bind_data: Option<&Self::BindData>,
+        collection: &mut VectorCollection,
+        mut states: States<'_, Self::StateItem>,
+    ) -> crate::Result<()> {
+        let vec = collection.get_vector_at::<i32>(0)?;
+        for (i, val) in vec.reader()?.iter().enumerate() {
+            states[i].sum += i64::from(*val.unwrap_or(&0));
+        }
+        Ok(())
+    }
+
+    fn combine(
+        &self,
+        _bind_data: Option<&Self::BindData>,
+        source: &States<'_, Self::StateItem>,
+        mut dest: States<'_, Self::StateItem>,
+    ) -> crate::Result<()> {
+        for i in 0..dest.len() {
+            dest[i].sum += source[i].sum;
+        }
+        Ok(())
+    }
+
+    fn finalize(
+        &self,
+        _bind_data: Option<&Self::BindData>,
+        states: &[&Self::StateItem],
+        result: Vector<'_, Unknown>,
+        result_offset: usize,
+    ) -> crate::Result<()> {
+        let mut result = result.cast::<i64>()?;
+        for (index, state) in states.iter().enumerate() {
+            result.writer()?.set(result_offset + index, &state.sum)?;
+        }
+        Ok(())
+    }
+}
+
+impl AggregateDestroyCallbacks for TrackedSum {
+    fn destroy(
+        &self,
+        _bind_data: Option<&Self::BindData>,
+        states: &States<'_, Self::StateItem>,
+    ) -> crate::Result<bool> {
+        self.destroyed.fetch_add(states.len(), Ordering::SeqCst);
+        if self.claim_cleanup {
+            for state in states.as_ptrs() {
+                // SAFETY: each state is destroyed once, and returning true skips the automatic drop.
+                unsafe { state.drop_in_place() };
+            }
+        }
+        Ok(self.claim_cleanup)
+    }
+}
+
+const TRACKED_QUERY: &str =
+    "SELECT i % 7 AS g, tracked_sum(i::INTEGER) FROM range(10000) AS t(i) GROUP BY g ORDER BY g";
+
+fn run_tracked_sum(aggregate: TrackedSum, with_destroy: bool) -> crate::Result<String> {
+    let env = Environment::new()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
+    let builder = AggregateFunctionBuilder::new(
+        "tracked_sum",
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("IN"))
+            .return_type(i64::logical_type(&conn)?),
+        aggregate,
+    );
+    if with_destroy { builder.with_destroy() } else { builder }.register(&conn)?;
+
+    let mut result = conn.query(TRACKED_QUERY, Parameters::None)?;
+    let mut sums = Vec::new();
+    while let Some(chunk) = result.next_chunk()? {
+        let values = chunk.get_vector_at::<i64>(1)?.reader()?;
+        for row in 0..values.len() {
+            sums.push(*values.get(row)?.unwrap());
+        }
+    }
+    let expected = (0..7i64)
+        .map(|g| (0..10000i64).filter(|i| i % 7 == g).sum())
+        .collect::<Vec<i64>>();
+    assert_eq!(sums, expected);
+
+    explain(
+        &conn,
+        "SELECT tracked_sum(i::INTEGER) OVER (ROWS UNBOUNDED PRECEDING) FROM range(10) AS t(i)",
+    )
+}
+
+#[test]
+fn aggregate_test_drop_state_without_destroy_callbacks() -> crate::Result<()> {
+    let aggregate = TrackedSum::default();
+    let (live, destroyed) = (aggregate.live.clone(), aggregate.destroyed.clone());
+
+    let plan = run_tracked_sum(aggregate, false)?;
+
+    assert!(plan.contains("Window") && !plan.contains("Streaming Window"), "{plan}");
+    assert_eq!(live.load(Ordering::SeqCst), 0);
+    assert_eq!(destroyed.load(Ordering::SeqCst), 0);
+
+    Ok(())
+}
+
+#[test]
+fn aggregate_test_with_destroy_callbacks() -> crate::Result<()> {
+    for claim_cleanup in [false, true] {
+        let aggregate = TrackedSum {
+            claim_cleanup,
+            ..TrackedSum::default()
+        };
+        let (live, destroyed) = (aggregate.live.clone(), aggregate.destroyed.clone());
+
+        run_tracked_sum(aggregate, true)?;
+
+        assert_eq!(live.load(Ordering::SeqCst), 0, "claim_cleanup = {claim_cleanup}");
+        assert!(destroyed.load(Ordering::SeqCst) > 0, "claim_cleanup = {claim_cleanup}");
+    }
 
     Ok(())
 }
