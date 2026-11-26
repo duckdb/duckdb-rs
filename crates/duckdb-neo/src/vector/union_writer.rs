@@ -398,10 +398,9 @@ impl<'w, M: UnionWriters + 'w> UnionWriter<'w, M> {
         }
         // SAFETY: the row is in bounds of the parent and its tags, which share its rows.
         unsafe {
-            self.parent.set_validity_unchecked(row, false);
-            self.tags.set_validity_unchecked(row, false);
+            self.parent.mark_null_unchecked(row)?;
+            self.tags.mark_null_unchecked(row)
         }
-        Ok(())
     }
 
     /// Make member `I` the row's active member and borrow its writer, to write the member's `row`.
@@ -423,8 +422,8 @@ impl<'w, M: UnionWriters + 'w> UnionWriter<'w, M> {
         // SAFETY: the row is in bounds of every child.
         unsafe {
             self.tags.as_mut_ptr().add(row).write(I as u8);
-            self.tags.set_validity_unchecked(row, true);
-            self.parent.set_validity_unchecked(row, true);
+            self.tags.mark_valid_unchecked(row);
+            self.parent.mark_valid_unchecked(row);
         }
         Ok(M::writer(&mut self.members))
     }

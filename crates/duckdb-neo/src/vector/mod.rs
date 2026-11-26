@@ -598,6 +598,7 @@ impl<'a, T: NativeElement> Vector<'a, T> {
     ///
     /// New rows, including those of nested children, read as zeroed values such as `0`, `''`
     /// and `[]`, or as `NULL` for types where zeroed storage is not a valid value.
+    /// [`Self::set_size_uninit`] skips this for rows that are written anyway.
     pub fn set_size(&mut self, len: usize) -> Result<()> {
         let old = self.len;
         // SAFETY: the rows the resize exposes are initialized before the result is returned.
@@ -687,7 +688,7 @@ impl<'a, T: NativeElement> Vector<'a, T> {
 }
 
 impl<T: NativeElement> Vector<'_, T> {
-    /// Prepare exclusive write access and allocate a writable validity mask.
+    /// Prepare exclusive write access; the validity mask is allocated on the first NULL write.
     ///
     /// Fails unless this is writable output with flat storage. Resize the vector
     /// before acquiring its writer.

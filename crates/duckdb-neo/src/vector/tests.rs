@@ -118,7 +118,7 @@ fn vector_decimal_mismatch_reports_parameters() -> crate::Result<()> {
 }
 
 #[test]
-fn vector_writer_allocates_validity_mask() -> crate::Result<()> {
+fn vector_writer_allocates_validity_mask_on_first_null() -> crate::Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
     let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
@@ -126,7 +126,7 @@ fn vector_writer_allocates_validity_mask() -> crate::Result<()> {
     vector.set_size(1)?;
     assert!(vector.reader().unwrap().validity().is_none());
     vector.row_writer()?.set(0, &42)?;
-    assert!(vector.reader().unwrap().validity().is_some());
+    assert!(vector.reader().unwrap().validity().is_none());
     assert_eq!(vector.row_reader()?.get(0)?, Some(&42));
     vector.row_writer()?.set_null(0)?;
     assert!(vector.reader().unwrap().validity().is_some());
@@ -147,7 +147,7 @@ fn vector_writer_unchecked_updates_validity_after_reshape() -> crate::Result<()>
         // SAFETY: The writable flat vector has 65 rows.
         unsafe { vector.row_writer()?.set_unchecked(index, &(index as i32))? };
     }
-    assert!(vector.row_reader()?.validity().is_some());
+    assert!(vector.row_reader()?.validity().is_none());
     // SAFETY: Both rows are within the writable flat vector.
     unsafe {
         vector.row_writer()?.set_null_unchecked(0)?;
@@ -258,14 +258,7 @@ fn vector_writer_initializes_and_preserves_validity_mask() -> crate::Result<()> 
     for index in 0..vector.len() {
         vector.row_writer()?.set(index, &(index as i32))?;
     }
-    assert!(
-        vector
-            .row_reader()?
-            .validity()
-            .unwrap()
-            .iter()
-            .all(|word| *word == u64::MAX)
-    );
+    assert!(vector.row_reader()?.validity().is_none());
 
     {
         let mut view = vector.row_writer()?;
@@ -569,7 +562,7 @@ fn vector_write_checks_rows_before_dispatch() -> crate::Result<()> {
             unsafe { vector.writer()?.set_unchecked(0, &()) }.unwrap_err().message,
             "element writer called"
         );
-        assert_eq!(vector.reader()?.validity().unwrap(), [u64::MAX]);
+        assert!(vector.reader()?.validity().is_none());
         for index in [1, usize::MAX] {
             for value in [Some(()), None] {
                 let err = vector.writer()?.set_option(index, value.as_ref()).unwrap_err();

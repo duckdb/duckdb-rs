@@ -140,8 +140,7 @@ impl<'w, K: WithWriter + 'w, V: WithWriter + 'w> MapWriter<'w, K, V> {
             return Err(out_of_bounds(row, self.len()));
         }
         // SAFETY: the row is in bounds.
-        unsafe { self.parent.set_validity_unchecked(row, false) };
-        Ok(())
+        unsafe { self.parent.mark_null_unchecked(row) }
     }
 
     /// Write a whole row from its keys and values, at [`Self::child_offset`]; `None` is a NULL value.
@@ -188,7 +187,7 @@ impl<'w, K: WithWriter + 'w, V: WithWriter + 'w> MapWriter<'w, K, V> {
             self.entries
                 .mark_valid_range(entry.offset as usize, (entry.offset + entry.length) as usize);
             let _ = self.parent.write_internal(row, Some(entry));
-            self.parent.set_validity_unchecked(row, true);
+            self.parent.mark_valid_unchecked(row);
         }
     }
 }

@@ -66,7 +66,7 @@ impl<'w, T: WithWriter + 'w, const N: usize> ArrayWriter<'w, T, N> {
             return Err(out_of_bounds(row, self.len()));
         }
         // SAFETY: the row is in bounds, and every element is initialized.
-        unsafe { self.parent.set_validity_unchecked(row, true) };
+        unsafe { self.parent.mark_valid_unchecked(row) };
         Ok(())
     }
 
@@ -79,8 +79,7 @@ impl<'w, T: WithWriter + 'w, const N: usize> ArrayWriter<'w, T, N> {
             self.elements.set_null(element)?;
         }
         // SAFETY: the row is in bounds.
-        unsafe { self.parent.set_validity_unchecked(row, false) };
-        Ok(())
+        unsafe { self.parent.mark_null_unchecked(row) }
     }
 }
 
@@ -106,7 +105,7 @@ where
             }
         }
         // SAFETY: the row is in bounds, and its elements were just written.
-        unsafe { self.parent.set_validity_unchecked(row, true) };
+        unsafe { self.parent.mark_valid_unchecked(row) };
         Ok(())
     }
 

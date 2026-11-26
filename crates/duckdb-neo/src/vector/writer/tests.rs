@@ -956,3 +956,150 @@ fn writer_fills_untyped_and_variant_nulls() -> Result<()> {
     }
     Ok(())
 }
+
+#[test]
+fn writer_allocates_validity_only_for_nulls() -> Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?, i32::logical_type(&conn)?], true)?;
+    let [source, vector] = chunk.get_vector_array_mut([0, 1])?;
+    let (mut source, mut vector) = (source.cast::<i32>()?, vector.cast::<i32>()?);
+    source.set_size(130)?;
+    source.writer()?.write_slice(0, &(0..130).collect::<Vec<_>>())?;
+    vector.set_size(130)?;
+    {
+        let mut writer = vector.writer()?;
+        writer.copy_from(&source.reader()?)?;
+        writer.set(0, &1)?;
+        writer.set_option(1, Some(&2))?;
+        writer.write_slice(2, &[3, 4])?;
+        // SAFETY: every row holds a value.
+        unsafe {
+            writer.fill_validity(true)?;
+            writer.set_row_validity(5, true)?;
+        }
+    }
+    assert!(vector.reader()?.validity().is_none());
+
+    vector.writer()?.set_null(129)?;
+    let reader = vector.reader()?;
+    assert_eq!(reader.validity().map(<[u64]>::len), Some(3));
+    assert_eq!((reader.get(128)?, reader.get(129)?), (Some(&128), None));
+    vector.writer()?.set(129, &7)?;
+    assert_eq!(vector.reader()?.get(129)?, Some(&7));
+    Ok(())
+}
+
+#[test]
+fn writer_revives_fields_nulled_through_the_parent() -> Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut result = conn.query("SELECT {'n': 42} AS value", Parameters::None)?;
+    let source = result.next_chunk()?.unwrap();
+    let ty = source.get_vector_at::<NullStruct>(0)?.logical_type();
+    let mut chunk = DataChunk::create(&conn, std::slice::from_ref(ty), true)?;
+    let mut vector = chunk.get_vector_at_mut::<NullStruct>(0)?;
+    vector.set_size(2)?;
+    {
+        let mut writer = vector.row_writer()?;
+        writer.set(0, &NullStruct { n: 1 })?;
+        writer.set(1, &NullStruct { n: 2 })?;
+    }
+    let field = |vector: &Vector<'_, NullStruct>, row| -> Result<Option<i32>> {
+        Ok(vector
+            .children()
+            .unwrap()
+            .get_vector_at::<i32>(0)?
+            .reader()?
+            .get(row)?
+            .copied())
+    };
+    assert!(
+        vector
+            .children()
+            .unwrap()
+            .get_vector_at::<i32>(0)?
+            .reader()?
+            .validity()
+            .is_none()
+    );
+    vector.writer()?.set_null(0)?;
+    assert_eq!(field(&vector, 0)?, None);
+    vector.row_writer()?.set(0, &NullStruct { n: 3 })?;
+    assert_eq!((field(&vector, 0)?, field(&vector, 1)?), (Some(3), Some(2)));
+    assert!(vector.reader()?.get(0)?.is_some());
+    Ok(())
+}
+
+#[test]
+fn scalar_output_without_nulls_keeps_the_next_input_maskless() -> Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    MicroScalar::create(
+        "mask_probe",
+        |_ctx, mut input: Vector<'_, i64>, mut output: Vector<'_, i64>| {
+            input.flatten()?;
+            let reader = input.reader()?;
+            let masked = i64::from(reader.validity().is_some());
+            let mut writer = output.writer()?;
+            for (row, value) in reader.iter().enumerate() {
+                writer.set_option(row, value.map(|_| &masked))?;
+            }
+            Ok(())
+        },
+    )
+    .register(&conn)?;
+    let max = |sql: &str| -> Result<Option<i64>> {
+        let mut result = conn.query(sql, Parameters::None)?;
+        let chunk = result.next_chunk()?.unwrap();
+        Ok(chunk.get_vector_at::<i64>(0)?.reader()?.get(0)?.copied())
+    };
+    assert_eq!(
+        max("SELECT max(mask_probe(mask_probe(range))) FROM range(10000)")?,
+        Some(0)
+    );
+    assert_eq!(
+        max("SELECT max(mask_probe(mask_probe(nullif(range, 7)))) FROM range(10000)")?,
+        Some(1)
+    );
+    Ok(())
+}
+
+#[test]
+fn writer_buffers_match_duckdb_mutable_buffers() -> Result<()> {
+    use crate::{check_api_call, ffi, logical_type::LogicalType, raw::RawExt};
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let types = ["INTEGER", "VARCHAR", "INTEGER[]", "STRUCT(a INTEGER)", "INTEGER[2]"]
+        .map(|text| LogicalType::from_text(&conn, text))
+        .into_iter()
+        .collect::<Result<Vec<_>>>()?;
+    let mut chunk = DataChunk::create(&conn, &types, true)?;
+    for column in 0..types.len() {
+        let mut vector = chunk.get_vector_at_mut::<Unknown>(column)?;
+        vector.set_size(3)?;
+        let mutable = |vector: &Vector<'_, Unknown>| -> Result<_> {
+            let data = check_api_call!(ffi::duckdb_v2_vector_get_data_mutable, vector.raw(), RET)?;
+            let validity = check_api_call!(ffi::duckdb_v2_vector_flat_get_validity_mutable, vector.raw(), RET)?;
+            Ok((data, validity))
+        };
+        {
+            let mut writer = vector.writer()?;
+            assert!(writer.validity.is_null(), "column {column}");
+            // SAFETY: a NULL row needs no initialized value.
+            unsafe { writer.set_row_validity(0, false)? };
+            assert_eq!(
+                (writer.data, writer.validity),
+                mutable(writer.vector())?,
+                "column {column}"
+            );
+        }
+        let writer = vector.writer()?;
+        assert_eq!(
+            (writer.data, writer.validity),
+            mutable(writer.vector())?,
+            "column {column}"
+        );
+    }
+    Ok(())
+}

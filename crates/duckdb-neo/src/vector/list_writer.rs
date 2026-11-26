@@ -140,8 +140,7 @@ impl<'w, T: WithWriter + 'w> ListWriter<'w, T> {
             return Err(out_of_bounds(row, self.len()));
         }
         // SAFETY: the row is in bounds.
-        unsafe { self.parent.set_validity_unchecked(row, false) };
-        Ok(())
+        unsafe { self.parent.mark_null_unchecked(row) }
     }
 
     /// Write a whole row from its elements, at [`Self::child_offset`].
@@ -178,7 +177,7 @@ impl<'w, T: WithWriter + 'w> ListWriter<'w, T> {
         // SAFETY: the caller guarantees the row's bounds and that the entry covers initialized elements.
         unsafe {
             let _ = self.parent.write_internal(row, Some(entry));
-            self.parent.set_validity_unchecked(row, true);
+            self.parent.mark_valid_unchecked(row);
         }
     }
 }

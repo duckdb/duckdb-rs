@@ -60,7 +60,7 @@ fn reader_exposes_flat_data_and_physical_validity() -> Result<()> {
     }
     let reader = vector.reader()?;
     assert_eq!(reader.selection(), Selection::Identity);
-    assert!(reader.validity().unwrap().iter().all(|word| *word == u64::MAX));
+    assert!(reader.validity().is_none());
     // SAFETY: Every physical slot was initialized above.
     let values = unsafe { vector.reader()?.as_slice() }.unwrap();
     assert_eq!(values, (0..130).collect::<Vec<i32>>());
