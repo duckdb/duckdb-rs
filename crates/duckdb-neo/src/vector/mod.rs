@@ -57,7 +57,7 @@ use crate::{
     data_chunk::{ChildrenMut, VectorCollection},
     error::Error,
     ffi,
-    logical_type::LogicalType,
+    logical_type::{LogicalType, LogicalTypeID},
     value::Value,
 };
 
@@ -170,6 +170,8 @@ pub struct Vector<'a, T: NativeElement> {
     pub(crate) handle: ffi::duckdb_v2_vector_handle,
     pub(crate) access: Access,
     kind: StorageKind,
+    /// `None` if DuckDB reported an ID this crate does not know.
+    type_id: Option<LogicalTypeID>,
     logical_type: LogicalType,
     len: usize,
     /// Prepared read metadata, dropped by every operation that may replace storage.
@@ -194,7 +196,11 @@ impl<'a, T: NativeElement> Vector<'a, T> {
         let len = check_api_call!(ffi::duckdb_v2_vector_get_size, *handle, RET).map(|x| x as usize)?;
         let access = access.for_kind(kind);
 
-        let child_count = check_api_call!(ffi::duckdb_v2_vector_get_child_count, *handle, RET).map(|x| x as usize)?;
+        let type_id = logical_type.id().ok();
+        let child_count = match type_id {
+            Some(id) if !id.has_children() => 0,
+            _ => check_api_call!(ffi::duckdb_v2_vector_get_child_count, *handle, RET).map(|x| x as usize)?,
+        };
         let mut child_handles = Vec::with_capacity(child_count as usize);
         for index in 0..child_count {
             child_handles.push(check_api_call!(
@@ -210,6 +216,7 @@ impl<'a, T: NativeElement> Vector<'a, T> {
         let vector = Self {
             handle: *handle,
             logical_type,
+            type_id,
             kind,
             len,
             access,
@@ -309,6 +316,7 @@ impl<'a, T: NativeElement> Vector<'a, T> {
             handle: self.handle,
             logical_type: self.logical_type,
             kind: self.kind,
+            type_id: self.type_id,
             len: self.len,
             access: self.access,
             view: self.view,
@@ -505,20 +513,7 @@ impl<'a, T: NativeElement> Vector<'a, T> {
     }
 
     pub(crate) fn validate_as<U: NativeElement>(&self) -> Result<()> {
-        match U::validate(self.logical_type(), self.children.as_deref()) {
-            Ok(true) => Ok(()),
-            Ok(false) => Err(Error::invalid_input(format!(
-                "Vector logical type mismatch: expected {:?}, got {:?}",
-                U::TYPE_ID,
-                self.logical_type.to_text()?
-            ))),
-            Err(e) => Err(Error::invalid_input(format!(
-                "Vector logical type validation failed: expected {:?}, got {:?}: {}",
-                U::TYPE_ID,
-                self.logical_type.to_text()?,
-                e.message
-            ))),
-        }
+        validate::<U>(self.type_id, &self.logical_type, self.children.as_deref())
     }
 
     /// # Safety
@@ -741,6 +736,42 @@ impl<T: NativeElement> Vector<'_, T> {
 
 fn vector_len(handle: ffi::duckdb_v2_vector_handle) -> Result<usize> {
     check_api_call!(ffi::duckdb_v2_vector_get_size, handle, RET).map(|len| len as usize)
+}
+
+#[inline(always)]
+fn validate<T: NativeElement>(
+    type_id: Option<LogicalTypeID>,
+    logical_type: &LogicalType,
+    children: Option<&VectorCollection>,
+) -> Result<()> {
+    if T::VALIDATES_BY_ID && type_id == Some(T::TYPE_ID) {
+        debug_assert!(validate_slow::<T>(logical_type, children).is_ok());
+        return Ok(());
+    }
+    validate_slow::<T>(logical_type, children)
+}
+
+fn validate_slow<T: NativeElement>(logical_type: &LogicalType, children: Option<&VectorCollection>) -> Result<()> {
+    match T::validate(logical_type, children) {
+        Ok(true) => Ok(()),
+        result => Err(type_mismatch(T::TYPE_ID, logical_type, result.err())),
+    }
+}
+
+#[cold]
+#[inline(never)]
+fn type_mismatch(expected: LogicalTypeID, actual: &LogicalType, cause: Option<Error>) -> Error {
+    let actual = match actual.to_text() {
+        Ok(text) => text,
+        Err(error) => return error,
+    };
+    Error::invalid_input(match cause {
+        None => format!("Vector logical type mismatch: expected {expected:?}, got {actual:?}"),
+        Some(cause) => format!(
+            "Vector logical type validation failed: expected {expected:?}, got {actual:?}: {}",
+            cause.message
+        ),
+    })
 }
 
 fn not_writable() -> Error {

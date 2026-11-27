@@ -65,6 +65,7 @@ impl FromValue for UuidValueRaw {
 // SAFETY: `UuidValueRaw` has the size and bit layout of DuckDB's UUID storage.
 unsafe impl NativeElement for UuidValueRaw {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Uuid;
+    const VALIDATES_BY_ID: bool = true;
 
     type Native<'a> = HugeInt;
 }
@@ -180,6 +181,7 @@ mod external {
     // SAFETY: same storage as `UuidValueRaw`.
     unsafe impl NativeElement for Uuid {
         const TYPE_ID: LogicalTypeID = LogicalTypeID::Uuid;
+        const VALIDATES_BY_ID: bool = true;
 
         type Native<'a> = UuidValueRaw;
     }

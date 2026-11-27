@@ -129,7 +129,7 @@ impl VectorCollection {
         }
     }
 
-    fn wrap<T: NativeElement>(&self, index: usize, access: Access) -> Result<Vector<'static, T>> {
+    fn wrap_handle<T: NativeElement>(&self, index: usize, access: Access) -> Result<Vector<'static, T>> {
         Vector::from_handle(&self.handles.get(index)?, access)
     }
 
@@ -153,7 +153,7 @@ impl VectorCollection {
         if let Some(vector) = slot.get() {
             return Ok(vector);
         }
-        let _ = slot.set(self.wrap(index, Access::Shared)?);
+        let _ = slot.set(self.wrap_handle(index, Access::Shared)?);
         Ok(slot.get().expect("view was just cached"))
     }
 
@@ -163,7 +163,7 @@ impl VectorCollection {
                 .get()
                 .is_none_or(|vector| vector.access != self.access.for_kind(vector.storage_kind()))
             {
-                self.cache_mut()[index] = OnceCell::from(self.wrap(index, self.access)?);
+                self.cache_mut()[index] = OnceCell::from(self.wrap_handle(index, self.access)?);
             }
         }
         Ok(self.cache_mut().iter_mut().map(|slot| {
@@ -221,7 +221,7 @@ impl VectorCollection {
     pub fn get_untyped_vector_at_mut(&mut self, index: usize) -> Result<Vector<'_, Unknown>> {
         self.check_index(index);
         self.evict(index);
-        self.wrap(index, self.access)
+        self.wrap_handle(index, self.access)
     }
 
     /// Return a read-only view of the vector at `index`, narrowed to `T`.
@@ -247,7 +247,7 @@ impl VectorCollection {
     pub fn get_vector_at_mut<T: NativeElement>(&mut self, index: usize) -> Result<Vector<'_, T>> {
         self.check_index(index);
         self.evict(index);
-        self.wrap(index, self.access)
+        self.wrap_handle(index, self.access)
     }
 
     /// Return the vectors at distinct `indices`, borrowed mutably at the same time.
@@ -265,7 +265,7 @@ impl VectorCollection {
         for index in indices {
             self.evict(index);
         }
-        collect_array(indices.map(|index| self.wrap(index, self.access)))
+        collect_array(indices.map(|index| self.wrap_handle(index, self.access)))
     }
 
     /// Return the number of vectors, which is the column count.

@@ -4,7 +4,7 @@ use crate::{builder_helpers::ffi_enum_redeclaration, ffi};
 
 ffi_enum_redeclaration! {
     /// DuckDB's logical type identifier, independent of type parameters and aliases.
-    pub enum LogicalTypeID <- ffi::DUCKDB_V2_LOGICAL_TYPE_ID {
+    pub enum LogicalTypeID: u32 <- ffi::DUCKDB_V2_LOGICAL_TYPE_ID {
         /// Invalid or unset type.
         Invalid = DUCKDB_V2_LOGICAL_TYPE_ID_INVALID,
         /// The type of a NULL constant.
@@ -55,6 +55,17 @@ ffi_enum_redeclaration! {
         Variant = DUCKDB_V2_LOGICAL_TYPE_ID_VARIANT,
         /// An unnamed struct with positional fields.
         Tuple = DUCKDB_V2_LOGICAL_TYPE_ID_TUPLE,
+    }
+}
+
+impl LogicalTypeID {
+    /// Whether DuckDB gives vectors of this type child vectors, as `duckdb_v2_vector_get_child_count` does.
+    /// `VARIANT` has none there: its rows are read through the value API.
+    pub(crate) const fn has_children(self) -> bool {
+        matches!(
+            self,
+            Self::List | Self::Map | Self::Array | Self::Struct | Self::Tuple | Self::Union
+        )
     }
 }
 

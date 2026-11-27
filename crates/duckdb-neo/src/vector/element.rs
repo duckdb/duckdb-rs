@@ -93,6 +93,10 @@ pub unsafe trait NativeElement: Sized {
     /// The lifetime bounds any storage referenced by an entry.
     type Native<'a>;
 
+    /// Whether [`Self::validate`] accepts exactly the types whose ID is [`Self::TYPE_ID`], so a
+    /// vector whose ID is known to match skips it. Only set it when keeping the default `validate`.
+    const VALIDATES_BY_ID: bool = false;
+
     /// Check the logical type and nested children when attaching this element type to a vector.
     /// A successful check must establish the layout for both reading and writing.
     /// `Ok(false)` means a type mismatch; `Err` means validation failed.
