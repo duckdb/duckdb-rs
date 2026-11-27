@@ -17,7 +17,6 @@ pub struct Variant;
 // SAFETY: rows are read only through DuckDB's value API.
 unsafe impl NativeElement for Variant {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Variant;
-    const VALIDATES_BY_ID: bool = true;
 
     /// VARIANT has no fixed physical layout; rows use the per-cell value API.
     type Native<'a> = ();

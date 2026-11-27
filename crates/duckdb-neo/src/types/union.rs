@@ -50,7 +50,7 @@ pub struct Union;
 // SAFETY: there is no physical row data.
 unsafe impl NativeElement for Union {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Union;
-    const VALIDATES_BY_ID: bool = true;
+    const HAS_CHILDREN: bool = true;
     type Native<'a> = ();
 }
 

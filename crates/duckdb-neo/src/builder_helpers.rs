@@ -285,6 +285,12 @@ macro_rules! get_local_state {
     }};
 }
 
+#[cold]
+#[inline(never)]
+pub(crate) fn unknown_enum_value(name: &str, value: &dyn std::fmt::Debug) -> Error {
+    Error::api_error(format!("Unknown {name}: {value:?}"))
+}
+
 macro_rules! ffi_enum_redeclaration {
     (
         $(#[$meta:meta])*
@@ -326,11 +332,7 @@ macro_rules! ffi_enum_redeclaration {
             fn try_from(value: $ffi_ty) -> $crate::Result<Self> {
                 match value {
                     $(<$ffi_ty>::$ffi_variant => Ok($name::$variant),)*
-                    _ => Err($crate::Error::api_error(format!(
-                        "Unknown {}: {:?}",
-                        stringify!($name),
-                        value
-                    ))),
+                    _ => Err($crate::builder_helpers::unknown_enum_value(stringify!($name), &value)),
                 }
             }
         }

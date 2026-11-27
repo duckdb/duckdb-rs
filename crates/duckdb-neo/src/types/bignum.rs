@@ -78,7 +78,6 @@ impl HasDuckDBBytes for BigNumValue {}
 // SAFETY: `BigNum` matches DuckDB's string storage for `BIGNUM`.
 unsafe impl NativeElement for BigNum {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::BigNum;
-    const VALIDATES_BY_ID: bool = true;
 
     type Native<'a> = BigNum;
 }
@@ -157,7 +156,6 @@ impl FromValue for BigNumValue {
 // SAFETY: same storage as `BigNum`.
 unsafe impl NativeElement for BigNumValue {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::BigNum;
-    const VALIDATES_BY_ID: bool = true;
 
     type Native<'a> = BigNum;
 }

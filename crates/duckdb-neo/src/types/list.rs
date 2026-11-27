@@ -127,6 +127,7 @@ impl<T: FromValue> FromValue for List<T> {
 // SAFETY: `ListIndex` matches DuckDB's list entry, and `validate` checks the child as `T`.
 unsafe impl<T: NativeElement> NativeElement for List<T> {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::List;
+    const HAS_CHILDREN: bool = true;
 
     type Native<'a> = ListIndex;
 

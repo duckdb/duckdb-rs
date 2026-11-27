@@ -109,7 +109,6 @@ macro_rules! declare_vector_element {
         // SAFETY: `$type` is DuckDB's physical storage for `$type_id`.
         unsafe impl $crate::vector::NativeElement for $type {
             const TYPE_ID: $crate::logical_type::LogicalTypeID = $crate::logical_type::LogicalTypeID::$type_id;
-            const VALIDATES_BY_ID: bool = true;
 
             type Native<'a> = $type;
         }

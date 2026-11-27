@@ -102,6 +102,7 @@ impl<K: FromValue, V: FromValue> FromValue for Map<K, V> {
 // SAFETY: a MAP is stored as a LIST of STRUCT(key, value), and `validate` checks both fields.
 unsafe impl<K: NativeElement, V: NativeElement> NativeElement for Map<K, V> {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Map;
+    const HAS_CHILDREN: bool = true;
 
     type Native<'a> = ListIndex;
 

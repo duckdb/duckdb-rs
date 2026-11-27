@@ -60,6 +60,7 @@ pub(super) fn native_impls(
         // SAFETY: there is no physical row data, and validation checks the ordered child schema.
         unsafe impl #impl_generics #bound for #ident #type_generics #where_clause {
             const TYPE_ID: ::duckdb_neo::logical_type::LogicalTypeID = ::duckdb_neo::logical_type::LogicalTypeID::#type_id;
+            const HAS_CHILDREN: bool = true;
             type Native<#lifetime> = ();
 
             fn validate(

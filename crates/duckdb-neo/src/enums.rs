@@ -58,17 +58,6 @@ ffi_enum_redeclaration! {
     }
 }
 
-impl LogicalTypeID {
-    /// Whether DuckDB gives vectors of this type child vectors, as `duckdb_v2_vector_get_child_count` does.
-    /// `VARIANT` has none there: its rows are read through the value API.
-    pub(crate) const fn has_children(self) -> bool {
-        matches!(
-            self,
-            Self::List | Self::Map | Self::Array | Self::Struct | Self::Tuple | Self::Union
-        )
-    }
-}
-
 ffi_enum_redeclaration! {
     /// The lexical class of a token, as reported by [`SqlTokenIterator`](crate::tokens::SqlTokenIterator).
     pub enum TokenType <- ffi::DUCKDB_V2_TOKEN_TYPE {

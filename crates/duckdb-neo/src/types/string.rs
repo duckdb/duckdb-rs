@@ -177,7 +177,6 @@ impl HasDuckDBBytes for BitValue {}
 // SAFETY: `DuckDBBytes` matches DuckDB's string storage.
 unsafe impl NativeElement for BlobValue {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Blob;
-    const VALIDATES_BY_ID: bool = true;
 
     type Native<'a> = DuckDBBytes<'a>;
 }
@@ -203,7 +202,6 @@ unsafe impl ReadableNativeElement for BlobValue {
 // SAFETY: `DuckDBBytes` matches DuckDB's string storage.
 unsafe impl NativeElement for BitValue {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Bit;
-    const VALIDATES_BY_ID: bool = true;
 
     type Native<'a> = DuckDBBytes<'a>;
 }
@@ -231,7 +229,6 @@ unsafe impl ReadableNativeElement for BitValue {
 // SAFETY: `DuckDBBytes` matches DuckDB's string storage.
 unsafe impl NativeElement for String {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Varchar;
-    const VALIDATES_BY_ID: bool = true;
 
     type Native<'a> = DuckDBBytes<'a>;
 }
@@ -260,7 +257,6 @@ unsafe impl ReadableNativeElement for String {
 // SAFETY: Same storage as `String`; users of this marker must guarantee valid UTF-8.
 unsafe impl NativeElement for UncheckedString {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Varchar;
-    const VALIDATES_BY_ID: bool = true;
 
     type Native<'a> = DuckDBBytes<'a>;
 }
@@ -350,7 +346,6 @@ impl std::borrow::Borrow<str> for UncheckedString {
 // SAFETY: borrowed strings use the same VARCHAR layout and decoding as String.
 unsafe impl NativeElement for &str {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Varchar;
-    const VALIDATES_BY_ID: bool = true;
     type Native<'a> = DuckDBBytes<'a>;
 }
 
