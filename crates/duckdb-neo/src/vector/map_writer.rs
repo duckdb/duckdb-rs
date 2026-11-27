@@ -47,8 +47,7 @@ impl<'w, K: WithWriter + 'w, V: WithWriter + 'w> MapWriter<'w, K, V> {
         // SAFETY: the caller guarantees an exclusive borrow of a validated, writable vector.
         let borrowed = unsafe { vector.as_mut() };
         let entries = borrowed
-            .children
-            .as_mut()
+            .children_collection_mut()
             .expect("validated MAP vector has entries")
             .cached_iter_mut()?
             .next()
@@ -56,8 +55,7 @@ impl<'w, K: WithWriter + 'w, V: WithWriter + 'w> MapWriter<'w, K, V> {
         let mut entries = NonNull::from(entries).cast::<Vector<'w, Struct>>();
         // SAFETY: the entries wrapper lives as long as the borrowed vector.
         let mut fields = unsafe { entries.as_mut() }
-            .children
-            .as_mut()
+            .children_collection_mut()
             .expect("validated MAP entries have two fields")
             .cached_iter_mut()?
             .map(|field| NonNull::from(field).cast::<Vector<'w, Unknown>>());

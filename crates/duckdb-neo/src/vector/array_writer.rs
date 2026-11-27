@@ -32,8 +32,7 @@ impl<'w, T: WithWriter + 'w, const N: usize> ArrayWriter<'w, T, N> {
     pub(super) unsafe fn from_raw(mut vector: NonNull<Vector<'w, Array<T, N>>>) -> Result<Self> {
         // SAFETY: the caller guarantees an exclusive borrow of a validated, writable vector.
         let child = unsafe { vector.as_mut() }
-            .children
-            .as_mut()
+            .children_collection_mut()
             .expect("validated ARRAY vector has a child")
             .cached_iter_mut()?
             .next()

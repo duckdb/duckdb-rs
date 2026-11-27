@@ -68,8 +68,7 @@ impl<'w, T: WithWriter + 'w> ListWriter<'w, T> {
         // SAFETY: the caller guarantees an exclusive borrow of a validated, writable vector.
         let borrowed = unsafe { vector.as_mut() };
         let child = borrowed
-            .children
-            .as_mut()
+            .children_collection_mut()
             .expect("validated LIST vector has a child")
             .cached_iter_mut()?
             .next()

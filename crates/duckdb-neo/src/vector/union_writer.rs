@@ -357,8 +357,7 @@ impl<'w, M: UnionWriters + 'w> UnionWriter<'w, M> {
         let borrowed = unsafe { vector.as_mut() };
         check_union::<M>(borrowed)?;
         let mut children = borrowed
-            .children
-            .as_mut()
+            .children_collection_mut()
             .expect("UNION vectors have a tag child")
             .cached_iter_mut()?
             .map(|child| NonNull::from(child).cast::<Vector<'w, Unknown>>())

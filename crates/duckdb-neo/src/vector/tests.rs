@@ -3152,3 +3152,67 @@ fn set_size_refreshes_cached_children_in_place() -> crate::Result<()> {
     assert_eq!(rows.children().unwrap().get_untyped_vector_at(0)?.len(), 1);
     Ok(())
 }
+
+#[test]
+fn has_children_matches_duckdb_child_counts() -> crate::Result<()> {
+    use crate::{
+        types::{EnumIndex, UncheckedString},
+        vector::NativeElement,
+    };
+
+    fn case<T: NativeElement>(text: &'static str) -> (&'static str, bool) {
+        (text, T::HAS_CHILDREN)
+    }
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let cases = [
+        case::<i32>("INTEGER"),
+        case::<f64>("DOUBLE"),
+        case::<String>("VARCHAR"),
+        case::<UncheckedString>("VARCHAR"),
+        case::<BlobValue>("BLOB"),
+        case::<BitValue>("BIT"),
+        case::<UuidValueRaw>("UUID"),
+        case::<LongDecimal>("DECIMAL(18, 3)"),
+        case::<TimestampValue>("TIMESTAMP"),
+        case::<IntervalValue>("INTERVAL"),
+        case::<BigNum>("BIGNUM"),
+        case::<Variant>("VARIANT"),
+        case::<EnumIndex<u8>>("ENUM('a', 'b')"),
+        case::<List<i32>>("INTEGER[]"),
+        case::<Map<i32, i32>>("MAP(INTEGER, INTEGER)"),
+        case::<crate::types::Union>("UNION(num INTEGER, str VARCHAR)"),
+    ];
+    let types = cases
+        .iter()
+        .map(|(text, _)| LogicalType::from_text(&conn, text))
+        .collect::<crate::Result<Vec<_>>>()?;
+    let chunk = DataChunk::create(&conn, &types, false)?;
+    for (index, (text, has_children)) in cases.into_iter().enumerate() {
+        let handle = chunk.get_vector_handle_at(index);
+        let count = crate::check_api_call!(crate::ffi::duckdb_v2_vector_get_child_count, handle, RET)?;
+        assert_eq!(has_children, count > 0, "{text}");
+    }
+    Ok(())
+}
+
+#[test]
+fn untyped_vectors_load_children_on_first_access() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let types = ["INTEGER", "STRUCT(a INTEGER, b VARCHAR)", "MAP(VARCHAR, INTEGER)"]
+        .map(|text| LogicalType::from_text(&conn, text))
+        .into_iter()
+        .collect::<crate::Result<Vec<_>>>()?;
+    let mut chunk = DataChunk::create(&conn, &types, true)?;
+    let counts = |vector: &Vector<'_, crate::vector::Unknown>| vector.children().map(VectorCollection::col_count);
+    assert_eq!(counts(chunk.get_vector_at::<crate::vector::Unknown>(0)?), None);
+    assert_eq!(counts(chunk.get_vector_at::<crate::vector::Unknown>(1)?), Some(2));
+    // A MAP's entries child is itself an untyped wrapper whose fields load on access.
+    let map = chunk.get_vector_at::<crate::vector::Unknown>(2)?;
+    let entries = map.children().unwrap().get_untyped_vector_at(0)?;
+    assert_eq!(counts(entries), Some(2));
+    let mut map = chunk.get_vector_at_mut::<crate::vector::Unknown>(2)?;
+    assert_eq!(map.children_mut().map(|children| children.col_count()), Some(1));
+    Ok(())
+}
