@@ -120,7 +120,10 @@ impl<'arena> DuckDBBytes<'arena> {
                 let inlined = slot
                     .cast::<u8>()
                     .add(std::mem::offset_of!(DuckDBV2BytesInlined, inlined));
-                copy_parts(parts, inlined, length as usize);
+                match parts {
+                    [part] => copy_short(part.as_ref(), inlined),
+                    _ => copy_parts(parts, inlined, length as usize),
+                }
             }
             return Ok(());
         }
@@ -184,6 +187,41 @@ fn total_length<P: AsRef<[u8]> + ?Sized>(parts: &[&P]) -> Result<u32> {
         })
 }
 
+/// Copy at most 12 bytes with a few overlapping word copies instead of a `memcpy` call.
+///
+/// # Safety
+/// `destination` must be valid for writes of `value.len()` bytes.
+#[inline(always)]
+unsafe fn copy_short(value: &[u8], destination: *mut u8) {
+    let (source, len) = (value.as_ptr(), value.len());
+    // SAFETY: every access stays within the first `len` bytes of both buffers.
+    unsafe {
+        if len >= 8 {
+            let tail = len - 8;
+            destination
+                .cast::<u64>()
+                .write_unaligned(source.cast::<u64>().read_unaligned());
+            destination
+                .add(tail)
+                .cast::<u64>()
+                .write_unaligned(source.add(tail).cast::<u64>().read_unaligned());
+        } else if len >= 4 {
+            let tail = len - 4;
+            destination
+                .cast::<u32>()
+                .write_unaligned(source.cast::<u32>().read_unaligned());
+            destination
+                .add(tail)
+                .cast::<u32>()
+                .write_unaligned(source.add(tail).cast::<u32>().read_unaligned());
+        } else if len > 0 {
+            *destination = *source;
+            *destination.add(len / 2) = *source.add(len / 2);
+            *destination.add(len - 1) = *source.add(len - 1);
+        }
+    }
+}
+
 /// # Safety
 /// `destination` must be valid for writes of `limit` bytes, and `parts` must hold at least as many.
 #[inline(always)]
@@ -234,6 +272,23 @@ mod tests {
                 for value in values {
                     assert_eq!(value.size(), expected.len());
                     assert_eq!(value.get_data(), expected.as_bytes());
+                }
+            }
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn single_parts_of_every_inline_length_round_trip() -> Result<()> {
+        with_arena(|arena| {
+            let source = b"0123456789abcdef";
+            for len in 0..=source.len() {
+                let encoded = arena.add_bytes(&source[..len])?;
+                assert_eq!(encoded.get_data(), &source[..len], "length {len}");
+                // SAFETY: DuckDBBytes is 16 plain bytes.
+                let raw = unsafe { std::mem::transmute_copy::<DuckDBBytes<'_>, [u8; 16]>(&encoded) };
+                if len <= ffi::DUCKDB_V2_BYTES_INLINE_LENGTH as usize {
+                    assert!(raw[4 + len..].iter().all(|byte| *byte == 0), "length {len} padding");
                 }
             }
             Ok(())
