@@ -57,21 +57,21 @@ impl<T: NativeElement> Vector<'_, T> {
             return Ok(());
         }
         self.check_rows(end)?;
-        match fill(&self.logical_type)? {
+        match fill(self.logical_type())? {
             Fill::Zero(size) => {
                 let data = check_api_call!(ffi::duckdb_v2_vector_get_data_mutable, self.handle, RET)?.cast::<u8>();
                 // SAFETY: the rows were reserved, and zero bytes are a valid value of this physical type.
                 unsafe { data.add(start * size).write_bytes(0, (end - start) * size) };
             }
             Fill::Children(size) => {
-                if let Some(children) = &mut self.children {
+                if let Some(children) = self.children_collection_mut() {
                     for child in children.cached_iter_mut()? {
                         child.init_rows(start * size, end * size)?;
                     }
                 }
             }
             Fill::Union => {
-                if let Some(children) = &mut self.children {
+                if let Some(children) = self.children_collection_mut() {
                     for (index, child) in children.cached_iter_mut()?.enumerate() {
                         match index {
                             0 | 1 => child.init_rows(start, end)?,
@@ -96,8 +96,8 @@ impl<T: NativeElement> Vector<'_, T> {
         unsafe { clear_bits(validity, start, end) };
         // Allocating the mask can replace the cached view's validity pointer.
         self.view.take();
-        let size = match self.logical_type.id()? {
-            LogicalTypeID::Array => array_size(&self.logical_type)?,
+        let size = match self.logical_type().id()? {
+            LogicalTypeID::Array => array_size(self.logical_type())?,
             LogicalTypeID::List | LogicalTypeID::Map => return Ok(()),
             LogicalTypeID::Variant => {
                 for row in start..end {
@@ -107,7 +107,7 @@ impl<T: NativeElement> Vector<'_, T> {
             }
             _ => 1,
         };
-        if let Some(children) = &mut self.children {
+        if let Some(children) = self.children_collection_mut() {
             for child in children.cached_iter_mut()? {
                 child.null_rows(start * size, end * size)?;
             }

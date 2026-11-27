@@ -81,6 +81,15 @@ fn init_callback<T: ScalarInitCallbacks>(
     )
 }
 
+fn exec_arg(info: *mut std::ffi::c_void, index: usize) -> Result<ffi::duckdb_v2_vector_handle> {
+    check_api_call!(
+        ffi::duckdb_v2_scalar_function_exec_get_arg,
+        info.cast(),
+        index as u64,
+        RET
+    )
+}
+
 fn exec_callback<T: ScalarCallbacks>(
     context: &Context,
     info: ffi::duckdb_v2_scalar_function_exec_info_handle,
@@ -99,13 +108,16 @@ fn exec_callback<T: ScalarCallbacks>(
     })?;
     let row_count = check_api_call!(ffi::duckdb_v2_scalar_function_exec_get_row_count, info, RET)? as usize;
 
-    let mut handles = Vec::with_capacity(arg_count.total());
-    for i in 0..arg_count.total() {
-        let handle = check_api_call!(ffi::duckdb_v2_scalar_function_exec_get_arg, info, i as u64, RET)?;
-        handles.push(handle);
-    }
-
-    let mut collection = VectorCollection::new(handles, Access::Exclusive, RowCount::Fixed(row_count));
+    // SAFETY: DuckDB keeps the exec info and its arguments alive until this callback returns.
+    let mut collection = unsafe {
+        VectorCollection::arguments(
+            info.cast(),
+            arg_count.total(),
+            exec_arg,
+            Access::Exclusive,
+            RowCount::Fixed(row_count),
+        )
+    };
 
     T::exec(user_data, context, bind_data, init_data, &mut collection, result_vec)?;
 

@@ -91,6 +91,7 @@ pub(crate) fn array_size(logical_type: &LogicalType) -> Result<usize> {
 // SAFETY: there is no physical row data, and `validate` checks the child as `T` with `N` elements per row.
 unsafe impl<T: NativeElement, const N: usize> NativeElement for Array<T, N> {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Array;
+    const HAS_CHILDREN: bool = true;
 
     type Native<'a> = ();
 

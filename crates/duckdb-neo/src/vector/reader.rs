@@ -64,6 +64,7 @@ pub(super) struct CachedReader {
 }
 
 impl CachedReader {
+    #[inline]
     pub(super) unsafe fn new(view: ffi::duckdb_v2_vector_view, kind: StorageKind, len: usize) -> Self {
         let storage = match kind {
             StorageKind::Flat => ReaderStorage::Flat,
@@ -144,8 +145,9 @@ impl ReaderStorage {
 }
 
 impl<'vec, T: NativeElement> VectorReader<'vec, T> {
+    #[inline]
     pub(super) fn new(vector: &'vec Vector<'vec, T>) -> Result<Self> {
-        let cached = *vector.view()?.ok_or_else(other_not_readable)?;
+        let cached = vector.view()?.ok_or_else(other_not_readable)?;
         Ok(Self { vector, cached })
     }
 

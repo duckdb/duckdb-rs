@@ -23,6 +23,7 @@ pub struct Struct;
 // SAFETY: there is no physical row data.
 unsafe impl NativeElement for Struct {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Struct;
+    const HAS_CHILDREN: bool = true;
     type Native<'a> = ();
 
     fn validate(other: &LogicalType, _children: Option<&VectorCollection>) -> Result<bool> {

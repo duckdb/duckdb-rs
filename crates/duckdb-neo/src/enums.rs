@@ -4,7 +4,7 @@ use crate::{builder_helpers::ffi_enum_redeclaration, ffi};
 
 ffi_enum_redeclaration! {
     /// DuckDB's logical type identifier, independent of type parameters and aliases.
-    pub enum LogicalTypeID <- ffi::DUCKDB_V2_LOGICAL_TYPE_ID {
+    pub enum LogicalTypeID: u32 <- ffi::DUCKDB_V2_LOGICAL_TYPE_ID {
         /// Invalid or unset type.
         Invalid = DUCKDB_V2_LOGICAL_TYPE_ID_INVALID,
         /// The type of a NULL constant.

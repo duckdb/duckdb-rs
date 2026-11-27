@@ -49,14 +49,15 @@ use std::{cell::OnceCell, marker::PhantomData};
 use crate::builder_helpers::ffi_enum_redeclaration;
 use crate::error::DuckDBError;
 use crate::raw::RawExt;
+#[cfg(feature = "rust_decimal")]
+use crate::types::DecimalSignature;
 use crate::{
     Result, check_api_call,
     connection::HasFactory,
     data_chunk::{ChildrenMut, VectorCollection},
     error::Error,
     ffi,
-    logical_type::LogicalType,
-    types::DecimalSignature,
+    logical_type::{LogicalType, LogicalTypeID},
     value::Value,
 };
 
@@ -65,7 +66,7 @@ use duckdb_loadable_macros::AsRaw;
 pub use element::*;
 
 ffi_enum_redeclaration! {
-    pub enum StorageKind <- ffi::DUCKDB_V2_VECTOR_TYPE {
+    pub enum StorageKind: u8 <- ffi::DUCKDB_V2_VECTOR_TYPE {
     /// One physical slot per row.
     Flat = DUCKDB_V2_VECTOR_TYPE_FLAT,
     /// One physical slot shared by every row.
@@ -132,6 +133,15 @@ impl Access {
     }
 }
 
+/// Logical type details fetched once, for the only types that have them.
+#[derive(Debug, Clone, Copy)]
+enum TypeDetails {
+    #[cfg(feature = "rust_decimal")]
+    Decimal(DecimalSignature),
+    /// The size of an `ENUM` dictionary, which DuckDB indexes with at most 32 bits.
+    Enum(u32),
+}
+
 /// A typed view of a DuckDB vector borrowed from its owning data chunk.
 ///
 /// Storage representation and writability are runtime properties. Casting only
@@ -156,58 +166,47 @@ impl Access {
 #[repr(C)]
 #[derive(Debug, AsRaw)]
 pub struct Vector<'a, T: NativeElement> {
+    // Ordered without padding and with boxed children: callbacks move a wrapper per argument.
     pub(crate) handle: ffi::duckdb_v2_vector_handle,
     pub(crate) access: Access,
-
-    logical_type: LogicalType,
     kind: StorageKind,
+    /// Fetched on first use: untyped vectors often never need it.
+    logical_type: OnceCell<LogicalType>,
     len: usize,
     /// Prepared read metadata, dropped by every operation that may replace storage.
     view: OnceCell<reader::CachedReader>,
     heap: Option<Arena>,
-    /// Child vectors of nested types; `None` for vectors without children.
-    children: Option<VectorCollection>,
-    decimal: OnceCell<DecimalSignature>,
-    enum_size: OnceCell<usize>,
+    /// Child vectors, loaded with the wrapper for types with [`NativeElement::HAS_CHILDREN`] and
+    /// otherwise on first access; empty for vectors without children.
+    children: OnceCell<Box<VectorCollection>>,
+    details: OnceCell<TypeDetails>,
     _chunk: PhantomData<&'a ()>,
     _type: PhantomData<T>,
 }
 
 impl<'a, T: NativeElement> Vector<'a, T> {
     /// The handle must remain valid for the lifetime of the owning chunk.
+    #[inline(always)]
     pub(crate) fn from_handle(handle: &ffi::duckdb_v2_vector_handle, access: Access) -> Result<Self> {
-        let logical_type = check_api_call!(ffi::duckdb_v2_vector_get_logical_type, *handle, RET)
-            .map(|handle| LogicalType { handle })?;
-
         let kind =
             check_api_call!(ffi::duckdb_v2_vector_get_vector_type, *handle, RET).map(StorageKind::try_from)??;
         let len = check_api_call!(ffi::duckdb_v2_vector_get_size, *handle, RET).map(|x| x as usize)?;
         let access = access.for_kind(kind);
 
-        let child_count = check_api_call!(ffi::duckdb_v2_vector_get_child_count, *handle, RET).map(|x| x as usize)?;
-        let mut child_handles = Vec::with_capacity(child_count as usize);
-        for index in 0..child_count {
-            child_handles.push(check_api_call!(
-                ffi::duckdb_v2_vector_get_child,
-                *handle,
-                index as u64,
-                RET
-            )?);
-        }
-
-        let children = (!child_handles.is_empty()).then(|| VectorCollection::children(child_handles, access));
-
+        let children = match T::HAS_CHILDREN {
+            true => OnceCell::from(Box::new(child_collection(*handle, access)?)),
+            false => OnceCell::new(),
+        };
         let vector = Self {
             handle: *handle,
-            logical_type,
+            logical_type: OnceCell::new(),
             kind,
             len,
             access,
             view: OnceCell::new(),
             heap: None,
             children,
-            decimal: OnceCell::new(),
-            enum_size: OnceCell::new(),
+            details: OnceCell::new(),
             _chunk: PhantomData,
             _type: PhantomData,
         };
@@ -218,6 +217,7 @@ impl<'a, T: NativeElement> Vector<'a, T> {
 
 impl<'a> Vector<'a, Unknown> {
     /// Validate and attach a logical element type.
+    #[inline]
     pub fn cast<T: NativeElement>(self) -> Result<Vector<'a, T>> {
         self.validate_as::<T>()?;
         Ok(self.cast_unchecked())
@@ -254,9 +254,13 @@ impl<'a, T: NativeElement> Vector<'a, T> {
         self.kind
     }
 
-    /// Return the vector's logical type.
+    /// Return the vector's logical type, fetched from DuckDB on first use.
     pub fn logical_type(&self) -> &LogicalType {
-        &self.logical_type
+        self.logical_type.get_or_init(|| {
+            check_api_call!(ffi::duckdb_v2_vector_get_logical_type, self.handle, RET)
+                .map(|handle| LogicalType { handle })
+                .expect("DuckDB reports the logical type of every live vector")
+        })
     }
 
     /// Return whether this vector is writable output that was borrowed mutably.
@@ -271,7 +275,7 @@ impl<'a, T: NativeElement> Vector<'a, T> {
     fn refresh_buffers(&mut self) -> Result<()> {
         self.view.take();
         self.heap = None;
-        if let Some(children) = &mut self.children {
+        if let Some(children) = self.children.get_mut() {
             children.refresh_cached()?;
         }
         Ok(())
@@ -293,6 +297,7 @@ impl<'a, T: NativeElement> Vector<'a, T> {
         self
     }
 
+    #[inline]
     pub(crate) fn cast_unchecked<U: NativeElement>(self) -> Vector<'a, U> {
         Vector {
             handle: self.handle,
@@ -303,8 +308,7 @@ impl<'a, T: NativeElement> Vector<'a, T> {
             view: self.view,
             heap: self.heap,
             children: self.children,
-            decimal: self.decimal,
-            enum_size: self.enum_size,
+            details: self.details,
             _chunk: self._chunk,
             _type: PhantomData,
         }
@@ -370,35 +374,40 @@ impl<'a, T: NativeElement> Vector<'a, T> {
 
     #[cfg(feature = "rust_decimal")]
     pub(crate) fn decimal_signature(&self) -> Result<DecimalSignature> {
-        if let Some(signature) = self.decimal.get() {
+        if let Some(TypeDetails::Decimal(signature)) = self.details.get() {
             return Ok(*signature);
         }
-        let signature = DecimalSignature::from_logical_type(&self.logical_type)?;
-        Ok(*self.decimal.get_or_init(|| signature))
+        let signature = DecimalSignature::from_logical_type(self.logical_type())?;
+        let _ = self.details.set(TypeDetails::Decimal(signature));
+        Ok(signature)
     }
 
     /// Return the number of entries in an `ENUM` vector's dictionary, fetched once.
     pub(crate) fn enum_size(&self) -> Result<usize> {
-        if let Some(size) = self.enum_size.get() {
-            return Ok(*size);
+        if let Some(TypeDetails::Enum(size)) = self.details.get() {
+            return Ok(*size as usize);
         }
-        let size = self.logical_type.param_count()?;
-        Ok(*self.enum_size.get_or_init(|| size))
+        let size = self.logical_type().param_count()?;
+        if let Ok(cached) = u32::try_from(size) {
+            let _ = self.details.set(TypeDetails::Enum(cached));
+        }
+        Ok(size)
     }
 
     /// Return the prepared read metadata, fetched once per state; `OTHER` storage has none.
-    fn view(&self) -> Result<Option<&reader::CachedReader>> {
+    #[inline]
+    fn view(&self) -> Result<Option<reader::CachedReader>> {
         if self.kind == StorageKind::Other {
             return Ok(None);
         }
         if let Some(view) = self.view.get() {
-            return Ok(Some(view));
+            return Ok(Some(*view));
         }
         let view = check_api_call!(ffi::duckdb_v2_vector_get_view, self.handle, RET)?;
         // SAFETY: DuckDB returned a current view of this vector, including its constant validity slot.
-        Ok(Some(self.view.get_or_init(|| unsafe {
-            reader::CachedReader::new(view, self.kind, self.len)
-        })))
+        let view = unsafe { reader::CachedReader::new(view, self.kind, self.len) };
+        let _ = self.view.set(view);
+        Ok(Some(view))
     }
 
     /// Return the size of the first child of a `LIST` or `MAP`.
@@ -490,19 +499,13 @@ impl<'a, T: NativeElement> Vector<'a, T> {
     }
 
     pub(crate) fn validate_as<U: NativeElement>(&self) -> Result<()> {
-        match U::validate(self.logical_type(), self.children.as_ref()) {
+        if matches!(U::TYPE_ID, LogicalTypeID::Unknown) {
+            return Ok(());
+        }
+        let children = if U::HAS_CHILDREN { self.children() } else { None };
+        match U::validate(self.logical_type(), children) {
             Ok(true) => Ok(()),
-            Ok(false) => Err(Error::invalid_input(format!(
-                "Vector logical type mismatch: expected {:?}, got {:?}",
-                U::TYPE_ID,
-                self.logical_type.to_text()?
-            ))),
-            Err(e) => Err(Error::invalid_input(format!(
-                "Vector logical type validation failed: expected {:?}, got {:?}: {}",
-                U::TYPE_ID,
-                self.logical_type.to_text()?,
-                e.message
-            ))),
+            result => Err(type_mismatch(U::TYPE_ID, self.logical_type(), result.err())),
         }
     }
 
@@ -522,7 +525,12 @@ impl<'a, T: NativeElement> Vector<'a, T> {
 
     /// Return the vector's child vectors, or `None` if it has no children.
     pub fn children(&self) -> Option<&VectorCollection> {
-        self.children.as_ref()
+        let children = self.children.get_or_init(|| {
+            Box::new(
+                child_collection(self.handle, self.access).expect("DuckDB lists the children of every live vector"),
+            )
+        });
+        (children.col_count() > 0).then_some(&**children)
     }
 
     /// Return the vector's child vectors for writing or flattening, or `None` if it has no children.
@@ -544,11 +552,12 @@ impl<'a, T: NativeElement> Vector<'a, T> {
     /// # }
     /// ```
     pub fn children_mut(&mut self) -> Option<ChildrenMut<'_>> {
-        self.children.as_mut().map(ChildrenMut)
+        self.children_collection_mut().map(ChildrenMut)
     }
 
     pub(crate) fn children_collection_mut(&mut self) -> Option<&mut VectorCollection> {
-        self.children.as_mut()
+        self.children()?;
+        self.children.get_mut().map(|children| &mut **children)
     }
 
     /// Explicitly materialize the vector as flat storage.
@@ -572,7 +581,7 @@ impl<'a, T: NativeElement> Vector<'a, T> {
 
     fn set_not_writable(&mut self) {
         self.access = Access::Exclusive;
-        if let Some(children) = &mut self.children
+        if let Some(children) = self.children.get_mut()
             && children.access == Access::Writable
         {
             children.access = Access::Exclusive;
@@ -583,12 +592,17 @@ impl<'a, T: NativeElement> Vector<'a, T> {
     ///
     /// New rows, including those of nested children, read as zeroed values such as `0`, `''`
     /// and `[]`, or as `NULL` for types where zeroed storage is not a valid value.
+    /// [`Self::set_size_uninit`] skips this for rows that are written anyway.
     pub fn set_size(&mut self, len: usize) -> Result<()> {
         let old = self.len;
         // SAFETY: the rows the resize exposes are initialized before the result is returned.
-        let result = unsafe { self.set_size_uninit(len) };
-        self.init_rows(old, self.len)?;
-        result
+        match unsafe { self.set_size_uninit(len) } {
+            Ok(()) => self.init_rows(old, len),
+            Err(error) => {
+                self.init_rows(old, self.len)?;
+                Err(error)
+            }
+        }
     }
 
     /// Set the number of logical rows on writable output, leaving new rows uninitialized.
@@ -600,14 +614,19 @@ impl<'a, T: NativeElement> Vector<'a, T> {
         if !self.is_writable() {
             return Err(not_writable());
         }
-        let result = check_api_call!(ffi::duckdb_v2_vector_set_size, self.handle, len as u64);
         // A failed reservation can still replace buffers, and keeps DuckDB's size.
-        self.refresh_buffers()?;
-        self.len = match result {
-            Ok(()) => len,
-            Err(_) => vector_len(self.handle)?,
-        };
-        result
+        match check_api_call!(ffi::duckdb_v2_vector_set_size, self.handle, len as u64) {
+            Ok(()) => {
+                self.refresh_buffers()?;
+                self.len = len;
+                Ok(())
+            }
+            Err(error) => {
+                self.refresh_buffers()?;
+                self.len = vector_len(self.handle)?;
+                Err(error)
+            }
+        }
     }
 
     /// Turn writable output into a constant vector, returning the rebuilt vector.
@@ -653,7 +672,7 @@ impl<'a, T: NativeElement> Vector<'a, T> {
             count as u64
         )?;
         // The sequence replaces the buffer that owned any child vectors.
-        self.children = None;
+        self.children = OnceCell::from(Box::new(VectorCollection::children(Vec::new(), Access::Exclusive)));
         self.kind = StorageKind::Other;
         self.len = count;
         self.set_not_writable();
@@ -663,7 +682,7 @@ impl<'a, T: NativeElement> Vector<'a, T> {
 }
 
 impl<T: NativeElement> Vector<'_, T> {
-    /// Prepare exclusive write access and allocate a writable validity mask.
+    /// Prepare exclusive write access; the validity mask is allocated on the first NULL write.
     ///
     /// Fails unless this is writable output with flat storage. Resize the vector
     /// before acquiring its writer.
@@ -701,6 +720,7 @@ impl<T: NativeElement> Vector<'_, T> {
     /// Prepare a storage-specific reader, along with readers for every descendant.
     ///
     /// Returns an error for [`StorageKind::Other`]; flatten the vector explicitly first.
+    #[inline]
     pub fn reader(&self) -> Result<VectorReader<'_, T>> {
         VectorReader::new(self)
     }
@@ -715,6 +735,31 @@ impl<T: NativeElement> Vector<'_, T> {
 
 fn vector_len(handle: ffi::duckdb_v2_vector_handle) -> Result<usize> {
     check_api_call!(ffi::duckdb_v2_vector_get_size, handle, RET).map(|len| len as usize)
+}
+
+fn child_collection(handle: ffi::duckdb_v2_vector_handle, access: Access) -> Result<VectorCollection> {
+    let count = check_api_call!(ffi::duckdb_v2_vector_get_child_count, handle, RET)?;
+    let mut handles = Vec::with_capacity(count as usize);
+    for index in 0..count {
+        handles.push(check_api_call!(ffi::duckdb_v2_vector_get_child, handle, index, RET)?);
+    }
+    Ok(VectorCollection::children(handles, access))
+}
+
+#[cold]
+#[inline(never)]
+fn type_mismatch(expected: LogicalTypeID, actual: &LogicalType, cause: Option<Error>) -> Error {
+    let actual = match actual.to_text() {
+        Ok(text) => text,
+        Err(error) => return error,
+    };
+    Error::invalid_input(match cause {
+        None => format!("Vector logical type mismatch: expected {expected:?}, got {actual:?}"),
+        Some(cause) => format!(
+            "Vector logical type validation failed: expected {expected:?}, got {actual:?}: {}",
+            cause.message
+        ),
+    })
 }
 
 fn not_writable() -> Error {

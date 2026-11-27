@@ -357,8 +357,7 @@ impl<'w, M: UnionWriters + 'w> UnionWriter<'w, M> {
         let borrowed = unsafe { vector.as_mut() };
         check_union::<M>(borrowed)?;
         let mut children = borrowed
-            .children
-            .as_mut()
+            .children_collection_mut()
             .expect("UNION vectors have a tag child")
             .cached_iter_mut()?
             .map(|child| NonNull::from(child).cast::<Vector<'w, Unknown>>())
@@ -398,10 +397,9 @@ impl<'w, M: UnionWriters + 'w> UnionWriter<'w, M> {
         }
         // SAFETY: the row is in bounds of the parent and its tags, which share its rows.
         unsafe {
-            self.parent.set_validity_unchecked(row, false);
-            self.tags.set_validity_unchecked(row, false);
+            self.parent.mark_null_unchecked(row)?;
+            self.tags.mark_null_unchecked(row)
         }
-        Ok(())
     }
 
     /// Make member `I` the row's active member and borrow its writer, to write the member's `row`.
@@ -423,8 +421,8 @@ impl<'w, M: UnionWriters + 'w> UnionWriter<'w, M> {
         // SAFETY: the row is in bounds of every child.
         unsafe {
             self.tags.as_mut_ptr().add(row).write(I as u8);
-            self.tags.set_validity_unchecked(row, true);
-            self.parent.set_validity_unchecked(row, true);
+            self.tags.mark_valid_unchecked(row);
+            self.parent.mark_valid_unchecked(row);
         }
         Ok(M::writer(&mut self.members))
     }

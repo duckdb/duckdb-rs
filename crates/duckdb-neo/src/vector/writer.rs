@@ -16,6 +16,9 @@ use super::{
 /// Child writer state is prepared on the first child write and invalidated by reshaping
 /// or slow-path writes that can replace buffers.
 ///
+/// A vector without a validity mask has only valid rows. The writer allocates the mask on the
+/// first NULL, so output without NULLs keeps the all-valid fast paths of whatever reads it.
+///
 /// Resize the vector before acquiring its writer:
 ///
 /// ```
@@ -70,12 +73,14 @@ use super::{
 pub struct VectorWriter<'writer, T: NativeElement> {
     vector: NonNull<Vector<'writer, T>>,
     len: usize,
+    /// The writable mask, or null while the vector has none.
     validity: *mut u64,
     data: *mut std::ffi::c_void,
     _borrow: PhantomData<&'writer mut T>,
 }
 
 impl<'writer, T: NativeElement> VectorWriter<'writer, T> {
+    #[inline]
     pub(super) fn new(vector: &'writer mut Vector<'_, T>) -> Result<Self> {
         // SAFETY: the exclusive borrow covers this writer and every cached descendant.
         unsafe { Self::from_raw(NonNull::from(vector).cast()) }
@@ -83,6 +88,7 @@ impl<'writer, T: NativeElement> VectorWriter<'writer, T> {
 
     /// # Safety
     /// The vector must stay exclusively borrowed, and not be rewrapped, for the writer's lifetime.
+    #[inline]
     pub(crate) unsafe fn from_raw(mut vector: NonNull<Vector<'writer, T>>) -> Result<Self> {
         // SAFETY: the caller exclusively borrows this vector for the writer's lifetime.
         let borrowed = unsafe { vector.as_mut() };
@@ -93,10 +99,7 @@ impl<'writer, T: NativeElement> VectorWriter<'writer, T> {
             return Err(not_flat());
         }
 
-        // Allocating the writable mask can replace the validity pointer of the cached view.
-        borrowed.view.take();
-        let validity = check_api_call!(ffi::duckdb_v2_vector_flat_get_validity_mutable, borrowed.raw(), RET)?;
-        let data = check_api_call!(ffi::duckdb_v2_vector_get_data_mutable, borrowed.raw(), RET)?;
+        let (data, validity) = writable_buffers(borrowed)?;
 
         Ok(Self {
             vector,
@@ -159,7 +162,7 @@ impl<'writer, T: NativeElement> VectorWriter<'writer, T> {
         }
     }
 
-    /// Borrow the writable validity mask.
+    /// Borrow the writable validity mask, allocating it if the vector has none.
     ///
     /// Bit `index % 64` of word `index / 64` marks a non-NULL row.
     ///
@@ -194,8 +197,9 @@ impl<'writer, T: NativeElement> VectorWriter<'writer, T> {
     /// ```
     pub unsafe fn validity_mut(&mut self) -> Result<&mut [u64]> {
         let len = self.len().div_ceil(64);
+        let validity = self.allocated_validity()?;
         // SAFETY: DuckDB supplied a writable mask, exclusively borrowed through the writer.
-        Ok(unsafe { std::slice::from_raw_parts_mut(self.validity, len) })
+        Ok(unsafe { std::slice::from_raw_parts_mut(validity, len) })
     }
 
     /// Set a row's validity without changing its data or descendants.
@@ -210,8 +214,7 @@ impl<'writer, T: NativeElement> VectorWriter<'writer, T> {
             return Err(out_of_bounds(index, self.len()));
         }
         // SAFETY: The writer is flat and writable, and the row is in bounds.
-        unsafe { self.set_validity_unchecked(index, is_valid) };
-        Ok(())
+        unsafe { self.set_validity_unchecked(index, is_valid) }
     }
 
     /// Set every row's validity, including padding bits in the last word.
@@ -222,6 +225,9 @@ impl<'writer, T: NativeElement> VectorWriter<'writer, T> {
     /// # Safety
     /// Rows marked valid must contain initialized values of the logical type before any read.
     pub unsafe fn fill_validity(&mut self, is_valid: bool) -> Result<()> {
+        if is_valid && self.validity.is_null() {
+            return Ok(());
+        }
         // SAFETY: the caller guarantees rows marked valid hold initialized values.
         unsafe { self.validity_mut()? }.fill(if is_valid { u64::MAX } else { 0 });
         Ok(())
@@ -339,7 +345,7 @@ impl<T: WritableNativeElement> VectorWriter<'_, T> {
         // VARIANT's value API determines nullness after casting the supplied Value.
         if T::TYPE_ID != LogicalTypeID::Variant {
             // SAFETY: as above; the row now holds a value.
-            unsafe { self.set_validity_unchecked(index, true) };
+            unsafe { self.mark_valid_unchecked(index) };
         }
         Ok(())
     }
@@ -354,7 +360,7 @@ impl<T: WritableNativeElement> VectorWriter<'_, T> {
         unsafe { T::write_null(self, index)? };
         if T::TYPE_ID != LogicalTypeID::Variant {
             // SAFETY: as above.
-            unsafe { self.set_validity_unchecked(index, false) };
+            unsafe { self.mark_null_unchecked(index)? };
         }
         Ok(())
     }
@@ -378,13 +384,24 @@ impl<T: WritableNativeElement> VectorWriter<'_, T> {
 impl<T: NativeElement> VectorWriter<'_, T> {
     #[inline]
     fn refresh_buffers(&mut self) -> Result<()> {
-        self.validity = check_api_call!(
-            ffi::duckdb_v2_vector_flat_get_validity_mutable,
-            self.vector().raw(),
-            RET
-        )?;
-        self.data = check_api_call!(ffi::duckdb_v2_vector_get_data_mutable, self.vector().raw(), RET)?;
+        (self.data, self.validity) = writable_buffers(self.vector())?;
         Ok(())
+    }
+
+    #[inline(always)]
+    fn allocated_validity(&mut self) -> Result<*mut u64> {
+        if self.validity.is_null() {
+            self.allocate_validity()
+        } else {
+            Ok(self.validity)
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn allocate_validity(&mut self) -> Result<*mut u64> {
+        self.validity = writable_validity(self.vector_mut())?;
+        Ok(self.validity)
     }
 
     /// Mark rows `start..end` valid, a whole word at a time where possible.
@@ -392,7 +409,7 @@ impl<T: NativeElement> VectorWriter<'_, T> {
     /// # Safety
     /// `end` must not exceed [`Self::len`], and the rows must hold initialized values.
     pub(crate) unsafe fn mark_valid_range(&mut self, start: usize, end: usize) {
-        if start >= end {
+        if start >= end || self.validity.is_null() {
             return;
         }
         let (first, last) = (start / 64, (end - 1) / 64);
@@ -411,11 +428,12 @@ impl<T: NativeElement> VectorWriter<'_, T> {
     }
 
     #[inline(always)]
-    pub(crate) unsafe fn set_validity_unchecked(&mut self, index: usize, is_valid: bool) {
+    unsafe fn set_validity_unchecked(&mut self, index: usize, is_valid: bool) -> Result<()> {
         // SAFETY: the caller guarantees bounds.
         unsafe {
             if is_valid {
-                self.mark_valid_unchecked(index)
+                self.mark_valid_unchecked(index);
+                Ok(())
             } else {
                 self.mark_null_unchecked(index)
             }
@@ -423,20 +441,25 @@ impl<T: NativeElement> VectorWriter<'_, T> {
     }
 
     #[inline(always)]
-    unsafe fn mark_valid_unchecked(&mut self, index: usize) {
+    pub(crate) unsafe fn mark_valid_unchecked(&mut self, index: usize) {
+        if self.validity.is_null() {
+            return;
+        }
         // SAFETY: The owning writer guarantees flat, writable storage; the caller guarantees bounds.
         let word = unsafe { &mut *self.validity.add(index / 64) };
         let mask = 1u64 << (index % 64);
-        // Masks start valid, so storing only to revive a NULL row keeps this branch predictable.
+        // Rows are mostly valid already, so storing only to revive a NULL row keeps this branch predictable.
         if *word & mask == 0 {
             *word |= mask;
         }
     }
 
     #[inline(always)]
-    unsafe fn mark_null_unchecked(&mut self, index: usize) {
+    pub(crate) unsafe fn mark_null_unchecked(&mut self, index: usize) -> Result<()> {
+        let validity = self.allocated_validity()?;
         // SAFETY: The owning writer guarantees flat, writable storage; the caller guarantees bounds.
-        unsafe { *self.validity.add(index / 64) &= !(1u64 << (index % 64)) };
+        unsafe { *validity.add(index / 64) &= !(1u64 << (index % 64)) };
+        Ok(())
     }
 }
 
@@ -517,7 +540,7 @@ impl<T: PlainNative> VectorWriter<'_, T> {
                     // SAFETY: the rows are in bounds and hold the values just copied.
                     None => unsafe { self.mark_valid_range(0, len) },
                     // SAFETY: as above; the source mask covers `len` rows.
-                    Some(mask) => unsafe { self.copy_validity(mask, len) },
+                    Some(mask) => unsafe { self.copy_validity(mask, len)? },
                 }
             }
             selection => {
@@ -532,7 +555,7 @@ impl<T: PlainNative> VectorWriter<'_, T> {
                             data.add(row).write(*slots.add(physical));
                             self.mark_valid_unchecked(row);
                         } else {
-                            self.mark_null_unchecked(row);
+                            self.mark_null_unchecked(row)?;
                         }
                     }
                 }
@@ -543,17 +566,19 @@ impl<T: PlainNative> VectorWriter<'_, T> {
 
     /// # Safety
     /// `mask` must cover `len` rows, and `len` must not exceed [`Self::len`].
-    unsafe fn copy_validity(&mut self, mask: &[u64], len: usize) {
+    unsafe fn copy_validity(&mut self, mask: &[u64], len: usize) -> Result<()> {
         let (words, tail) = (len / 64, len % 64);
+        let validity = self.allocated_validity()?;
         // SAFETY: the caller guarantees both masks cover `len` rows.
         unsafe {
-            std::ptr::copy_nonoverlapping(mask.as_ptr(), self.validity, words);
+            std::ptr::copy_nonoverlapping(mask.as_ptr(), validity, words);
             if tail != 0 {
                 let keep = u64::MAX << tail;
-                let word = self.validity.add(words);
+                let word = validity.add(words);
                 *word = (*word & keep) | (mask[words] & !keep);
             }
         }
+        Ok(())
     }
 }
 
@@ -580,8 +605,7 @@ impl VectorWriter<'_, String> {
             unsafe { self.write_byte_parts(index, parts)? };
         }
         // SAFETY: Non-NULL rows are initialized; VARCHAR has no descendants.
-        unsafe { self.set_validity_unchecked(index, parts.is_some()) };
-        Ok(())
+        unsafe { self.set_validity_unchecked(index, parts.is_some()) }
     }
 }
 
@@ -597,8 +621,7 @@ impl VectorWriter<'_, crate::types::UncheckedString> {
             unsafe { self.write_byte_parts(index, parts)? };
         }
         // SAFETY: Non-NULL rows are initialized; VARCHAR has no descendants.
-        unsafe { self.set_validity_unchecked(index, parts.is_some()) };
-        Ok(())
+        unsafe { self.set_validity_unchecked(index, parts.is_some()) }
     }
 }
 
@@ -615,8 +638,7 @@ impl VectorWriter<'_, crate::types::BlobValue> {
             unsafe { self.write_byte_parts(index, parts)? };
         }
         // SAFETY: Non-NULL rows are initialized; BLOB has no descendants.
-        unsafe { self.set_validity_unchecked(index, parts.is_some()) };
-        Ok(())
+        unsafe { self.set_validity_unchecked(index, parts.is_some()) }
     }
 }
 
@@ -654,12 +676,27 @@ impl<T: HasDuckDBBytes> VectorWriter<'_, T> {
 
     #[inline(always)]
     unsafe fn write_byte_parts<P: AsRef<[u8]> + ?Sized>(&mut self, index: usize, parts: &[&P]) -> Result<()> {
-        let data = self.data.cast::<DuckDBBytes<'_>>();
-        let encoded = DuckDBBytes::from_parts(parts, || self.arena())?;
-        // SAFETY: The row is in bounds, and the bytes belong to this vector's arena.
-        unsafe { data.add(index).write(encoded) };
-        Ok(())
+        // SAFETY: The row is in bounds, and long bytes are copied into this vector's arena.
+        unsafe {
+            let slot = self.data.cast::<DuckDBBytes<'_>>().add(index);
+            DuckDBBytes::write_parts(slot, parts, || self.arena())
+        }
     }
+}
+
+#[inline]
+fn writable_buffers<T: NativeElement>(vector: &Vector<'_, T>) -> Result<(*mut std::ffi::c_void, *mut u64)> {
+    // A flat view borrows the buffers `get_data_mutable` and `flat_get_validity_mutable` return once the
+    // mask exists, so one call replaces both, and a missing mask stays unallocated. Copying the whole
+    // view into the cache would reload DuckDB's separate field stores as one, stalling store forwarding.
+    let view = check_api_call!(ffi::duckdb_v2_vector_get_view, vector.raw(), RET)?;
+    Ok((view.data.cast_mut(), view.validity.cast_mut()))
+}
+
+fn writable_validity<T: NativeElement>(vector: &mut Vector<'_, T>) -> Result<*mut u64> {
+    // Allocating the mask replaces the validity pointer of the cached view.
+    vector.view.take();
+    check_api_call!(ffi::duckdb_v2_vector_flat_get_validity_mutable, vector.raw(), RET)
 }
 
 #[cfg(test)]

@@ -1,6 +1,7 @@
 //! Columnar batches exchanged with DuckDB.
 
 use std::cell::OnceCell;
+use std::ffi::c_void;
 use std::ops::Deref;
 
 use duckdb_loadable_macros::AsRaw;
@@ -44,11 +45,45 @@ fn collect_array<V, const N: usize>(results: [Result<V>; N]) -> Result<[V; N]> {
 /// [`Self::get_vector_at`] calls are cheap; mutable access drops the cached view.
 #[derive(Debug)]
 pub struct VectorCollection {
-    pub(crate) handles: Vec<ffi::duckdb_v2_vector_handle>,
+    handles: Handles,
     pub(crate) access: Access,
     rows: RowCount,
-    /// `'static` because the collection has no lifetime; views are only handed out as `&Vector<'_, _>`.
-    cache: Vec<OnceCell<Vector<'static, Unknown>>>,
+    /// One slot per vector, allocated by the first shared access, which the mutable accessors
+    /// never need. `'static` because the collection has no lifetime; views are only handed out
+    /// as `&Vector<'_, _>`.
+    cache: OnceCell<Box<[OnceCell<Vector<'static, Unknown>>]>>,
+}
+
+/// Returns the handle of a callback's argument `index` from the callback's info handle.
+pub(crate) type GetArgument = fn(*mut c_void, usize) -> Result<ffi::duckdb_v2_vector_handle>;
+
+/// Where a [`VectorCollection`] finds the handles of its vectors.
+#[derive(Debug)]
+enum Handles {
+    /// Fetched up front, such as a chunk's vectors or a nested vector's children.
+    Fetched(Vec<ffi::duckdb_v2_vector_handle>),
+    /// A callback's arguments, fetched from DuckDB on access instead of copied into an array.
+    Arguments {
+        info: *mut c_void,
+        count: usize,
+        get: GetArgument,
+    },
+}
+
+impl Handles {
+    fn len(&self) -> usize {
+        match self {
+            Self::Fetched(handles) => handles.len(),
+            Self::Arguments { count, .. } => *count,
+        }
+    }
+
+    fn get(&self, index: usize) -> Result<ffi::duckdb_v2_vector_handle> {
+        match self {
+            Self::Fetched(handles) => Ok(handles[index]),
+            Self::Arguments { info, get, .. } => get(*info, index),
+        }
+    }
 }
 
 /// Where a [`VectorCollection`] reads its row count from.
@@ -64,42 +99,74 @@ pub(crate) enum RowCount {
 
 impl VectorCollection {
     pub(crate) fn new(handles: Vec<ffi::duckdb_v2_vector_handle>, access: Access, rows: RowCount) -> Self {
-        let cache = handles.iter().map(|_| OnceCell::new()).collect();
-        Self {
-            handles,
-            access,
-            rows,
-            cache,
-        }
+        Self::with_handles(Handles::Fetched(handles), access, rows)
     }
 
     pub(crate) fn children(handles: Vec<ffi::duckdb_v2_vector_handle>, access: Access) -> Self {
         Self::new(handles, access, RowCount::FirstVector)
     }
 
-    fn wrap<T: NativeElement>(&self, index: usize, access: Access) -> Result<Vector<'static, T>> {
-        Vector::from_handle(&self.handles[index], access)
+    /// Collect a callback's `count` arguments, fetching each handle with `get(info, index)` on access.
+    ///
+    /// # Safety
+    /// `info` must stay valid, and keep its arguments alive, for the lifetime of the collection.
+    pub(crate) unsafe fn arguments(
+        info: *mut c_void,
+        count: usize,
+        get: GetArgument,
+        access: Access,
+        rows: RowCount,
+    ) -> Self {
+        Self::with_handles(Handles::Arguments { info, count, get }, access, rows)
+    }
+
+    fn with_handles(handles: Handles, access: Access, rows: RowCount) -> Self {
+        Self {
+            handles,
+            access,
+            rows,
+            cache: OnceCell::new(),
+        }
+    }
+
+    fn wrap_handle<T: NativeElement>(&self, index: usize, access: Access) -> Result<Vector<'static, T>> {
+        Vector::from_handle(&self.handles.get(index)?, access)
+    }
+
+    fn cache(&self) -> &[OnceCell<Vector<'static, Unknown>>] {
+        self.cache
+            .get_or_init(|| (0..self.col_count()).map(|_| OnceCell::new()).collect())
+    }
+
+    fn cache_mut(&mut self) -> &mut [OnceCell<Vector<'static, Unknown>>] {
+        self.cache();
+        self.cache.get_mut().expect("the cache was just allocated")
+    }
+
+    /// The cached views, or `None` before the first shared access.
+    fn cache_if_used(&mut self) -> Option<&mut [OnceCell<Vector<'static, Unknown>>]> {
+        self.cache.get_mut().map(|cache| &mut cache[..])
     }
 
     fn cached(&self, index: usize) -> Result<&Vector<'_, Unknown>> {
-        let slot = &self.cache[index];
+        let slot = &self.cache()[index];
         if let Some(vector) = slot.get() {
             return Ok(vector);
         }
-        let _ = slot.set(self.wrap(index, Access::Shared)?);
+        let _ = slot.set(self.wrap_handle(index, Access::Shared)?);
         Ok(slot.get().expect("view was just cached"))
     }
 
     pub(crate) fn cached_iter_mut(&mut self) -> Result<impl Iterator<Item = &mut Vector<'_, Unknown>>> {
-        for index in 0..self.cache.len() {
-            if self.cache[index]
+        for index in 0..self.col_count() {
+            if self.cache()[index]
                 .get()
                 .is_none_or(|vector| vector.access != self.access.for_kind(vector.storage_kind()))
             {
-                self.cache[index] = OnceCell::from(self.wrap(index, self.access)?);
+                self.cache_mut()[index] = OnceCell::from(self.wrap_handle(index, self.access)?);
             }
         }
-        Ok(self.cache.iter_mut().map(|slot| {
+        Ok(self.cache_mut().iter_mut().map(|slot| {
             let vector = slot.get_mut().expect("vector views are cached before writes");
             // SAFETY: only the phantom chunk lifetime is shortened to this collection's borrow.
             unsafe { &mut *(vector as *mut Vector<'static, Unknown>).cast::<Vector<'_, Unknown>>() }
@@ -108,12 +175,14 @@ impl VectorCollection {
 
     /// Drop the cached view of `index`, which a mutable wrapper may reshape.
     fn evict(&mut self, index: usize) {
-        self.cache[index].take();
+        if let Some(cache) = self.cache_if_used() {
+            cache[index].take();
+        }
     }
 
     /// Refresh every cached child after its parent was resized or written, keeping the wrappers.
     pub(crate) fn refresh_cached(&mut self) -> Result<()> {
-        for vector in self.cache.iter_mut().filter_map(OnceCell::get_mut) {
+        for vector in self.cache_if_used().into_iter().flatten().filter_map(OnceCell::get_mut) {
             vector.refresh_from_handle()?;
         }
         Ok(())
@@ -121,7 +190,9 @@ impl VectorCollection {
 
     /// Drop every cached view after an operation that may have changed the vectors.
     pub(crate) fn evict_all(&mut self) {
-        self.cache.iter_mut().for_each(|slot| drop(slot.take()));
+        if let Some(cache) = self.cache_if_used() {
+            cache.iter_mut().for_each(|slot| drop(slot.take()));
+        }
     }
 
     fn check_index(&self, index: usize) {
@@ -150,7 +221,7 @@ impl VectorCollection {
     pub fn get_untyped_vector_at_mut(&mut self, index: usize) -> Result<Vector<'_, Unknown>> {
         self.check_index(index);
         self.evict(index);
-        self.wrap(index, self.access)
+        self.wrap_handle(index, self.access)
     }
 
     /// Return a read-only view of the vector at `index`, narrowed to `T`.
@@ -176,7 +247,7 @@ impl VectorCollection {
     pub fn get_vector_at_mut<T: NativeElement>(&mut self, index: usize) -> Result<Vector<'_, T>> {
         self.check_index(index);
         self.evict(index);
-        self.wrap(index, self.access)
+        self.wrap_handle(index, self.access)
     }
 
     /// Return the vectors at distinct `indices`, borrowed mutably at the same time.
@@ -194,7 +265,7 @@ impl VectorCollection {
         for index in indices {
             self.evict(index);
         }
-        collect_array(indices.map(|index| self.wrap(index, self.access)))
+        collect_array(indices.map(|index| self.wrap_handle(index, self.access)))
     }
 
     /// Return the number of vectors, which is the column count.
@@ -210,9 +281,9 @@ impl VectorCollection {
         let rows: ffi::idx_t = match self.rows {
             RowCount::Fixed(rows) => return Ok(rows),
             RowCount::Chunk(chunk) => check_api_call!(ffi::duckdb_v2_data_chunk_get_size, chunk, RET)?,
-            RowCount::FirstVector => match self.handles.first() {
-                Some(vector) => check_api_call!(ffi::duckdb_v2_vector_get_size, *vector, RET)?,
-                None => 0,
+            RowCount::FirstVector => match self.col_count() {
+                0 => 0,
+                _ => check_api_call!(ffi::duckdb_v2_vector_get_size, self.handles.get(0)?, RET)?,
             },
         };
         Ok(rows as usize)
@@ -232,10 +303,10 @@ impl VectorCollection {
 
         let chunk = DataChunk::allocate(link.factory()?, &logical_types, false)?;
 
-        for (i, handle) in self.handles.iter().enumerate() {
+        for i in 0..self.col_count() {
             let chunk_handle = chunk.get_vector_handle_at(i);
 
-            check_api_call!(ffi::duckdb_v2_vector_reference, chunk_handle, *handle)?;
+            check_api_call!(ffi::duckdb_v2_vector_reference, chunk_handle, self.handles.get(i)?)?;
         }
         Ok(chunk)
     }
@@ -505,7 +576,10 @@ impl<'a> DataChunk<'a> {
 
     pub(crate) fn get_vector_handle_at(&self, index: usize) -> ffi::duckdb_v2_vector_handle {
         self.vectors.check_index(index);
-        self.vectors.handles[index]
+        self.vectors
+            .handles
+            .get(index)
+            .expect("a chunk fetches its handles up front")
     }
 
     /// Drop cached views after DuckDB changed the chunk's vectors.
@@ -706,6 +780,52 @@ mod tests {
         assert!(panics(&mut || drop(chunk.get_vector_at::<i64>(1))));
         assert!(panics(&mut || drop(chunk.get_vector_at_mut::<i64>(1))));
         assert!(panics(&mut || drop(chunk.get_vector_array_mut([0, 1]))));
+        Ok(())
+    }
+
+    #[test]
+    fn test_argument_collection() -> crate::Result<()> {
+        use super::{RowCount, VectorCollection};
+        use crate::vector::Access;
+
+        fn get(info: *mut std::ffi::c_void, index: usize) -> crate::Result<crate::ffi::duckdb_v2_vector_handle> {
+            // SAFETY: the test passes a live array of the collection's argument count.
+            let handles = unsafe { &*info.cast::<[crate::ffi::duckdb_v2_vector_handle; 2]>() };
+            Ok(handles[index])
+        }
+        fn fail(_: *mut std::ffi::c_void, _: usize) -> crate::Result<crate::ffi::duckdb_v2_vector_handle> {
+            Err(crate::Error::invalid_input("no argument"))
+        }
+
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+        let mut chunk = DataChunk::create(&conn, &[i64::logical_type(&conn)?, i64::logical_type(&conn)?], true)?;
+        for (index, value) in [(0, 10), (1, 20)] {
+            let mut vector = chunk.get_vector_at_mut::<i64>(index)?;
+            vector.set_size(1)?;
+            vector.writer()?.set(0, &value)?;
+        }
+        let mut handles = [chunk.get_vector_handle_at(0), chunk.get_vector_handle_at(1)];
+        let info = (&mut handles as *mut [crate::ffi::duckdb_v2_vector_handle; 2]).cast();
+
+        // SAFETY: `handles` and `chunk` outlive the collection.
+        let mut arguments = unsafe { VectorCollection::arguments(info, 2, get, Access::Exclusive, RowCount::Fixed(1)) };
+        assert_eq!((arguments.col_count(), arguments.row_count()?), (2, 1));
+        // Mutable access before any shared access, then shared, then mutable again.
+        assert_eq!(arguments.get_vector_at_mut::<i64>(1)?.reader()?.get(0)?, Some(&20));
+        assert_eq!(arguments.get_vector_at::<i64>(0)?.reader()?.get(0)?, Some(&10));
+        assert!(std::ptr::eq(
+            arguments.get_vector_at::<i64>(0)?,
+            arguments.get_vector_at::<i64>(0)?
+        ));
+        let [first, second] = arguments.get_vector_array_mut([0, 1])?;
+        assert_eq!(first.cast::<i64>()?.reader()?.get(0)?, Some(&10));
+        assert_eq!(second.cast::<i64>()?.reader()?.get(0)?, Some(&20));
+
+        // SAFETY: the getter never reads `info`.
+        let mut failing = unsafe { VectorCollection::arguments(info, 2, fail, Access::Exclusive, RowCount::Fixed(1)) };
+        assert!(failing.get_vector_at::<i64>(0).is_err());
+        assert!(failing.get_vector_at_mut::<i64>(1).is_err());
         Ok(())
     }
 
