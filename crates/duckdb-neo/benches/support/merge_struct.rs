@@ -9,8 +9,8 @@ use duckdb_neo::{
     logical_type::LogicalType,
     scalar::{ScalarCallbacks, ScalarFunctionBuilder},
     signature::{FunctionParameter, SignatureBuilder},
-    types::{Decimal, ListIndex, Map, Struct, UncheckedString, Union},
-    vector::{ChildVector, ReadableNativeElement, Unknown, Vector, WritableNativeElement},
+    types::{Decimal, Map, Struct, UncheckedString, Union},
+    vector::{ChildVector, ReadableNativeElement, RowReader, Unknown, Vector, WritableNativeElement},
 };
 
 use super::{nulls::Nulls, readable};
@@ -88,35 +88,20 @@ fn copy_maps(
     field: &mut ChildVector<'_, Map<&str, i32>>,
     rows: usize,
 ) -> Result<()> {
-    let parent = maps.reader()?;
-    let input_entries = maps.children().unwrap().get_untyped_vector_at(0)?;
-    let input_fields = input_entries.children().unwrap();
-    let keys = input_fields.get_vector_at::<UncheckedString>(0)?.reader()?;
-    let values = input_fields.get_vector_at::<i32>(1)?.reader()?;
-    let entries = (0..parent.len())
-        .map(|row| Ok(parent.get(row)?.map_or(0, |entry| entry.length() as usize)))
-        .sum::<Result<usize>>()?;
-    super::ensure(parent.len() == rows, || {
+    let input = maps.map_reader()?;
+    super::ensure(input.len() == rows, || {
         "MAP row count differs from the input chunk".to_owned()
     })?;
+    let entries = (0..rows)
+        .map(|row| Ok(input.get(row)?.map_or(0, |entries| entries.len())))
+        .sum::<Result<usize>>()?;
     field.set_child_size(entries)?;
     let mut writer = field.map_writer()?;
-    let mut next = writer.child_offset();
-    for row in 0..parent.len() {
-        let Some(entry) = parent.get(row)? else {
-            writer.set_null(row)?;
-            continue;
-        };
-        let start = next;
-        for index in entry.offset() as usize..(entry.offset() + entry.length()) as usize {
-            let key = keys
-                .get(index)?
-                .ok_or_else(|| Error::invalid_input("MAP key is NULL"))?;
-            writer.keys().set(next, key)?;
-            writer.values().set_option(next, values.get(index)?)?;
-            next += 1;
+    for row in 0..rows {
+        match input.get(row)? {
+            Some(entries) => writer.set_entries(row, entries.iter())?,
+            None => writer.set_null(row)?,
         }
-        writer.set_entry(row, ListIndex::new(start as u64, (next - start) as u64))?;
     }
     Ok(())
 }
