@@ -74,8 +74,8 @@ impl<'a, T: WithReader + 'a> RowReader for ListReader<'a, T> {
     }
 }
 
-impl<T: WithReader + std::fmt::Debug> std::fmt::Debug for ListReader<'_, T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<T: WithReader + core::fmt::Debug> core::fmt::Debug for ListReader<'_, T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("ListReader").field("len", &self.rows.len()).finish()
     }
 }
@@ -211,8 +211,8 @@ impl<'a, K: WithReader + 'a, V: WithReader + 'a> RowReader for MapReader<'a, K, 
     }
 }
 
-impl<K: WithReader, V: WithReader> std::fmt::Debug for MapReader<'_, K, V> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<K: WithReader, V: WithReader> core::fmt::Debug for MapReader<'_, K, V> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("MapReader").field("len", &self.rows.len()).finish()
     }
 }
@@ -344,8 +344,8 @@ impl<'a, T: WithReader + 'a, const N: usize> RowReader for ArrayReader<'a, T, N>
     }
 }
 
-impl<T: WithReader, const N: usize> std::fmt::Debug for ArrayReader<'_, T, N> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<T: WithReader, const N: usize> core::fmt::Debug for ArrayReader<'_, T, N> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("ArrayReader").field("len", &self.rows.len()).finish()
     }
 }

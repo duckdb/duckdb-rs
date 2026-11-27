@@ -1,4 +1,5 @@
-use std::{borrow::Borrow, ptr::NonNull};
+use alloc::format;
+use core::{borrow::Borrow, ptr::NonNull};
 
 use super::{RowWriter, Unknown, Vector, VectorWriter, WithWriter, out_of_bounds};
 use crate::{Result, error::Error, types::List, types::ListIndex};
@@ -229,8 +230,8 @@ where
     }
 }
 
-impl<T: WithWriter> std::fmt::Debug for ListWriter<'_, T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<T: WithWriter> core::fmt::Debug for ListWriter<'_, T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("ListWriter")
             .field("len", &self.len())
             .field("child_offset", &self.offset)

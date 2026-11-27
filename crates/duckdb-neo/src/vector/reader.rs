@@ -1,4 +1,4 @@
-use std::ops::Range;
+use core::ops::Range;
 
 use super::{NativeElement, ReadableNativeElement, StorageKind, Vector, other_not_readable, out_of_bounds};
 use crate::Result;
@@ -36,8 +36,8 @@ pub struct VectorReader<'vec, T: NativeElement> {
     cached: CachedReader,
 }
 
-impl<T: NativeElement> std::fmt::Debug for VectorReader<'_, T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<T: NativeElement> core::fmt::Debug for VectorReader<'_, T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("VectorReader")
             .field("len", &self.len())
             .field("data", &self.view().data.cast::<()>())
@@ -135,7 +135,7 @@ impl ReaderStorage {
         match self {
             Self::Flat => view.count as usize,
             Self::Constant(_) => 1,
-            Self::Dictionary(_) => unsafe { std::slice::from_raw_parts(view.sel, view.count as usize) }
+            Self::Dictionary(_) => unsafe { core::slice::from_raw_parts(view.sel, view.count as usize) }
                 .iter()
                 .max()
                 .map_or(0, |index| *index as usize + 1),
@@ -191,7 +191,7 @@ impl<'vec, T: NativeElement> VectorReader<'vec, T> {
             None
         } else {
             Some(unsafe {
-                std::slice::from_raw_parts(self.view().data.cast(), self.cached().storage.physical_len(self.view()))
+                core::slice::from_raw_parts(self.view().data.cast(), self.cached().storage.physical_len(self.view()))
             })
         }
     }
@@ -203,7 +203,7 @@ impl<'vec, T: NativeElement> VectorReader<'vec, T> {
             None
         } else {
             Some(unsafe {
-                std::slice::from_raw_parts(
+                core::slice::from_raw_parts(
                     self.view().validity,
                     self.cached().storage.physical_len(self.view()).div_ceil(64),
                 )
@@ -221,7 +221,7 @@ impl<'vec, T: NativeElement> VectorReader<'vec, T> {
                     None
                 } else {
                     let len = self.view().count as usize;
-                    Some(unsafe { std::slice::from_raw_parts(self.view().sel, len) })
+                    Some(unsafe { core::slice::from_raw_parts(self.view().sel, len) })
                 };
 
                 Selection::Dictionary(selection.expect("prepared dictionary has a selection"))
@@ -328,7 +328,7 @@ impl<'vec, T: ReadableNativeElement> VectorReader<'vec, T> {
     pub(crate) unsafe fn get_flat_unchecked(&self, index: usize) -> Option<T::Ref<'vec>> {
         let ReaderStorage::Flat = &self.cached().storage else {
             // SAFETY: The caller guarantees flat storage for this prepared reader.
-            unsafe { std::hint::unreachable_unchecked() }
+            unsafe { core::hint::unreachable_unchecked() }
         };
         if !unsafe { FlatReader::is_valid_unchecked(self.view().validity, index) } {
             return None;
@@ -368,7 +368,7 @@ impl<'vec, T: ReadableNativeElement + 'vec> Iterator for VectorReaderIter<'vec, 
 
 impl<T: ReadableNativeElement> ExactSizeIterator for VectorReaderIter<'_, T> {}
 
-impl<T: ReadableNativeElement> std::iter::FusedIterator for VectorReaderIter<'_, T> {}
+impl<T: ReadableNativeElement> core::iter::FusedIterator for VectorReaderIter<'_, T> {}
 
 impl<'vec, T: ReadableNativeElement> VectorReaderIter<'vec, T> {
     /// Add row numbers like [`Iterator::enumerate`], numbering the remaining rows from zero.
@@ -414,7 +414,7 @@ impl<'vec, T: ReadableNativeElement + 'vec> Iterator for EnumeratedVectorReaderI
 
 impl<T: ReadableNativeElement> ExactSizeIterator for EnumeratedVectorReaderIter<'_, T> {}
 
-impl<T: ReadableNativeElement> std::iter::FusedIterator for EnumeratedVectorReaderIter<'_, T> {}
+impl<T: ReadableNativeElement> core::iter::FusedIterator for EnumeratedVectorReaderIter<'_, T> {}
 
 #[cfg(test)]
 mod tests;

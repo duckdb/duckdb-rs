@@ -1,4 +1,5 @@
-use std::{marker::PhantomData, ptr::NonNull};
+use alloc::{format, string::String};
+use core::{marker::PhantomData, ptr::NonNull};
 
 use crate::raw::RawExt;
 use crate::{Error, Result, check_api_call, ffi, logical_type::LogicalTypeID};
@@ -71,7 +72,7 @@ pub struct VectorWriter<'writer, T: NativeElement> {
     vector: NonNull<Vector<'writer, T>>,
     len: usize,
     validity: *mut u64,
-    data: *mut std::ffi::c_void,
+    data: *mut core::ffi::c_void,
     _borrow: PhantomData<&'writer mut T>,
 }
 
@@ -155,7 +156,7 @@ impl<'writer, T: NativeElement> VectorWriter<'writer, T> {
             None
         } else {
             // SAFETY: The writer owns flat storage, and the caller guarantees initialization.
-            Some(unsafe { std::slice::from_raw_parts_mut(data, len) })
+            Some(unsafe { core::slice::from_raw_parts_mut(data, len) })
         }
     }
 
@@ -195,7 +196,7 @@ impl<'writer, T: NativeElement> VectorWriter<'writer, T> {
     pub unsafe fn validity_mut(&mut self) -> Result<&mut [u64]> {
         let len = self.len().div_ceil(64);
         // SAFETY: DuckDB supplied a writable mask, exclusively borrowed through the writer.
-        Ok(unsafe { std::slice::from_raw_parts_mut(self.validity, len) })
+        Ok(unsafe { core::slice::from_raw_parts_mut(self.validity, len) })
     }
 
     /// Set a row's validity without changing its data or descendants.
@@ -405,7 +406,7 @@ impl<T: NativeElement> VectorWriter<'_, T> {
                 return;
             }
             *self.validity.add(first) |= low;
-            std::slice::from_raw_parts_mut(self.validity.add(first + 1), last - first - 1).fill(u64::MAX);
+            core::slice::from_raw_parts_mut(self.validity.add(first + 1), last - first - 1).fill(u64::MAX);
             *self.validity.add(last) |= high;
         }
     }
@@ -452,7 +453,7 @@ impl<T: NativeElement> VectorWriter<'_, T> {
             .ok_or_else(|| out_of_bounds(offset.saturating_add(values.len()).saturating_sub(1), self.len()))?;
         // SAFETY: the rows are in bounds, and the caller guarantees `T` and the values are valid rows.
         unsafe {
-            std::ptr::copy_nonoverlapping(values.as_ptr(), self.data.cast::<U>().add(offset), values.len());
+            core::ptr::copy_nonoverlapping(values.as_ptr(), self.data.cast::<U>().add(offset), values.len());
             self.mark_valid_range(offset, end);
         }
         Ok(())
@@ -466,7 +467,7 @@ impl<T: NativeElement> VectorWriter<'_, T> {
         if super::element::plain_slot(logical_type)? != Some(U::SLOT) {
             return Err(Error::invalid_input(format!(
                 "{logical_type} rows are not stored as {}",
-                std::any::type_name::<U>()
+                core::any::type_name::<U>()
             )));
         }
         // SAFETY: `U` has the physical type of this vector's slots, all of whose values are valid rows.
@@ -512,7 +513,7 @@ impl<T: PlainNative> VectorWriter<'_, T> {
         match source.selection() {
             Selection::Identity => {
                 // SAFETY: both vectors hold at least `len` slots of `T`.
-                unsafe { std::ptr::copy_nonoverlapping(source.as_ptr().cast::<T>(), data, len) };
+                unsafe { core::ptr::copy_nonoverlapping(source.as_ptr().cast::<T>(), data, len) };
                 match source.validity() {
                     // SAFETY: the rows are in bounds and hold the values just copied.
                     None => unsafe { self.mark_valid_range(0, len) },
@@ -547,7 +548,7 @@ impl<T: PlainNative> VectorWriter<'_, T> {
         let (words, tail) = (len / 64, len % 64);
         // SAFETY: the caller guarantees both masks cover `len` rows.
         unsafe {
-            std::ptr::copy_nonoverlapping(mask.as_ptr(), self.validity, words);
+            core::ptr::copy_nonoverlapping(mask.as_ptr(), self.validity, words);
             if tail != 0 {
                 let keep = u64::MAX << tail;
                 let word = self.validity.add(words);

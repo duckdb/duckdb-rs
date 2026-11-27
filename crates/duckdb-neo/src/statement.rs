@@ -1,6 +1,6 @@
 //! Parsing, binding, and preparing SQL statements.
 
-use std::sync::Arc;
+use alloc::{sync::Arc, vec::Vec};
 
 use crate::column_data_collection::ColumnDataCollection;
 use crate::ffi_str::DuckDBStr;
@@ -29,12 +29,12 @@ impl ParameterBuffers<'_> {
         self.names
             .as_ref()
             .filter(|names| !names.is_empty())
-            .map_or(std::ptr::null(), |names| names.as_ptr())
+            .map_or(core::ptr::null(), |names| names.as_ptr())
     }
 
     fn values_ptr(&self) -> *const ffi::duckdb_v2_value_handle {
         if self.handles.is_empty() {
-            std::ptr::null()
+            core::ptr::null()
         } else {
             self.handles.as_ptr()
         }
@@ -95,7 +95,7 @@ impl Statements {
 
     fn parse_sql(conn: &Connection, sql: &str, invalidate: bool) -> Result<Statements> {
         let query_str =
-            std::ffi::CString::new(sql).map_err(|_| Error::invalid_input("SQL string contains a NUL byte"))?;
+            alloc::ffi::CString::new(sql).map_err(|_| Error::invalid_input("SQL string contains a NUL byte"))?;
 
         check_api_call!(
             ffi::duckdb_v2_parse_sql,
@@ -152,7 +152,7 @@ pub struct Statement<'a> {
 impl<'a> Statement<'a> {
     /// Bind the statement and return its result and parameter schemas.
     pub fn bind(&self, conn: &Connection) -> Result<SchemaBind> {
-        let mut out_parameters = std::ptr::null_mut();
+        let mut out_parameters = core::ptr::null_mut();
 
         check_api_call!(
             ffi::duckdb_v2_statement_bind,
@@ -189,7 +189,7 @@ impl<'a> Statement<'a> {
             self.raw(),
             &name,
             collection.raw(),
-            column_name_ptrs.as_ref().map_or(std::ptr::null(), |x| x.as_ptr()),
+            column_name_ptrs.as_ref().map_or(core::ptr::null(), |x| x.as_ptr()),
             column_name_ptrs.as_ref().map_or(0, |x| x.len() as u64)
         )?;
 
@@ -351,7 +351,7 @@ impl<'a> PreparedStatement<'a> {
         check_api_call!(
             ffi::duckdb_v2_prepared_statement_execute,
             self.handle,
-            param_names.as_ref().map_or(std::ptr::null(), |v| v.as_ptr()),
+            param_names.as_ref().map_or(core::ptr::null(), |v| v.as_ptr()),
             param_values.as_ptr(),
             param_values.len() as u64,
             RET
@@ -374,7 +374,7 @@ impl<'a> PreparedStatement<'a> {
         check_api_call!(
             ffi::duckdb_v2_prepared_statement_execute_arrow,
             self.handle,
-            param_names.as_ref().map_or(std::ptr::null(), |v| v.as_ptr()),
+            param_names.as_ref().map_or(core::ptr::null(), |v| v.as_ptr()),
             param_values.as_ptr(),
             param_values.len() as u64,
             batch_size.unwrap_or_default() as u64,

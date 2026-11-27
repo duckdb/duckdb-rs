@@ -3,6 +3,8 @@
 //! [`EnumIndex`] reads and writes a vector's dictionary indices in the integer DuckDB picks from
 //! the dictionary size: `u8` up to 255 entries, `u16` up to 65,535, and `u32` beyond.
 
+use alloc::format;
+
 use crate::{
     Error, Result,
     data_chunk::VectorCollection,
@@ -19,22 +21,22 @@ mod sealed {
 
 /// Unsigned integers DuckDB stores `ENUM` dictionary indices in.
 pub trait EnumStorage:
-    sealed::Sealed + Copy + Into<u32> + std::fmt::Debug + Eq + Ord + std::hash::Hash + 'static
+    sealed::Sealed + Copy + Into<u32> + core::fmt::Debug + Eq + Ord + core::hash::Hash + 'static
 {
     /// The dictionary sizes DuckDB stores in this integer.
-    const ENTRIES: std::ops::RangeInclusive<usize>;
+    const ENTRIES: core::ops::RangeInclusive<usize>;
 }
 
 impl EnumStorage for u8 {
-    const ENTRIES: std::ops::RangeInclusive<usize> = 0..=0xFF;
+    const ENTRIES: core::ops::RangeInclusive<usize> = 0..=0xFF;
 }
 
 impl EnumStorage for u16 {
-    const ENTRIES: std::ops::RangeInclusive<usize> = 0x100..=0xFFFF;
+    const ENTRIES: core::ops::RangeInclusive<usize> = 0x100..=0xFFFF;
 }
 
 impl EnumStorage for u32 {
-    const ENTRIES: std::ops::RangeInclusive<usize> = 0x1_0000..=0xFFFF_FFFF;
+    const ENTRIES: core::ops::RangeInclusive<usize> = 0x1_0000..=0xFFFF_FFFF;
 }
 
 /// The dictionary index of an `ENUM` row, stored as `T`.

@@ -1,5 +1,7 @@
 //! Catalog metadata for a resolved base table.
 
+use alloc::vec::Vec;
+
 use crate::ffi;
 
 use crate::ffi_str::DuckDBStr;

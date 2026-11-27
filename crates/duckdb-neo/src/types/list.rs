@@ -4,6 +4,8 @@
 //! [`ListIndex`] entries into its element child; read and write whole rows with a
 //! [`ListReader`](crate::vector::ListReader) and [`ListWriter`](crate::vector::ListWriter).
 
+use alloc::{format, vec::Vec};
+
 use super::{DuckDBType, FromValue, ToValue};
 use crate::{
     Parameters, Result,

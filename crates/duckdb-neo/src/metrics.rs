@@ -1,7 +1,8 @@
 //! Query profiling metrics, organized as a tree of query and operator nodes.
 //! Enable profiling with [`Connection::set_profiling`](crate::connection::Connection::set_profiling) first.
 
-use std::marker::PhantomData;
+use alloc::string::{String, ToString};
+use core::marker::PhantomData;
 
 use duckdb_loadable_macros::{AsRaw, DropHandle, FromRaw};
 
@@ -74,7 +75,7 @@ impl<'a> QueryMetricsNode<'a> {
     /// Returns `None` if the metric is absent.
     pub fn get_by_name(&self, name: &str) -> Result<Option<Value>> {
         let mut name_ptr: ffi::duckdb_v2_str = name.into();
-        let mut value_ptr = std::ptr::null_mut();
+        let mut value_ptr = core::ptr::null_mut();
 
         let present = check_api_call!(
             ffi::duckdb_v2_query_metrics_node_get_metric,

@@ -54,7 +54,7 @@ pub fn parse(meta: TokenStream, ast: Item) -> Result<TokenStream> {
         pub unsafe extern "C" fn #c_entrypoint(input: *mut ::duckdb_neo::ffi::duckdb_v2_extension_input) {
             unsafe {
                 ::duckdb_neo::extension::run_extension_entrypoint(input, #version, |extension| {
-                    #func_ident(extension).map_err(::std::convert::Into::into)
+                    #func_ident(extension).map_err(::core::convert::Into::into)
                 })
             }
         }

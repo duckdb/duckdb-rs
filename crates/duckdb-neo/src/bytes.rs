@@ -1,4 +1,5 @@
-use std::marker::PhantomData;
+use alloc::format;
+use core::marker::PhantomData;
 
 use crate::{
     Result,
@@ -67,8 +68,8 @@ pub struct DuckDBBytes<'arena> {
     _marker: PhantomData<&'arena ()>,
 }
 
-impl std::fmt::Debug for DuckDBBytes<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Debug for DuckDBBytes<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("DuckDBBytes")
             .field("size", &self.size())
             .finish_non_exhaustive()
@@ -108,7 +109,7 @@ impl<'arena> DuckDBBytes<'arena> {
             for part in parts {
                 let part = part.as_ref();
                 unsafe {
-                    std::ptr::copy_nonoverlapping(
+                    core::ptr::copy_nonoverlapping(
                         part.as_ptr(),
                         inlined.inlined.as_mut_ptr().cast::<u8>().add(offset),
                         part.len(),
@@ -127,13 +128,13 @@ impl<'arena> DuckDBBytes<'arena> {
             for part in parts {
                 let part = part.as_ref();
                 unsafe {
-                    std::ptr::copy_nonoverlapping(part.as_ptr(), pointer.ptr.cast::<u8>().add(offset), part.len());
+                    core::ptr::copy_nonoverlapping(part.as_ptr(), pointer.ptr.cast::<u8>().add(offset), part.len());
                 }
                 offset += part.len();
             }
             // The prefix may span several parts, including empty ones.
             unsafe {
-                std::ptr::copy_nonoverlapping(pointer.ptr, pointer.prefix.as_mut_ptr(), pointer.prefix.len());
+                core::ptr::copy_nonoverlapping(pointer.ptr, pointer.prefix.as_mut_ptr(), pointer.prefix.len());
             }
             DuckDBV2BytesUnion { pointer }
         };
@@ -153,14 +154,14 @@ impl<'arena> DuckDBBytes<'arena> {
     pub fn get_data(&self) -> &[u8] {
         if unsafe { self.data.value.inlined.length } <= ffi::DUCKDB_V2_BYTES_INLINE_LENGTH {
             unsafe {
-                std::slice::from_raw_parts(
+                core::slice::from_raw_parts(
                     self.data.value.inlined.inlined.as_ptr().cast(),
                     self.data.value.inlined.length as usize,
                 )
             }
         } else {
             unsafe {
-                std::slice::from_raw_parts(
+                core::slice::from_raw_parts(
                     self.data.value.pointer.ptr.cast(),
                     self.data.value.pointer.length as usize,
                 )

@@ -191,10 +191,10 @@ pub fn aggregate_test_invalid_build() -> crate::Result<()> {
         BasicAggregate::<f32> { item: 2.5 },
     );
 
-    result.properties.insert(
+    result.properties.insert((
         DUCKDB_V2_FUNCTION_PROPERTY_KEY::DUCKDB_V2_FUNCTION_PROPERTY_KEY_MAX_ENUM,
         DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_VALUE_MAX_ENUM,
-    );
+    ));
 
     let result = result.register(&conn);
 

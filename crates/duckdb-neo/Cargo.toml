@@ -21,14 +21,17 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
 
 [features]
 default = [
+    "std",
     "buildtime-download",
     "buildtime-pkg-config",
     "buildtime-pregenerated",
 ]
 # Features
+# Without `std`, the crate is `no_std` + `alloc` and a panic in a callback aborts instead of becoming a DuckDB error.
+std = ["chrono?/std", "jiff?/std", "rust_decimal?/std", "uuid?/std"]
 chrono = ["dep:chrono"]
 jiff = ["dep:jiff"]
-r2d2 = ["dep:r2d2"]
+r2d2 = ["std", "dep:r2d2"]
 uuid = ["dep:uuid"]
 rust_decimal = ["dep:rust_decimal"]
 

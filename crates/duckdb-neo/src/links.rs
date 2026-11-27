@@ -1,6 +1,7 @@
 //! Internal dispatch for operations available through multiple FFI link types.
 
-use std::{any::Any, sync::Arc};
+use alloc::sync::Arc;
+use core::any::Any;
 
 use crate::{
     connection::{Connection, Context},

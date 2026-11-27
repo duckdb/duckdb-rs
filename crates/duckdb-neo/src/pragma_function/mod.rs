@@ -11,6 +11,8 @@
 //! [`BindArgument::value`](crate::bind_arguments::BindArgument::value) always folds them.
 //! Its signature cannot declare a return type.
 
+use alloc::string::String;
+
 use crate::ffi;
 
 use crate::{
@@ -119,7 +121,7 @@ impl<T: Send + Sync + 'static> PragmaFunctionBuilder<T> {
 
         let docs = check_api_call!(ffi::duckdb_v2_pragma_function_get_docs, handle.raw(), RET)?;
 
-        std::mem::take(&mut self.signature).build(link, &signature, &docs)?;
+        core::mem::take(&mut self.signature).build(link, &signature, &docs)?;
 
         check_api_call!(
             ffi::duckdb_v2_pragma_function_set_user_data,

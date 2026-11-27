@@ -1,4 +1,5 @@
-use std::marker::PhantomData;
+use alloc::string::String;
+use core::marker::PhantomData;
 
 use super::{ScalarCallbacks, ScalarFunctionBuilder};
 use crate::{

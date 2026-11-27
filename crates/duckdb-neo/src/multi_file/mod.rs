@@ -1,6 +1,8 @@
 //! Multi-file table functions built on registered single-file readers.
 //! The wrapper adds globbing, file lists, Hive partitioning, and `union_by_name`.
 
+use alloc::string::String;
+
 use crate::{
     Result,
     error::check_api_call,

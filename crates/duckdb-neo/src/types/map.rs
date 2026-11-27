@@ -1,5 +1,7 @@
 //! The `MAP` logical type.
 
+use alloc::{format, vec::Vec};
+
 use super::{DuckDBType, FromValue, ListIndex, ToValue, list::check_entry};
 use crate::{
     Parameters, Result,

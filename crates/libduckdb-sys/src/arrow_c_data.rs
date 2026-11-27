@@ -7,8 +7,8 @@
 //! Specification: <https://arrow.apache.org/docs/format/CDataInterface.html>
 
 #[cfg(any(test, feature = "capi-v2"))]
-use std::ffi::c_int;
-use std::{
+use core::ffi::c_int;
+use core::{
     ffi::{c_char, c_void},
     ptr,
 };

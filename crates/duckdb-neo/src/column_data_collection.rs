@@ -4,7 +4,8 @@
 //! appending state or borrowed for scanning. Appended chunks are copied into
 //! storage owned by the collection.
 
-use std::marker::PhantomData;
+use alloc::{string::String, vec::Vec};
+use core::marker::PhantomData;
 
 use crate::column_data_collection::ColumnParameter::{Named, Positional};
 use crate::connection::HasFactory;

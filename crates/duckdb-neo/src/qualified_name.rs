@@ -1,5 +1,7 @@
 //! Qualified names for catalog objects.
 
+use alloc::{borrow::ToOwned, string::String, vec::Vec};
+
 use crate::ffi;
 use crate::ffi_str::DuckDBStr;
 use crate::{AsRaw, DropHandle, FromRaw, Result, check_api_call, check_api_call_string, error::Error};
@@ -124,8 +126,8 @@ impl QualifiedName {
     }
 }
 
-impl std::fmt::Debug for QualifiedName {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Debug for QualifiedName {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self.parts() {
             Ok(parts) => f.debug_tuple("QualifiedName").field(&parts).finish(),
             Err(_) => f.debug_struct("QualifiedName").field("handle", &self.handle).finish(),

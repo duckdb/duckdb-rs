@@ -1,5 +1,7 @@
 //! Registration of named custom logical types.
 
+use alloc::string::String;
+
 use crate::ffi;
 
 use crate::{

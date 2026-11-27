@@ -59,11 +59,11 @@ fn generate_functions_v2(mut output: String) -> String {
 
         // Same ABI as the linked bindings, so code can take either as the same function pointer type.
         let tokens = quote::quote! {
-            static #ptr_name: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+            static #ptr_name: ::core::sync::atomic::AtomicPtr<()> = ::core::sync::atomic::AtomicPtr::new(::core::ptr::null_mut());
             pub unsafe extern "C" fn #duckdb_fn_name(#args) #ty {
-                let function_ptr = #ptr_name.load(::std::sync::atomic::Ordering::Acquire);
+                let function_ptr = #ptr_name.load(::core::sync::atomic::Ordering::Acquire);
                 assert!(!function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted");
-                let fun: unsafe extern "C" fn(#args) #ty = ::std::mem::transmute(function_ptr);
+                let fun: unsafe extern "C" fn(#args) #ty = ::core::mem::transmute(function_ptr);
                 (fun)(#arg_names)
             }
         };
@@ -78,7 +78,7 @@ fn generate_functions_v2(mut output: String) -> String {
             if let Some(fun) = (*#p_api).#ident {
                 #ptr_name.store(
                     fun as usize as *mut (),
-                    ::std::sync::atomic::Ordering::Release,
+                    ::core::sync::atomic::Ordering::Release,
                 );
             }
         });
@@ -87,8 +87,8 @@ fn generate_functions_v2(mut output: String) -> String {
     // (2) generate rust code similar to DUCKDB_EXTENSION_API_INIT macro
     let tokens = quote::quote! {
         /// Like DUCKDB_EXTENSION_API_INIT macro
-        pub unsafe fn duckdb_rs_extension_api_v2_init(input: &duckdb_v2_extension_input, version: &str) -> ::std::result::Result<bool, &'static str> {
-            let version_c_string = std::ffi::CString::new(version).unwrap();
+        pub unsafe fn duckdb_rs_extension_api_v2_init(input: &duckdb_v2_extension_input, version: &str) -> ::core::result::Result<bool, &'static str> {
+            let version_c_string = ::alloc::ffi::CString::new(version).unwrap();
             let Some(get_api) = input.get_api else {
                 return Err("get_api is NULL: loadable extensions cannot be statically linked");
             };
@@ -146,11 +146,11 @@ fn generate_functions_v1(mut output: String) -> String {
         let ty = &method.output;
 
         let tokens = quote::quote! {
-            static #ptr_name: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+            static #ptr_name: ::core::sync::atomic::AtomicPtr<()> = ::core::sync::atomic::AtomicPtr::new(::core::ptr::null_mut());
             pub unsafe fn #duckdb_fn_name(#args) #ty {
-                let function_ptr = #ptr_name.load(::std::sync::atomic::Ordering::Acquire);
+                let function_ptr = #ptr_name.load(::core::sync::atomic::Ordering::Acquire);
                 assert!(!function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted");
-                let fun: unsafe extern "C" fn(#args) #ty = ::std::mem::transmute(function_ptr);
+                let fun: unsafe extern "C" fn(#args) #ty = ::core::mem::transmute(function_ptr);
                 (fun)(#arg_names)
             }
         };
@@ -165,7 +165,7 @@ fn generate_functions_v1(mut output: String) -> String {
             if let Some(fun) = (*#p_api).#ident {
                 #ptr_name.store(
                     fun as usize as *mut (),
-                    ::std::sync::atomic::Ordering::Release,
+                    ::core::sync::atomic::Ordering::Release,
                 );
             }
         });
@@ -174,8 +174,8 @@ fn generate_functions_v1(mut output: String) -> String {
     // (3) generate rust code similar to DUCKDB_EXTENSION_API_INIT macro
     let tokens = quote::quote! {
         /// Like DUCKDB_EXTENSION_API_INIT macro
-        pub unsafe fn duckdb_rs_extension_api_init(info: duckdb_extension_info, access: *const duckdb_extension_access, version: &str) -> ::std::result::Result<bool, &'static str> {
-            let version_c_string = std::ffi::CString::new(version).unwrap();
+        pub unsafe fn duckdb_rs_extension_api_init(info: duckdb_extension_info, access: *const duckdb_extension_access, version: &str) -> ::core::result::Result<bool, &'static str> {
+            let version_c_string = ::alloc::ffi::CString::new(version).unwrap();
             let #p_api = (*access).get_api.unwrap()(info, version_c_string.as_ptr()) as *const duckdb_ext_api_v1;
             if #p_api.is_null() {
                 // get_api can return a nullptr when the version is not matched. In this case, we don't need to set
@@ -204,6 +204,7 @@ pub fn write_to_out_dir(location: &HeaderLocation, api: CApi, out_path: &Path) {
     // ABI layouts from src/arrow_c_data.rs for both headers.
     let mut builder = bindgen::builder()
         .trust_clang_mangling(false)
+        .use_core()
         .header(header.clone())
         .allowlist_item(r#"(\w*duckdb\w*)"#)
         .allowlist_type("idx_t")

@@ -1,9 +1,7 @@
 //! DuckDB instances and their global configuration.
 
-use std::{
-    borrow::Borrow,
-    sync::{Arc, Mutex, OnceLock},
-};
+use alloc::{string::String, sync::Arc, vec::Vec};
+use core::borrow::Borrow;
 
 use crate::{
     AsRaw, DropHandle, Factory, Result, check_api_call,
@@ -27,6 +25,8 @@ pub struct InstanceHandle {
 
 // SAFETY: an instance handle may be used and destroyed on any thread.
 unsafe impl Send for InstanceHandle {}
+// SAFETY: the handle is never mutated, and the C API's instance operations are thread-safe.
+unsafe impl Sync for InstanceHandle {}
 
 #[derive(Debug, DropHandle)]
 #[drop_handle(ffi::duckdb_v2_attach_options_destroy)]
@@ -90,12 +90,18 @@ impl InstanceBuilder {
             self.options.len() as u64,
             RET
         )?;
+        let handle = Arc::new(InstanceHandle {
+            handle,
+            _env: environment.handle.clone(),
+        });
+        let factory = Factory::new(check_api_call!(
+            ffi::duckdb_v2_instance_get_factory,
+            handle.handle,
+            RET
+        )?);
         Ok(Instance {
-            handle: Arc::new(Mutex::new(InstanceHandle {
-                handle,
-                _env: environment.handle.clone(),
-            })),
-            factory: OnceLock::new(),
+            handle,
+            factory: InstanceFactory(factory),
         })
     }
 }
@@ -209,9 +215,8 @@ impl From<StorageLocation> for AttachBuilder {
 /// ```
 #[derive(Debug)]
 pub struct Instance {
-    // Locks only raw-handle access, not engine operations.
-    pub(crate) handle: Arc<Mutex<InstanceHandle>>,
-    pub(crate) factory: OnceLock<InstanceFactory>,
+    pub(crate) handle: Arc<InstanceHandle>,
+    pub(crate) factory: InstanceFactory,
 }
 
 /// The factory of an instance, which can be shared across threads.
@@ -226,22 +231,25 @@ impl AsRaw for Instance {
     type Raw = ffi::duckdb_v2_instance_handle;
 
     unsafe fn get_raw(&self) -> Self::Raw {
-        self.handle.lock().unwrap().handle
+        self.handle.handle
     }
 }
 
 impl HasFactory for Instance {
     fn factory(&self) -> Result<&Factory> {
-        if let Some(factory) = self.factory.get() {
-            return Ok(&factory.0);
-        }
-
-        let factory = Factory::new(check_api_call!(ffi::duckdb_v2_instance_get_factory, self.raw(), RET)?);
-        Ok(&self.factory.get_or_init(|| InstanceFactory(factory)).0)
+        Ok(&self.factory.0)
     }
 }
 
 impl Instance {
+    #[cfg(feature = "r2d2")]
+    pub(crate) fn share(&self) -> Self {
+        Instance {
+            handle: self.handle.clone(),
+            factory: InstanceFactory(Factory::new(self.factory.0.handle)),
+        }
+    }
+
     /// Create an empty instance with default startup options.
     /// Accepts either an owned or borrowed environment, which the instance keeps alive.
     pub fn new(environment: impl Borrow<Environment>) -> Result<Self> {
@@ -271,9 +279,9 @@ impl Instance {
         check_api_call!(
             ffi::duckdb_v2_instance_attach,
             self.raw(),
-            alias.as_ref().map_or(std::ptr::null(), |name| name as *const _),
+            alias.as_ref().map_or(core::ptr::null(), |name| name as *const _),
             &attachment.location.as_str().into(),
-            options.as_ref().map_or(std::ptr::null_mut(), |options| options.handle),
+            options.as_ref().map_or(core::ptr::null_mut(), |options| options.handle),
             attachment.make_default
         )?;
         Ok(self)

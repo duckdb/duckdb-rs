@@ -1,6 +1,11 @@
 //! File access through DuckDB's file system.
 
-use std::marker::PhantomData;
+use alloc::{
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+use core::marker::PhantomData;
 
 use duckdb_loadable_macros::{AsRaw, DropHandle, FromRaw};
 
@@ -18,7 +23,7 @@ use crate::{
 
 unsafe extern "C" fn copy_glob_callback(
     text: *const ffi::duckdb_v2_str,
-    user_data: *mut std::os::raw::c_void,
+    user_data: *mut core::ffi::c_void,
     err: *mut ffi::duckdb_v2_error_info_handle,
 ) {
     handle_unwind(
@@ -47,7 +52,7 @@ unsafe extern "C" fn copy_glob_callback(
 
 unsafe extern "C" fn copy_path_callback(
     text: *const ffi::duckdb_v2_str,
-    user_data: *mut std::os::raw::c_void,
+    user_data: *mut core::ffi::c_void,
     err: *mut ffi::duckdb_v2_error_info_handle,
 ) {
     handle_unwind(
@@ -125,7 +130,7 @@ impl<'link> FileSystem<'link> {
             self.raw(),
             &path.into(),
             Some(copy_path_callback),
-            &mut string as *mut String as *mut std::os::raw::c_void
+            &mut string as *mut String as *mut core::ffi::c_void
         )?;
 
         Ok(string)
@@ -140,7 +145,7 @@ impl<'link> FileSystem<'link> {
             self.raw(),
             &path.into(),
             Some(copy_glob_callback),
-            &mut items as *mut Vec<String> as *mut std::os::raw::c_void
+            &mut items as *mut Vec<String> as *mut core::ffi::c_void
         )?;
 
         Ok(items)
@@ -324,7 +329,7 @@ impl File {
         check_api_call!(
             ffi::duckdb_v2_file_read,
             self.handle,
-            buffer.as_mut_ptr() as *mut std::ffi::c_void,
+            buffer.as_mut_ptr() as *mut core::ffi::c_void,
             buffer.len() as u64,
             &mut bytes_read,
         )?;
@@ -359,7 +364,7 @@ impl File {
         check_api_call!(
             ffi::duckdb_v2_file_write,
             self.handle,
-            buffer.as_ptr() as *const std::ffi::c_void,
+            buffer.as_ptr() as *const core::ffi::c_void,
             buffer.len() as u64,
             &mut bytes_written,
         )?;
@@ -380,7 +385,7 @@ impl File {
         check_api_call!(
             ffi::duckdb_v2_file_read_at,
             self.handle,
-            buffer.as_mut_ptr() as *mut std::ffi::c_void,
+            buffer.as_mut_ptr() as *mut core::ffi::c_void,
             buffer.len() as u64,
             position as u64
         )
@@ -391,7 +396,7 @@ impl File {
         check_api_call!(
             ffi::duckdb_v2_file_write_at,
             self.handle,
-            buffer.as_ptr() as *const std::ffi::c_void,
+            buffer.as_ptr() as *const core::ffi::c_void,
             buffer.len() as u64,
             position as u64,
         )

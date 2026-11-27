@@ -9,7 +9,8 @@
 //! name on both sides of `COPY`. Register with [`CopyFunctionBuilder`]; opt into
 //! reporting `RETURN_STATS` statistics with [`CopyToStatisticsCallbacks`].
 
-use std::{any::Any, collections::HashMap, marker::PhantomData, num::NonZeroUsize};
+use alloc::{borrow::ToOwned, collections::BTreeMap, string::String, vec::Vec};
+use core::{any::Any, marker::PhantomData, num::NonZeroUsize};
 
 use crate::ffi_str::DuckDBStr;
 use crate::{
@@ -508,11 +509,11 @@ impl CopyToBindInfo {
         Ok((DuckDBStr::from_raw(name).as_str().unwrap_or_default(), Value { handle }))
     }
 
-    /// Return format-specific options in an unordered map with case-preserving keys.
+    /// Return format-specific options in a map with case-preserving keys.
     /// Engine-handled options are excluded; bare options yield `true`, lists unnamed structs.
-    pub fn options(&self) -> Result<HashMap<String, Value>> {
+    pub fn options(&self) -> Result<BTreeMap<String, Value>> {
         let len = self.option_count()?;
-        let mut items: HashMap<String, Value> = HashMap::with_capacity(len);
+        let mut items = BTreeMap::new();
 
         for i in 0..len {
             let (name, value) = self.get_option(i)?;

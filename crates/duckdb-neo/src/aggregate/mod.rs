@@ -5,15 +5,14 @@
 //! implementation with [`AggregateFunctionBuilder`]. During execution,
 //! [`States`] provides borrowed access to DuckDB's per-group state pointers.
 
-use std::{
+use alloc::{format, string::String, vec::Vec};
+use core::{
     any::Any,
-    collections::HashMap,
     ops::{Index, IndexMut},
-    panic::AssertUnwindSafe,
 };
 
 use crate::{
-    builder_helpers::{ArgCount, callback_trampoline},
+    builder_helpers::{ArgCount, FunctionProperties, callback_trampoline},
     ffi,
     handles::{AggregateFunctionBuilderHandle, AggregateFunctionBuilderLink},
     logical_type::LogicalType,
@@ -114,7 +113,7 @@ impl<'a, T> IndexMut<usize> for States<'a, T> {
 /// Iterates over aggregate state references.
 #[derive(Debug)]
 pub struct StatesIter<'a, T> {
-    states: std::slice::Iter<'a, *mut T>,
+    states: core::slice::Iter<'a, *mut T>,
 }
 
 impl<'a, T> Iterator for StatesIter<'a, T> {
@@ -153,7 +152,7 @@ unsafe fn state_slice<'a, T>(ptr: *const T, count: usize) -> &'a [T] {
         &[]
     } else {
         // SAFETY: callers provide a valid state array for the callback's duration.
-        unsafe { std::slice::from_raw_parts(ptr, count) }
+        unsafe { core::slice::from_raw_parts(ptr, count) }
     }
 }
 
@@ -211,7 +210,7 @@ unsafe extern "C" fn init_callback<T: AggregateCallbacks>(
     // DuckDB runs `destroy_callback` on every state even when init fails, and
     // that drops each state in place. Returning early would leave states
     // uninitialized, so any failure here (error or panic) aborts instead.
-    let result = std::panic::catch_unwind(AssertUnwindSafe(|| -> Result<()> {
+    let init = || -> Result<()> {
         let user_data = get_user_data!(ffi::duckdb_v2_aggregate_function_init_get_user_data, info);
         let bind_data = get_bind_data!(ffi::duckdb_v2_aggregate_function_init_get_bind_data, info);
 
@@ -231,18 +230,24 @@ unsafe extern "C" fn init_callback<T: AggregateCallbacks>(
         }
 
         Ok(())
-    }));
+    };
 
-    match result {
+    #[cfg(any(feature = "std", test))]
+    match std::panic::catch_unwind(core::panic::AssertUnwindSafe(init)) {
         Ok(Ok(())) => {}
         Ok(Err(e)) => {
-            eprintln!("aggregate state initialization failed: {}", e.message);
+            std::eprintln!("aggregate state initialization failed: {}", e.message);
             std::process::abort();
         }
         Err(_) => {
-            eprintln!("aggregate state initialization panicked");
+            std::eprintln!("aggregate state initialization panicked");
             std::process::abort();
         }
+    }
+    // A panic cannot unwind out of this callback, so it aborts.
+    #[cfg(not(any(feature = "std", test)))]
+    if let Err(e) = init() {
+        panic!("aggregate state initialization failed: {}", e.message);
     }
 }
 
@@ -326,7 +331,7 @@ fn finalize_callback<T: AggregateCallbacks>(
 
     let count: u64 = check_api_call!(ffi::duckdb_v2_aggregate_function_finalize_get_state_count, info, RET)?;
 
-    let states_ptr: *mut *mut std::ffi::c_void =
+    let states_ptr: *mut *mut core::ffi::c_void =
         check_api_call!(ffi::duckdb_v2_aggregate_function_finalize_get_states, info, RET)?;
 
     // SAFETY: DuckDB lends count initialized, aligned states for shared access during finalization.
@@ -356,7 +361,7 @@ fn destroy_callback<T: AggregateCallbacks>(info: ffi::duckdb_v2_aggregate_functi
 
     let states_count: u64 = check_api_call!(ffi::duckdb_v2_aggregate_function_destroy_get_state_count, info, RET)?;
 
-    let states_ptr: *mut *mut std::ffi::c_void =
+    let states_ptr: *mut *mut core::ffi::c_void =
         check_api_call!(ffi::duckdb_v2_aggregate_function_destroy_get_states, info, RET)?;
 
     // SAFETY: DuckDB supplies states_count state pointers valid for this callback.
@@ -421,7 +426,7 @@ fn stats_callback<T: AggregateStatsCallbacks>(
 pub struct AggregateFunctionBuilder<T: AggregateCallbacks> {
     name: String,
     signature: SignatureBuilder,
-    properties: HashMap<ffi::DUCKDB_V2_FUNCTION_PROPERTY_KEY, ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE>,
+    properties: FunctionProperties,
     user_data: OpaqueHandle<T>,
     stats_callback: ffi::duckdb_v2_aggregate_function_stats_callback_fn,
 }
@@ -432,7 +437,7 @@ impl<T: AggregateCallbacks> AggregateFunctionBuilder<T> {
         Self {
             name: name.into(),
             signature,
-            properties: HashMap::new(),
+            properties: FunctionProperties::default(),
             user_data: OpaqueHandle::new(implementation),
             stats_callback: None,
         }
@@ -440,8 +445,7 @@ impl<T: AggregateCallbacks> AggregateFunctionBuilder<T> {
 
     /// Set a DuckDB function property.
     pub fn set_property(mut self, item: impl Into<AggregateFunctionProperty>) -> Self {
-        let (key, value) = item.into().into();
-        self.properties.insert(key, value);
+        self.properties.insert(item.into().into());
         self
     }
 
@@ -456,9 +460,9 @@ impl<T: AggregateCallbacks> AggregateFunctionBuilder<T> {
 
         let docs = check_api_call!(ffi::duckdb_v2_aggregate_function_get_docs, handle.raw(), RET)?;
 
-        std::mem::take(&mut self.signature).build(link, &signature, &docs)?;
+        core::mem::take(&mut self.signature).build(link, &signature, &docs)?;
 
-        for (key, value) in &self.properties {
+        for (key, value) in self.properties.iter() {
             check_api_call!(
                 ffi::duckdb_v2_aggregate_function_set_property,
                 handle.raw(),

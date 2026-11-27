@@ -1,7 +1,10 @@
 //! Reading strings and bytes that DuckDB hands back through the C API.
 
-use std::borrow::Cow;
-use std::marker::PhantomData;
+use alloc::{
+    borrow::{Cow, ToOwned},
+    string::String,
+};
+use core::marker::PhantomData;
 
 use crate::ffi;
 
@@ -29,7 +32,7 @@ impl<'a> DuckDBStr<'a> {
     pub(crate) fn as_str(&self) -> Option<&'a str> {
         let bytes = self.as_bytes()?;
         // SAFETY: the C API returns UTF-8 text.
-        Some(unsafe { std::str::from_utf8_unchecked(bytes) })
+        Some(unsafe { core::str::from_utf8_unchecked(bytes) })
     }
 
     /// Replace invalid UTF-8, or return `None` for a null pointer with nonzero length.
@@ -46,7 +49,7 @@ impl<'a> DuckDBStr<'a> {
             return None;
         }
         // SAFETY: `from_raw` requires `len` bytes valid for `'a`.
-        Some(unsafe { std::slice::from_raw_parts(self.raw.ptr.cast(), self.raw.len as usize) })
+        Some(unsafe { core::slice::from_raw_parts(self.raw.ptr.cast(), self.raw.len as usize) })
     }
 }
 
@@ -90,10 +93,10 @@ pub(crate) fn bytes_view(value: &ffi::duckdb_v2_bytes) -> &[u8] {
     unsafe {
         if value.value.inlined.length <= 12 {
             let len = value.value.inlined.length as usize;
-            std::slice::from_raw_parts(value.value.inlined.inlined.as_ptr().cast(), len)
+            core::slice::from_raw_parts(value.value.inlined.inlined.as_ptr().cast(), len)
         } else {
             let len = value.value.pointer.length as usize;
-            std::slice::from_raw_parts(value.value.pointer.ptr.cast(), len)
+            core::slice::from_raw_parts(value.value.pointer.ptr.cast(), len)
         }
     }
 }

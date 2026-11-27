@@ -1,7 +1,8 @@
 //! Row readers and writers that prepare nested vectors once, so they compose: a [`ListWriter`](super::ListWriter)
 //! of a derived struct writes its elements through the struct's own writer.
 
-use std::ptr::NonNull;
+use alloc::string::String;
+use core::ptr::NonNull;
 
 use super::{
     NativeElement, ReadableNativeElement, Vector, VectorReader, VectorWriter, WritableNativeElement, out_of_bounds,
@@ -57,7 +58,7 @@ pub trait RowReader {
 #[derive(Debug)]
 pub struct RowIter<'r, R> {
     reader: &'r R,
-    rows: std::ops::Range<usize>,
+    rows: core::ops::Range<usize>,
 }
 
 impl<'r, R: RowReader> Iterator for RowIter<'r, R> {
@@ -77,7 +78,7 @@ impl<'r, R: RowReader> Iterator for RowIter<'r, R> {
 
 impl<R: RowReader> ExactSizeIterator for RowIter<'_, R> {}
 
-impl<R: RowReader> std::iter::FusedIterator for RowIter<'_, R> {}
+impl<R: RowReader> core::iter::FusedIterator for RowIter<'_, R> {}
 
 /// Writes the rows of one vector, with the writers of any children prepared up front.
 pub trait RowWriter {

@@ -94,6 +94,7 @@ pub mod derive_support {
         value::{Value, ValueInput},
         vector::NativeElement,
     };
+    use alloc::format;
 
     /// Build a `union_type` value whose member `tag` holds `member`.
     /// A singleton union fixes the tag; a tagged STRUCT preserves NULL payloads.

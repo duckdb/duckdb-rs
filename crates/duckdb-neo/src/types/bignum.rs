@@ -15,7 +15,8 @@ use crate::{
     value::{Value, ValueInput},
     vector::{HasDuckDBBytes, NativeElement, ReadableNativeElement, WritableNativeElement},
 };
-use std::fmt::Display;
+use alloc::{format, string::ToString, vec::Vec};
+use core::fmt::Display;
 
 /// A borrowed encoded `BIGNUM` value from a vector.
 ///
@@ -23,8 +24,8 @@ use std::fmt::Display;
 #[repr(transparent)]
 pub struct BigNum(ffi::duckdb_v2_bignum_t);
 
-impl std::fmt::Debug for BigNum {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Debug for BigNum {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self.decode() {
             Ok(value) => f.debug_tuple("BigNum").field(&value).finish(),
             Err(_) => f
@@ -43,7 +44,7 @@ impl BigNum {
         } else {
             unsafe { self.0.value.pointer.ptr.cast::<u8>() }
         };
-        unsafe { std::slice::from_raw_parts(bytes, length as usize) }
+        unsafe { core::slice::from_raw_parts(bytes, length as usize) }
     }
 
     /// Return a decoded value containing the sign and big-endian magnitude.
@@ -195,8 +196,8 @@ unsafe impl WritableNativeElement for BigNumValue {
 }
 
 impl Display for BigNumValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use std::fmt::Write;
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        use core::fmt::Write;
 
         const CHUNK_DIVISOR: u64 = 1_000_000_000;
         let mut magnitude: Vec<u32> = self

@@ -4,6 +4,8 @@
 //! [`BlobValue`] and [`BitValue`] wrap `BLOB` and `BIT` payloads.
 //! All share DuckDB's [`crate::bytes::DuckDBBytes`] wire representation.
 
+use alloc::{format, string::String, vec::Vec};
+
 use super::{DuckDBType, FromValue, ToValue};
 use crate::ffi_str::{DuckDBStr, bytes_view};
 use crate::{
@@ -250,7 +252,7 @@ unsafe impl ReadableNativeElement for String {
 
         let string_view = unsafe { &*data_ptr.add(physical) };
 
-        std::str::from_utf8(bytes_view(string_view)).expect("DuckDB VARCHAR is not valid UTF-8")
+        core::str::from_utf8(bytes_view(string_view)).expect("DuckDB VARCHAR is not valid UTF-8")
     }
 }
 
@@ -276,7 +278,7 @@ unsafe impl ReadableNativeElement for UncheckedString {
     {
         let data_ptr = vector.as_ptr() as *const ffi::duckdb_v2_bytes;
         let string_view = unsafe { &*data_ptr.add(physical) };
-        unsafe { std::str::from_utf8_unchecked(bytes_view(string_view)) }
+        unsafe { core::str::from_utf8_unchecked(bytes_view(string_view)) }
     }
 }
 
@@ -337,7 +339,7 @@ unsafe impl WritableNativeElement for BitValue {
     }
 }
 
-impl std::borrow::Borrow<str> for UncheckedString {
+impl core::borrow::Borrow<str> for UncheckedString {
     fn borrow(&self) -> &str {
         &self.0
     }
@@ -385,13 +387,13 @@ unsafe impl WritableNativeElement for &str {
     }
 }
 
-impl std::borrow::Borrow<[u8]> for BlobValue {
+impl core::borrow::Borrow<[u8]> for BlobValue {
     fn borrow(&self) -> &[u8] {
         &self.0
     }
 }
 
-impl std::borrow::Borrow<[u8]> for BitValue {
+impl core::borrow::Borrow<[u8]> for BitValue {
     fn borrow(&self) -> &[u8] {
         &self.0
     }

@@ -7,16 +7,16 @@
 //! result type depends on the arguments implement [`ScalarResolveTypesCallbacks`]
 //! on top.
 
-use std::any::Any;
-use std::collections::HashMap;
+use alloc::{string::String, vec::Vec};
+use core::any::Any;
 
 use crate::ffi;
 
 use crate::bind_arguments::ArgumentCounts;
 use crate::bind_arguments::BindArguments;
 use crate::builder_helpers::{
-    ArgCount, OpaqueHandle, callback_trampoline, get_bind_data, get_opaque_data_ref_mut, get_user_data, into_opaque,
-    into_opaque_eq, register_callback,
+    ArgCount, FunctionProperties, OpaqueHandle, callback_trampoline, get_bind_data, get_opaque_data_ref_mut,
+    get_user_data, into_opaque, into_opaque_eq, register_callback,
 };
 use crate::data_chunk::{RowCount, VectorCollection};
 use crate::enums::FunctionProperty;
@@ -146,7 +146,7 @@ fn stats_callback<T: ScalarStatsCallbacks>(
 pub struct ScalarFunctionBuilder<T: ScalarCallbacks> {
     name: String,
     signature: SignatureBuilder,
-    properties: HashMap<ffi::DUCKDB_V2_FUNCTION_PROPERTY_KEY, ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE>,
+    properties: FunctionProperties,
     user_data: OpaqueHandle<T>,
     bind_callback: ffi::duckdb_v2_scalar_function_bind_callback_fn,
     init_callback: ffi::duckdb_v2_scalar_function_init_callback_fn,
@@ -217,7 +217,7 @@ impl<T: ScalarCallbacks> ScalarFunctionBuilder<T> {
         Self {
             name: name.into(),
             signature,
-            properties: HashMap::new(),
+            properties: FunctionProperties::default(),
             user_data: OpaqueHandle::new(implementation),
             bind_callback: None,
             init_callback: None,
@@ -228,8 +228,7 @@ impl<T: ScalarCallbacks> ScalarFunctionBuilder<T> {
 
     /// Set a DuckDB function property.
     pub fn set_property(mut self, item: FunctionProperty) -> Self {
-        let (key, value) = item.into();
-        self.properties.insert(key, value);
+        self.properties.insert(item.into());
         self
     }
 
@@ -238,7 +237,7 @@ impl<T: ScalarCallbacks> ScalarFunctionBuilder<T> {
 
         let docs = check_api_call!(ffi::duckdb_v2_scalar_function_get_docs, handle.raw(), RET)?;
 
-        std::mem::take(&mut self.signature).build(link, &signature, &docs)?;
+        core::mem::take(&mut self.signature).build(link, &signature, &docs)?;
 
         check_api_call!(
             ffi::duckdb_v2_scalar_function_set_name,
@@ -246,7 +245,7 @@ impl<T: ScalarCallbacks> ScalarFunctionBuilder<T> {
             &mut (&self.name).into()
         )?;
 
-        for (key, value) in &self.properties {
+        for (key, value) in self.properties.iter() {
             check_api_call!(ffi::duckdb_v2_scalar_function_set_property, handle.raw(), *key, *value)?;
         }
 

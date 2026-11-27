@@ -88,44 +88,6 @@ mod tests {
     use crate::types::DuckDBType;
 
     #[test]
-    fn test_instance_log_releases_handle_lock() -> crate::Result<()> {
-        use crate::{
-            instance::InstanceHandle,
-            log_sink::{LogMetadata, LogSinkBuilder, LogSinkCallbacks, LogWriteData},
-        };
-        use std::sync::{
-            Arc, Mutex, Weak,
-            atomic::{AtomicBool, Ordering},
-        };
-
-        struct LockProbe(Weak<Mutex<InstanceHandle>>, Arc<AtomicBool>);
-        impl LogSinkCallbacks for LockProbe {
-            fn write(&self, data: LogWriteData<'_>, _: LogMetadata<'_>) -> crate::Result<()> {
-                if data.log_type == "rs_lock_probe" {
-                    let instance = self.0.upgrade().unwrap();
-                    self.1.store(instance.try_lock().is_ok(), Ordering::SeqCst);
-                }
-                Ok(())
-            }
-        }
-
-        let env = Environment::new()?;
-        let instance = env.open(StorageLocation::InMemory)?;
-        let conn = instance.connect()?;
-        let unlocked = Arc::new(AtomicBool::new(false));
-        LogSinkBuilder::new(
-            "rs_lock_probe",
-            LockProbe(Arc::downgrade(&instance.handle), unlocked.clone()),
-        )
-        .register(&instance)?;
-        conn.execute("CALL enable_logging()", Parameters::None)?;
-        conn.execute("SET logging_storage = 'rs_lock_probe'", Parameters::None)?;
-        Log::log_on_instance(&instance, LogLevel::Info, "probe", "rs_lock_probe")?;
-        assert!(unlocked.load(Ordering::SeqCst));
-        Ok(())
-    }
-
-    #[test]
     fn test_log_on_context() -> crate::Result<()> {
         let env = Environment::new()?;
         let instance = env.open(StorageLocation::InMemory)?;

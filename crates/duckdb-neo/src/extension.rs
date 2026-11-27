@@ -41,9 +41,10 @@ impl FFILink for Extension {}
 pub unsafe fn run_extension_entrypoint(
     input: *const ffi::duckdb_v2_extension_input,
     version: &str,
-    body: impl FnOnce(&Extension) -> std::result::Result<(), Box<dyn std::error::Error>>,
+    body: impl FnOnce(&Extension) -> core::result::Result<(), alloc::boxed::Box<dyn core::error::Error>>,
 ) {
     use crate::{FromRaw, error::Error};
+    use alloc::string::ToString;
 
     // SAFETY: the caller passes DuckDB's entrypoint input.
     let Some(input) = (unsafe { input.as_ref() }) else {
@@ -121,9 +122,9 @@ pub unsafe fn register_static_extension(
 #[doc(hidden)]
 pub unsafe fn describe_static_extension(
     descriptor: *mut ffi::duckdb_extension_descriptor,
-    name: &'static std::ffi::CStr,
-    extension_version: &'static std::ffi::CStr,
-    api_version: &'static std::ffi::CStr,
+    name: &'static core::ffi::CStr,
+    extension_version: &'static core::ffi::CStr,
+    api_version: &'static core::ffi::CStr,
     entrypoint: unsafe extern "C" fn(*mut ffi::duckdb_v2_extension_input),
 ) -> i32 {
     // SAFETY: the caller passes DuckDB's descriptor.
@@ -143,7 +144,7 @@ pub unsafe fn describe_static_extension(
     descriptor.api_version = api_version.as_ptr();
     // SAFETY: DuckDB casts the entry back to the entrypoint signature before calling it.
     descriptor.entry_capi_v2 = Some(unsafe {
-        std::mem::transmute::<unsafe extern "C" fn(*mut ffi::duckdb_v2_extension_input), unsafe extern "C" fn()>(
+        core::mem::transmute::<unsafe extern "C" fn(*mut ffi::duckdb_v2_extension_input), unsafe extern "C" fn()>(
             entrypoint,
         )
     });

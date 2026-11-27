@@ -1,7 +1,8 @@
 //! Columnar batches exchanged with DuckDB.
 
-use std::cell::OnceCell;
-use std::ops::Deref;
+use alloc::{format, vec::Vec};
+use core::cell::OnceCell;
+use core::ops::Deref;
 
 use duckdb_loadable_macros::AsRaw;
 
@@ -325,7 +326,7 @@ pub struct DataChunk<'a> {
     /// `None` for a borrowed chunk. Destroying through a field, not a `Drop` impl on the chunk,
     /// lets a borrowed chunk's borrow end at its last use.
     owner: Option<ChunkOwner>,
-    _marker: std::marker::PhantomData<&'a ()>,
+    _marker: core::marker::PhantomData<&'a ()>,
 }
 
 struct ChunkOwner {
@@ -340,8 +341,8 @@ impl Drop for ChunkOwner {
     }
 }
 
-impl std::fmt::Debug for DataChunk<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Debug for DataChunk<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("DataChunk")
             .field("handle", &self.handle)
             .field("owned", &self.owner.is_some())
@@ -413,7 +414,7 @@ impl<'a> DataChunk<'a> {
             handle,
             vectors: VectorCollection::new(handles, access, RowCount::Chunk(handle)),
             owner,
-            _marker: std::marker::PhantomData,
+            _marker: core::marker::PhantomData,
         })
     }
 

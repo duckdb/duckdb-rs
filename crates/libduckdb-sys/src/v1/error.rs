@@ -1,5 +1,5 @@
 use super::duckdb_state;
-use std::{error, fmt};
+use core::{error, fmt};
 
 /// Error Codes
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

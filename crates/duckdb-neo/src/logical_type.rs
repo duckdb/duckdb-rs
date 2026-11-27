@@ -1,5 +1,11 @@
 //! Construct and inspect DuckDB logical types.
 
+use alloc::{
+    format,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 pub use crate::enums::LogicalTypeID;
 
 use crate::connection::HasFactory;
@@ -62,9 +68,9 @@ fn with_type_parameters<C: FFILink + ?Sized, T>(
     let names_ptr = names
         .as_ref()
         .filter(|names| !names.is_empty())
-        .map_or(std::ptr::null(), |names| names.as_ptr());
+        .map_or(core::ptr::null(), |names| names.as_ptr());
     let values_ptr = if values.is_empty() {
-        std::ptr::null()
+        core::ptr::null()
     } else {
         values.as_ptr()
     };
@@ -159,7 +165,7 @@ impl LogicalType {
     ///
     /// An out-of-range index returns an error.
     pub fn get_param(&self, index: usize) -> Result<(&str, Value)> {
-        let mut value = std::ptr::null_mut();
+        let mut value = core::ptr::null_mut();
 
         let name: ffi::duckdb_v2_str = check_api_call!(
             ffi::duckdb_v2_logical_type_get_param,
@@ -198,14 +204,14 @@ impl crate::ToValue for LogicalType {
     }
 }
 
-impl std::fmt::Display for LogicalType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.to_text().map_err(|_| std::fmt::Error)?)
+impl core::fmt::Display for LogicalType {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(&self.to_text().map_err(|_| core::fmt::Error)?)
     }
 }
 
-impl std::fmt::Debug for LogicalType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Debug for LogicalType {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let text = self.to_text().unwrap_or_else(|error| format!("<{error}>"));
         f.debug_tuple("LogicalType").field(&text).finish()
     }

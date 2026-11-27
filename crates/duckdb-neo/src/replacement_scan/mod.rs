@@ -1,6 +1,6 @@
 //! Replacing unresolved table references with table functions, column data collections, or subqueries.
 
-use std::collections::HashMap;
+use alloc::{collections::BTreeMap, format, string::String, vec, vec::Vec};
 
 use crate::{
     Result,
@@ -25,7 +25,7 @@ use crate::{
 #[derive(Debug)]
 pub struct ReplacementHandle<'a> {
     info: &'a ffi::duckdb_v2_replacement_scan_info_handle,
-    collections: &'a HashMap<String, ColumnDataCollection<'a>>,
+    collections: &'a BTreeMap<String, ColumnDataCollection<'a>>,
 }
 
 /// A replacement source for an unresolved table reference, selected with
@@ -125,7 +125,7 @@ impl ReplacementHandle<'_> {
 #[derive(Debug)]
 struct ReplacementScanData<'conn, T> {
     implementation: T,
-    collections: HashMap<String, ColumnDataCollection<'conn>>,
+    collections: BTreeMap<String, ColumnDataCollection<'conn>>,
 }
 
 fn replacement_callback<T: ReplacementScanCallbacks>(
@@ -161,7 +161,7 @@ fn replacement_callback<T: ReplacementScanCallbacks>(
 #[derive(Debug)]
 pub struct ReplacementScanBuilder<'conn, T> {
     implementation: T,
-    collections: HashMap<String, ColumnDataCollection<'conn>>,
+    collections: BTreeMap<String, ColumnDataCollection<'conn>>,
 }
 
 impl<'conn, T> ReplacementScanBuilder<'conn, T>
@@ -172,7 +172,7 @@ where
     pub fn new(implementation: T) -> Self {
         Self {
             implementation,
-            collections: HashMap::new(),
+            collections: BTreeMap::new(),
         }
     }
 

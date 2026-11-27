@@ -11,7 +11,8 @@
 //! by a [`MultiFileFunctionBuilder`](crate::multi_file::MultiFileFunctionBuilder)
 //! can also implement [`TableGetBindInfoCallbacks`] and [`TableClaimBatchCallbacks`].
 
-use std::{any::Any, num::NonZeroUsize};
+use alloc::string::{String, ToString};
+use core::{any::Any, num::NonZeroUsize};
 
 use crate::ffi;
 
@@ -247,7 +248,7 @@ impl<'a> PushdownData<'a> {
         )
         .map(|expression_handle| Expression {
             handle: expression_handle,
-            _marker: std::marker::PhantomData,
+            _marker: core::marker::PhantomData,
         })
     }
 
@@ -696,7 +697,7 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
 
         let docs = check_api_call!(ffi::duckdb_v2_table_function_get_docs, handle.raw(), RET)?;
 
-        std::mem::take(&mut self.signature).build(link, &signature, &docs)?;
+        core::mem::take(&mut self.signature).build(link, &signature, &docs)?;
 
         check_api_call!(
             ffi::duckdb_v2_table_function_set_projection_pushdown,

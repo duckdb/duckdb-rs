@@ -3,6 +3,8 @@
 //! These live in the sys crate because the orphan rule prevents a downstream
 //! wrapper from implementing `From`/`Default` for the bindgen-generated types.
 
+use alloc::string::String;
+
 use super::{duckdb_v2_str, idx_t};
 
 // Only Rust-to-C conversions live here: building a raw string is safe, reading through one is not.
@@ -27,7 +29,7 @@ impl From<&String> for duckdb_v2_str {
 impl Default for duckdb_v2_str {
     fn default() -> Self {
         duckdb_v2_str {
-            ptr: std::ptr::null(),
+            ptr: core::ptr::null(),
             len: 0,
         }
     }

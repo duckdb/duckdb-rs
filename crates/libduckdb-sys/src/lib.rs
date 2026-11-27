@@ -3,13 +3,17 @@
 #![allow(non_snake_case)]
 #![allow(deref_nullptr)]
 #![allow(improper_ctypes)]
+#![cfg_attr(not(test), no_std)]
+
+#[cfg(any(feature = "capi-v2", feature = "loadable-extension"))]
+extern crate alloc;
 
 // Keep the loader reachable before GNU ld scans the separate constructor archive.
 #[cfg(feature = "bundled")]
 #[used]
-static STATIC_EXTENSION_LOADER: unsafe extern "C" fn() -> std::ffi::c_int = {
+static STATIC_EXTENSION_LOADER: unsafe extern "C" fn() -> core::ffi::c_int = {
     unsafe extern "C" {
-        fn duckdb_register_static_extensions() -> std::ffi::c_int;
+        fn duckdb_register_static_extensions() -> core::ffi::c_int;
     }
     duckdb_register_static_extensions
 };

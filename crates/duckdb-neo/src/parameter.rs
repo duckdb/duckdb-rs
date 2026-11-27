@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 use crate::{Result, ToValue, connection::FFILink, value::Value};
 
 /// A value that can be bound as a positional or named query parameter.
@@ -49,8 +51,8 @@ pub enum Parameters<'a> {
     Named(&'a [(&'a str, &'a dyn QueryParameter)]),
 }
 
-impl std::fmt::Debug for Parameters<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Debug for Parameters<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::None => f.write_str("None"),
             Self::Positional(params) => f.debug_tuple("Positional").field(&params.len()).finish(),

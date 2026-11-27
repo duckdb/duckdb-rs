@@ -1,6 +1,7 @@
 //! Configuration options for instances, connections, and callback contexts.
 
-use std::marker::PhantomData;
+use alloc::{borrow::ToOwned, string::String, vec::Vec};
+use core::marker::PhantomData;
 
 use crate::connection::SettingScope;
 use crate::ffi;

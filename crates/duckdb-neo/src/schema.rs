@@ -1,5 +1,10 @@
 //! Ordered field schemas used across DuckDB APIs.
 
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::ffi;
 
 use crate::ffi_str::DuckDBStr;
@@ -78,7 +83,7 @@ impl Schema {
     }
 
     fn field(&self, index: usize) -> Result<(&str, ffi::duckdb_v2_logical_type_handle)> {
-        let mut out_type = std::ptr::null_mut();
+        let mut out_type = core::ptr::null_mut();
         let out_name = check_api_call!(
             ffi::duckdb_v2_schema_get_field,
             self.handle,

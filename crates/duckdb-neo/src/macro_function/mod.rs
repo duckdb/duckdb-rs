@@ -1,6 +1,8 @@
 //! SQL macros registered by extensions, with scalar-expression or table-query bodies.
 //! Outside an extension, define macros with SQL `CREATE MACRO` instead.
 
+use alloc::string::String;
+
 use crate::builder_helpers::ffi_enum_redeclaration;
 use crate::ffi;
 
@@ -77,7 +79,7 @@ impl MacroFunctionBuilder {
 
         let docs = check_api_call!(ffi::duckdb_v2_macro_function_get_docs, handle.raw(), RET)?;
 
-        std::mem::take(&mut self.signature).build(link, &signature, &docs)?;
+        core::mem::take(&mut self.signature).build(link, &signature, &docs)?;
 
         check_api_call!(
             ffi::duckdb_v2_macro_function_set_body,

@@ -140,7 +140,7 @@ unsafe fn clear_bits(validity: *mut u64, start: usize, end: usize) {
             return;
         }
         *validity.add(first) &= !low;
-        std::slice::from_raw_parts_mut(validity.add(first + 1), last - first - 1).fill(0);
+        core::slice::from_raw_parts_mut(validity.add(first + 1), last - first - 1).fill(0);
         *validity.add(last) &= !high;
     }
 }

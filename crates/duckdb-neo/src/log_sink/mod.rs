@@ -1,4 +1,5 @@
-use std::marker::PhantomData;
+use alloc::{format, string::String};
+use core::marker::PhantomData;
 
 use duckdb_loadable_macros::AsRaw;
 
@@ -75,7 +76,7 @@ pub struct LogWriteData<'a> {
 
 fn flush_callback<T: LogSinkCallbacks>(
     _info: ffi::duckdb_v2_log_sink_flush_info_handle,
-    user_data: *mut ::std::os::raw::c_void,
+    user_data: *mut core::ffi::c_void,
 ) -> Result<()> {
     let user_data = unsafe { &*(user_data as *const T) };
 
@@ -93,7 +94,7 @@ unsafe fn entry_str<'a>(text: *const ffi::duckdb_v2_str, what: &str) -> Result<&
 
 fn write_callback<T: LogSinkCallbacks>(
     info: ffi::duckdb_v2_log_sink_write_info_handle,
-    user_data: *mut ::std::os::raw::c_void,
+    user_data: *mut core::ffi::c_void,
     timestamp: i64,
     level: ffi::DUCKDB_V2_LOG_LEVEL,
     scope: ffi::DUCKDB_V2_LOG_SCOPE,
@@ -155,7 +156,7 @@ impl<T: LogSinkCallbacks> LogSinkBuilder<T> {
             context = none,
             args = (
                 info: ffi::duckdb_v2_log_sink_flush_info_handle,
-                user_data: *mut ::std::os::raw::c_void,
+                user_data: *mut core::ffi::c_void,
             ),
             exec = flush_callback,
         }?;
@@ -167,7 +168,7 @@ impl<T: LogSinkCallbacks> LogSinkBuilder<T> {
             context = none,
             args = (
                 info: ffi::duckdb_v2_log_sink_write_info_handle,
-                user_data: *mut ::std::os::raw::c_void,
+                user_data: *mut core::ffi::c_void,
                 timestamp: i64,
                 level: ffi::DUCKDB_V2_LOG_LEVEL,
                 scope: ffi::DUCKDB_V2_LOG_SCOPE,

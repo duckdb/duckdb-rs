@@ -1,3 +1,5 @@
+use alloc::format;
+
 use super::{DecimalSignature, DecimalValue, HugeDecimal};
 use crate::{
     Result,
@@ -32,7 +34,7 @@ impl From<rust_decimal::Decimal> for DecimalValue {
 impl TryFrom<DecimalValue> for rust_decimal::Decimal {
     type Error = rust_decimal::Error;
 
-    fn try_from(value: DecimalValue) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: DecimalValue) -> core::result::Result<Self, Self::Error> {
         Self::try_from_i128_with_scale(value.value, u32::from(value.scale))
     }
 }

@@ -1,4 +1,5 @@
-use std::{iter::FusedIterator, ops::Range};
+use alloc::format;
+use core::{iter::FusedIterator, ops::Range};
 
 use crate::{Result, error::Error};
 

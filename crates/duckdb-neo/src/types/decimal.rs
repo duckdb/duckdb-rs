@@ -9,8 +9,9 @@
 //! With the `rust_decimal` feature, `rust_decimal::Decimal` converts to and
 //! from DuckDB values and vectors.
 
-use std::fmt::Debug;
-use std::hash::Hash;
+use alloc::format;
+use core::fmt::Debug;
+use core::hash::Hash;
 
 use super::{DuckDBType, FromValue, ToValue};
 use crate::data_chunk::VectorCollection;

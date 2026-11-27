@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, ptr::NonNull};
+use core::{borrow::Borrow, ptr::NonNull};
 
 use super::{RowWriter, Unknown, Vector, VectorWriter, WithWriter, out_of_bounds};
 use crate::{Result, types::Array};
@@ -142,8 +142,8 @@ where
     }
 }
 
-impl<T: WithWriter, const N: usize> std::fmt::Debug for ArrayWriter<'_, T, N> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<T: WithWriter, const N: usize> core::fmt::Debug for ArrayWriter<'_, T, N> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("ArrayWriter").field("len", &self.len()).finish()
     }
 }

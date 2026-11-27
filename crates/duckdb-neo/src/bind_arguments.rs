@@ -1,6 +1,10 @@
 //! Bind-time metadata for scalar, aggregate, table, and pragma functions.
 
-use std::{cell::OnceCell, marker::PhantomData};
+use alloc::{
+    format,
+    string::{String, ToString},
+};
+use core::{cell::OnceCell, marker::PhantomData};
 
 use duckdb_loadable_macros::AsRaw;
 

@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
 use crate::raw::RawExt;
 use duckdb_loadable_macros::{AsRaw, FromRaw};

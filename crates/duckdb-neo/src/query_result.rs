@@ -1,6 +1,7 @@
 //! Lazy, streaming query results.
 
-use std::marker::PhantomData;
+use alloc::string::String;
+use core::marker::PhantomData;
 
 use crate::ffi::duckdb_v2_str;
 
@@ -105,7 +106,7 @@ impl ResultItem for DataChunk<'static> {
     type Raw = ffi::duckdb_v2_data_chunk_handle;
 
     fn empty_raw() -> Self::Raw {
-        std::ptr::null_mut()
+        core::ptr::null_mut()
     }
 
     fn from_raw(raw: Self::Raw) -> Result<Option<Self>> {
@@ -394,7 +395,7 @@ impl QueryResult<'_> {
             render_mode as u64,
             limit as u64,
             Some(copy_render_box),
-            &mut string as *mut String as *mut std::os::raw::c_void,
+            &mut string as *mut String as *mut core::ffi::c_void,
         )?;
 
         Ok(string)
@@ -433,7 +434,7 @@ impl<'a> ArrowQueryResult<'a> {
     pub fn to_arrow_stream(mut self) -> Result<ArrowStream<'a>> {
         // On success the stream owns the result and the handle is nulled, so `Drop` is a no-op.
         check_api_call!(ffi::duckdb_v2_arrow_result_to_arrow_c_stream, &mut self.handle, RET)
-            .map(|stream| ArrowStream::new(stream, std::mem::take(&mut self._collections)))
+            .map(|stream| ArrowStream::new(stream, core::mem::take(&mut self._collections)))
     }
 }
 

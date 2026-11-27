@@ -1,6 +1,6 @@
 //! Point-in-time progress for an executing query.
 
-use std::sync::{Arc, Weak};
+use alloc::sync::{Arc, Weak};
 
 use crate::{
     Result, check_api_call,

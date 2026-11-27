@@ -1,4 +1,5 @@
-use std::{borrow::Borrow, ptr::NonNull};
+use alloc::format;
+use core::{borrow::Borrow, ptr::NonNull};
 
 use super::{RowWriter, Unknown, Vector, VectorWriter, WithWriter, out_of_bounds};
 use crate::{
@@ -251,8 +252,8 @@ where
     }
 }
 
-impl<K: WithWriter, V: WithWriter> std::fmt::Debug for MapWriter<'_, K, V> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<K: WithWriter, V: WithWriter> core::fmt::Debug for MapWriter<'_, K, V> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("MapWriter")
             .field("len", &self.len())
             .field("child_offset", &self.offset)

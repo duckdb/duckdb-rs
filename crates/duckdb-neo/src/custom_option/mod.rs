@@ -1,5 +1,7 @@
 //! Register instance-wide settings with typed defaults and update callbacks.
 
+use alloc::string::String;
+
 use crate::{
     Result,
     builder_helpers::{OpaqueHandle, get_user_data, register_callback},

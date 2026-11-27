@@ -88,6 +88,10 @@ Execute the program with `cargo run` and watch DuckDB in action!
 
 ## Feature flags
 
+### Standard library
+
+- `std` _(default)_ - Use the standard library. Without it, `duckdb-neo` is `no_std` and needs only `alloc`, and a panic in a callback aborts the process instead of being reported as a DuckDB error. `r2d2` requires it.
+
 ### Integrations
 
 - `chrono` - Convert DuckDB `DATE`, `TIME`, and `TIMESTAMP` values to [`chrono`](https://docs.rs/chrono) types.
@@ -113,7 +117,7 @@ By default, `duckdb-neo` links against a prebuilt DuckDB library. Set `DUCKDB_LI
 These features compile DuckDB into your binary, so the linking features above are not needed:
 
 ```toml
-duckdb-neo = { version = "...", default-features = false, features = ["bundled"] }
+duckdb-neo = { version = "...", default-features = false, features = ["std", "bundled"] }
 ```
 
 - `bundled` - Compile DuckDB from the bundled sources.

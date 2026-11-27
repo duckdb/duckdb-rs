@@ -2,6 +2,8 @@
 //! Vectors have no typed tuple element yet: [`super::Struct`] accepts `TUPLE` vectors, and
 //! [`crate::vector::Vector::get_value_slow`] reads their rows as tuples.
 
+use alloc::{format, vec, vec::Vec};
+
 use super::{DuckDBType, FromValue, ToValue};
 use crate::{
     Parameters, Result,

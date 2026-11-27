@@ -16,8 +16,6 @@
 //! # }
 //! ```
 
-use std::sync::OnceLock;
-
 use crate::{Parameters, Result, connection::Connection, error::Error, instance::Instance};
 
 /// An [`r2d2::ManageConnection`] that opens connections to a shared [`Instance`].
@@ -31,10 +29,7 @@ impl ConnectionManager {
     /// Checked-out connections retain their session state when returned to the pool.
     pub fn new(instance: &Instance) -> Self {
         Self {
-            instance: Instance {
-                handle: instance.handle.clone(),
-                factory: OnceLock::new(),
-            },
+            instance: instance.share(),
         }
     }
 }
@@ -90,7 +85,7 @@ mod tests {
         let env = Environment::new()?;
         let instance = env.open(StorageLocation::InMemory)?;
         {
-            dbg!(instance.handle.lock().unwrap().handle.is_null());
+            dbg!(instance.handle.handle.is_null());
         }
 
         let pool = r2d2::Pool::builder()

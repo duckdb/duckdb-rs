@@ -1,5 +1,7 @@
 //! Owned DuckDB values and their typed payloads.
 
+use alloc::{format, string::String, vec::Vec};
+
 use crate::types::{HugeInt, UHugeInt};
 use crate::{DropHandle, Factory, ffi};
 
@@ -331,7 +333,7 @@ impl Value {
             data.as_ptr(),
             data.len() as u64,
             is_negative,
-            std::ptr::null_mut(),
+            core::ptr::null_mut(),
             0,
             RET
         )?;
@@ -361,7 +363,7 @@ impl Value {
             ffi::duckdb_v2_bignum_decode,
             data.as_ptr(),
             data.len() as u64,
-            std::ptr::null_mut(),
+            core::ptr::null_mut(),
             0,
             RET,
             &mut is_negative
@@ -417,9 +419,9 @@ impl Value {
     }
 }
 
-impl std::fmt::Display for Value {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.dbg_string().map_err(|_| std::fmt::Error)?)
+impl core::fmt::Display for Value {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(&self.dbg_string().map_err(|_| core::fmt::Error)?)
     }
 }
 

@@ -67,7 +67,7 @@ impl FromValue for u128 {
 
 macro_rules! declare_primitive_type {
     ($type:ty, $type_id:ident, $input:ident) => {
-        declare_primitive_type!($type, $type_id, $input, std::convert::identity);
+        declare_primitive_type!($type, $type_id, $input, core::convert::identity);
     };
     ($type:ty, $type_id:ident, $input:ident, $convert:path) => {
         impl DuckDBType for $type {

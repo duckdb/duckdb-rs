@@ -11,10 +11,14 @@
 //! interruption, and [`Context`], the non-owning connection-like handle passed
 //! to extension callbacks.
 
-use std::{
+use alloc::{
+    string::String,
+    sync::{Arc, Weak},
+    vec::Vec,
+};
+use core::{
     cell::{Cell, OnceCell},
     marker::PhantomData,
-    sync::{Arc, Mutex, Weak},
 };
 
 use crate::{
@@ -186,7 +190,7 @@ impl<T: HasFactory + ?Sized> HasFactory for &T {
 #[derive(Debug)]
 pub struct Connection {
     pub(crate) inner: Arc<InnerConnection>,
-    pub(crate) instance: Arc<Mutex<InstanceHandle>>,
+    pub(crate) instance: Arc<InstanceHandle>,
     // Not `Sync`: settings and connection-level registrations are not locked on the C side.
     pub(crate) _not_sync: PhantomData<Cell<()>>,
 

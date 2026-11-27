@@ -1,4 +1,4 @@
-use std::ops::Deref;
+use core::ops::Deref;
 
 use super::{
     ArrayWriter, ListWriter, MapWriter, NativeElement, UnionWriter, UnionWriters, Unknown, Vector, VectorWriter,

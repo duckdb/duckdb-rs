@@ -84,7 +84,7 @@ impl Iterator for SqlTokenIterator {
     }
 }
 
-impl std::iter::FusedIterator for SqlTokenIterator {}
+impl core::iter::FusedIterator for SqlTokenIterator {}
 
 #[cfg(test)]
 mod tests {

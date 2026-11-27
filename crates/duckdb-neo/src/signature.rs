@@ -31,7 +31,8 @@
 //! # }
 //! ```
 
-use std::fmt;
+use alloc::{boxed::Box, string::String, vec::Vec};
+use core::fmt;
 
 use crate::builder_helpers::ffi_enum_redeclaration;
 use crate::connection::FFILink;
@@ -288,7 +289,7 @@ impl SignatureBuilder {
                 *handle,
                 &(&param.name).into(),
                 logical_type.handle,
-                default_value.as_ref().map_or(std::ptr::null_mut(), |d| d.handle),
+                default_value.as_ref().map_or(core::ptr::null_mut(), |d| d.handle),
                 param.kind.into(),
             )?;
         }

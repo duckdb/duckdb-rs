@@ -56,6 +56,13 @@ jobs:
           cargo clippy -p duckdb-neo --all-targets --features build-extension --locked -- -D warnings
           cargo clippy -p duckdb-neo --all-targets --features build-extension-static --locked -- -D warnings
 
+      - name: Check duckdb-neo without std
+        # A target without std fails the build if anything in the dependency graph needs it.
+        run: |
+          rustup target add x86_64-unknown-none
+          cargo clippy -p duckdb-neo --no-default-features --features "chrono jiff uuid rust_decimal" --target x86_64-unknown-none --locked -- -D warnings
+          cargo clippy -p duckdb-neo --no-default-features --features build-extension --target x86_64-unknown-none --locked -- -D warnings
+
       - name: Check rustdoc
         env:
           RUSTDOCFLAGS: -D warnings

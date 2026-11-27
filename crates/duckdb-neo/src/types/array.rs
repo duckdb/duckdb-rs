@@ -4,6 +4,8 @@
 //! rows only carry validity; every row owns `N` elements of the child. Read and write whole rows
 //! with an [`ArrayReader`](crate::vector::ArrayReader) and [`ArrayWriter`](crate::vector::ArrayWriter).
 
+use alloc::{format, vec::Vec};
+
 use super::{DuckDBType, FromValue, ToValue};
 use crate::{
     Parameters, Result,
@@ -21,7 +23,7 @@ pub struct Array<T, const N: usize>(pub [Option<T>; N]);
 
 impl<T, const N: usize> Default for Array<T, N> {
     fn default() -> Self {
-        Self(std::array::from_fn(|_| None))
+        Self(core::array::from_fn(|_| None))
     }
 }
 

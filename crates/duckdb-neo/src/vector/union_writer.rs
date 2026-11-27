@@ -1,4 +1,5 @@
-use std::ptr::NonNull;
+use alloc::{format, vec::Vec};
+use core::ptr::NonNull;
 
 use super::{
     NativeElement, RowWriter, Unknown, Vector, VectorReader, VectorWriter, WithReader, WithWriter, out_of_bounds,
@@ -294,8 +295,8 @@ impl<'a, M: UnionReaders + 'a> UnionReader<'a, M> {
     }
 }
 
-impl<'a, M: UnionReaders + 'a> std::fmt::Debug for UnionReader<'a, M> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<'a, M: UnionReaders + 'a> core::fmt::Debug for UnionReader<'a, M> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("UnionReader")
             .field("len", &self.len())
             .field("members", &M::COUNT)
@@ -483,8 +484,8 @@ impl<'w, M: UnionWriters + 'w> UnionWriter<'w, M> {
     }
 }
 
-impl<'w, M: UnionWriters + 'w> std::fmt::Debug for UnionWriter<'w, M> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<'w, M: UnionWriters + 'w> core::fmt::Debug for UnionWriter<'w, M> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("UnionWriter")
             .field("len", &self.len())
             .field("members", &M::COUNT)

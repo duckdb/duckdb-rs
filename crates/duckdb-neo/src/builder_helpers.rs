@@ -7,7 +7,7 @@ use crate::{
 
 pub(crate) unsafe extern "C" fn copy_render_box(
     text: *const ffi::duckdb_v2_str,
-    user_data: *mut std::os::raw::c_void,
+    user_data: *mut core::ffi::c_void,
     err: *mut ffi::duckdb_v2_error_info_handle,
 ) {
     handle_unwind(
@@ -155,7 +155,30 @@ pub(crate) unsafe fn get_opaque_data_ref_mut<'a, T>(ptr: *mut c_void) -> Option<
     }
 }
 
-fn panic_message(panic: &(dyn Any + Send)) -> &str {
+type FunctionProperty = (
+    ffi::DUCKDB_V2_FUNCTION_PROPERTY_KEY,
+    ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE,
+);
+
+/// Function properties in insertion order; setting a key again replaces its value.
+#[derive(Debug, Default)]
+pub(crate) struct FunctionProperties(Vec<FunctionProperty>);
+
+impl FunctionProperties {
+    pub(crate) fn insert(&mut self, (key, value): FunctionProperty) {
+        match self.0.iter_mut().find(|(existing, _)| *existing == key) {
+            Some(entry) => entry.1 = value,
+            None => self.0.push((key, value)),
+        }
+    }
+
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &FunctionProperty> {
+        self.0.iter()
+    }
+}
+
+#[cfg(any(feature = "std", test))]
+fn panic_message(panic: &(dyn core::any::Any + Send)) -> &str {
     if let Some(text) = panic.downcast_ref::<String>() {
         text.as_str()
     } else if let Some(text) = panic.downcast_ref::<&str>() {
@@ -169,19 +192,20 @@ pub(crate) fn handle_unwind<T, F: FnOnce() -> Result<T>>(
     f: F,
     err: *mut ffi::duckdb_v2_error_info_handle,
 ) -> Option<T> {
-    let result = std::panic::catch_unwind(AssertUnwindSafe(f));
+    #[cfg(any(feature = "std", test))]
+    let result = std::panic::catch_unwind(core::panic::AssertUnwindSafe(f)).unwrap_or_else(|panic| {
+        let text = panic_message(panic.as_ref());
+        // INTERNAL intentionally invalidates the instance and is reported as an internal DuckDB failure.
+        Err(Error::internal(alloc::format!("Panic occurred: {text}")))
+    });
+    // Without std a panic cannot be caught; it aborts at the `extern "C"` callback boundary.
+    #[cfg(not(any(feature = "std", test)))]
+    let result = f();
 
     match result {
-        Ok(Ok(value)) => Some(value),
-        Ok(Err(e)) => {
+        Ok(value) => Some(value),
+        Err(e) => {
             set_error(err, &e);
-            None
-        }
-        Err(panic) => {
-            let text = panic_message(panic.as_ref());
-            // INTERNAL intentionally invalidates the instance and is reported as an internal DuckDB failure.
-            let error = Error::internal(format!("Panic occurred: {text}"));
-            set_error(err, &error);
             None
         }
     }
@@ -312,7 +336,7 @@ macro_rules! ffi_enum_redeclaration {
             fn try_from(value: $ffi_ty) -> $crate::Result<Self> {
                 match value {
                     $(<$ffi_ty>::$ffi_variant => Ok($name::$variant),)*
-                    _ => Err($crate::Error::api_error(format!(
+                    _ => Err($crate::Error::api_error(::alloc::format!(
                         "Unknown {}: {:?}",
                         stringify!($name),
                         value
@@ -323,7 +347,8 @@ macro_rules! ffi_enum_redeclaration {
     };
 }
 
-use std::{any::Any, cell::RefCell, ffi::c_void, panic::AssertUnwindSafe};
+use alloc::{boxed::Box, string::String, vec::Vec};
+use core::{cell::RefCell, ffi::c_void};
 
 pub(crate) use callback_trampoline;
 pub(crate) use ffi_enum_redeclaration;

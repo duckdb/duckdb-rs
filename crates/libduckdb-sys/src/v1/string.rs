@@ -1,4 +1,4 @@
-use std::{
+use core::{
     ffi::{CStr, c_char},
     ops::Deref,
 };
@@ -67,7 +67,7 @@ impl DuckDbString {
 }
 
 impl Deref for DuckDbString {
-    type Target = std::ffi::CStr;
+    type Target = CStr;
 
     fn deref(&self) -> &Self::Target {
         let bytes = self.to_bytes_with_nul();

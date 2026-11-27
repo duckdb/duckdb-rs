@@ -1,5 +1,7 @@
 //! User-defined casts between logical types.
 
+use alloc::format;
+
 use crate::ffi;
 
 use crate::{

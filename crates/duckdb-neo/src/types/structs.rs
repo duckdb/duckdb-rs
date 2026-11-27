@@ -66,6 +66,7 @@ pub mod derive_support {
         Error, Result, data_chunk::VectorCollection, logical_type::LogicalType, logical_type::LogicalTypeID,
         value::Value, vector::NativeElement,
     };
+    use alloc::{format, string::String, vec::Vec};
 
     /// Check that `value` is a `STRUCT` with `expected` fields and return their names.
     pub fn value_field_names(value: &Value, expected: usize) -> Result<Vec<String>> {

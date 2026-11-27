@@ -1,5 +1,7 @@
 //! Read-only introspection of bound expression trees.
 
+use alloc::{borrow::ToOwned, string::String, vec::Vec};
+
 use crate::ffi;
 
 use crate::ffi_str::DuckDBStr;
@@ -71,7 +73,7 @@ ffi_enum_redeclaration! {
 pub struct Expression<'a> {
     /// The borrowed DuckDB expression handle.
     pub(crate) handle: ffi::duckdb_v2_expression_handle,
-    pub(crate) _marker: std::marker::PhantomData<&'a ()>,
+    pub(crate) _marker: core::marker::PhantomData<&'a ()>,
 }
 
 impl<'a> Expression<'a> {
@@ -80,7 +82,7 @@ impl<'a> Expression<'a> {
     pub fn child(&self, index: usize) -> Result<Expression<'a>> {
         check_api_call!(ffi::duckdb_v2_expression_get_child, self.handle, index as u64, RET).map(|handle| Expression {
             handle,
-            _marker: std::marker::PhantomData,
+            _marker: core::marker::PhantomData,
         })
     }
 

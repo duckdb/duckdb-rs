@@ -5,7 +5,8 @@
 //! human-readable message. Callers can inspect the code when they need to
 //! distinguish error classes without matching message text.
 
-use std::fmt;
+use alloc::string::String;
+use core::fmt;
 
 use crate::{builder_helpers::ffi_enum_redeclaration, ffi};
 
@@ -109,7 +110,7 @@ impl Error {
                 && text.len > 0
             {
                 // SAFETY: the borrowed text stays valid until the handle is destroyed below.
-                let bytes = unsafe { std::slice::from_raw_parts(text.ptr.cast::<u8>(), text.len as usize) };
+                let bytes = unsafe { core::slice::from_raw_parts(text.ptr.cast::<u8>(), text.len as usize) };
                 message = String::from_utf8_lossy(bytes).into_owned();
             }
             // SAFETY: the caller transfers ownership of this live handle.
@@ -155,7 +156,7 @@ impl Error {
     }
 }
 
-impl std::error::Error for Error {}
+impl core::error::Error for Error {}
 
 /// [`check_api_call_no_err!`] is a macro that safely converts FFI calls into `Results`.
 ///
@@ -176,7 +177,7 @@ macro_rules! check_api_call_no_err {
                 match code {
                     $crate::ffi::DUCKDB_V2_ERROR::DUCKDB_V2_ERROR_NONE => Ok(()),
                     _ => Err(match code.try_into() {
-                        Ok(code) => $crate::error::Error { code, message: String::new() },
+                        Ok(code) => $crate::error::Error { code, message: ::alloc::string::String::new() },
                         Err(error) => error,
                     }),
                 }
@@ -236,7 +237,7 @@ macro_rules! check_api_call {
 
     // No `RET` -> Ok(())
     (@finish_noret $call:expr; ($($b:expr),*)) => {{
-        let mut err: $crate::ffi::duckdb_v2_error_info_handle = std::ptr::null_mut();
+        let mut err: $crate::ffi::duckdb_v2_error_info_handle = core::ptr::null_mut();
         unsafe {
             let code = $call($($b,)* &mut err);
             if code != $crate::ffi::DUCKDB_V2_ERROR::DUCKDB_V2_ERROR_NONE {
@@ -250,8 +251,8 @@ macro_rules! check_api_call {
 
     // `RET` present -> Ok(value)
     (@finish_ret $call:expr; ($($b:expr),*); ($($a:expr),*)) => {{
-        let mut err: $crate::ffi::duckdb_v2_error_info_handle = std::ptr::null_mut();
-        let mut __out = std::mem::MaybeUninit::uninit();
+        let mut err: $crate::ffi::duckdb_v2_error_info_handle = core::ptr::null_mut();
+        let mut __out = core::mem::MaybeUninit::uninit();
         unsafe {
             let code = $call($($b,)* __out.as_mut_ptr(), $($a,)* &mut err);
             if code != $crate::ffi::DUCKDB_V2_ERROR::DUCKDB_V2_ERROR_NONE {
@@ -307,14 +308,14 @@ macro_rules! check_api_call_string {
         $crate::error::check_api_call_string!(@bind $call; ($($args,)*); 8; $($rest)*)
     };
     (@bind $call:ident; ($($args:ident,)*); $i:tt; ) => {{
-        (|| -> $crate::Result<String> {
-            let length = $crate::check_api_call!($call, $($args,)* std::ptr::null_mut(), 0, RET)?;
+        (|| -> $crate::Result<::alloc::string::String> {
+            let length = $crate::check_api_call!($call, $($args,)* core::ptr::null_mut(), 0, RET)?;
             let capacity = usize::try_from(length)
                 .ok()
                 .and_then(|length| length.checked_add(1))
                 .filter(|&capacity| capacity <= isize::MAX as usize)
                 .ok_or_else(|| $crate::error::Error::api_error("String too large"))?;
-            let mut text = vec![0u8; capacity];
+            let mut text = ::alloc::vec![0u8; capacity];
             let written = $crate::check_api_call!(
                 $call, $($args,)* text.as_mut_ptr().cast(), capacity as $crate::ffi::idx_t, RET
             )?;
@@ -322,7 +323,7 @@ macro_rules! check_api_call_string {
                 return Err($crate::error::Error::api_error("Invalid string length"));
             }
             text.truncate(written as usize);
-            String::from_utf8(text)
+            ::alloc::string::String::from_utf8(text)
                 .map_err(|_| $crate::error::Error::api_error("Invalid UTF-8"))
         })()
     }};

@@ -44,7 +44,8 @@
 //! [`WithReader`] and [`WithWriter`], whose readers and writers, such as [`ListReader`] and
 //! [`ListWriter`], prepare their children once and compose for nested types.
 
-use std::{cell::OnceCell, marker::PhantomData};
+use alloc::{format, vec::Vec};
+use core::{cell::OnceCell, marker::PhantomData};
 
 use crate::builder_helpers::ffi_enum_redeclaration;
 use crate::error::DuckDBError;
@@ -328,7 +329,7 @@ impl<'a, T: NativeElement> Vector<'a, T> {
             self.handle,
             ffi::DUCKDB_V2_CAST_MODE::DUCKDB_V2_CAST_MODE_NORMAL,
             RET,
-            std::ptr::null_mut()
+            core::ptr::null_mut()
         );
         result.map(|_converted| ())
     }
@@ -348,7 +349,7 @@ impl<'a, T: NativeElement> Vector<'a, T> {
         if !self.is_writable() {
             return Err(not_writable());
         }
-        let mut cast_err = std::ptr::null_mut();
+        let mut cast_err = core::ptr::null_mut();
 
         let result = check_api_call!(
             ffi::duckdb_v2_vector_cast,
@@ -455,7 +456,7 @@ impl<'a, T: NativeElement> Vector<'a, T> {
         // SAFETY: the rows are in bounds, LIST and MAP rows store list entries, and every entry
         // covers initialized child rows.
         unsafe {
-            std::ptr::copy_nonoverlapping(
+            core::ptr::copy_nonoverlapping(
                 entries.as_ptr(),
                 writer.as_mut_ptr().cast::<crate::types::ListIndex>().add(offset),
                 entries.len(),

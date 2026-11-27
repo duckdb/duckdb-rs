@@ -8,7 +8,11 @@
 //! [`StorageLocation`] selects either a transient in-memory database or a
 //! persistent database file.
 
-use std::sync::Arc;
+use alloc::{
+    borrow::ToOwned,
+    string::{String, ToString},
+    sync::Arc,
+};
 
 use crate::{
     DropHandle, Result, check_api_call, ffi,

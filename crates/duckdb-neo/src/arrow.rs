@@ -7,7 +7,8 @@
 //! The raw structs follow the C Data Interface layout, so they can be
 //! transmuted to the FFI types of an Arrow library such as arrow-rs.
 
-use std::mem::ManuallyDrop;
+use alloc::vec::Vec;
+use core::mem::ManuallyDrop;
 
 use crate::{
     DropHandle, Result, check_api_call,
@@ -29,7 +30,7 @@ pub struct ArrowStream<'conn> {
     stream: ffi::ArrowArrayStream,
     // Dropped after `Drop` has released the stream that reads them.
     collections: BoundCollections<'conn>,
-    _conn: std::marker::PhantomData<&'conn mut Connection>,
+    _conn: core::marker::PhantomData<&'conn mut Connection>,
 }
 
 impl<'conn> ArrowStream<'conn> {
@@ -37,7 +38,7 @@ impl<'conn> ArrowStream<'conn> {
         Self {
             stream,
             collections,
-            _conn: std::marker::PhantomData,
+            _conn: core::marker::PhantomData,
         }
     }
 
@@ -53,7 +54,7 @@ impl<'conn> ArrowStream<'conn> {
     pub unsafe fn into_raw(self) -> (ffi::ArrowArrayStream, BoundCollections<'conn>) {
         let this = ManuallyDrop::new(self);
         // SAFETY: `this` is never dropped, so each field is moved out exactly once.
-        unsafe { (std::ptr::read(&this.stream), std::ptr::read(&this.collections)) }
+        unsafe { (core::ptr::read(&this.stream), core::ptr::read(&this.collections)) }
     }
 }
 
@@ -85,7 +86,7 @@ impl ArrowSchema {
 
     /// Hand the schema to an Arrow consumer, which then owns releasing it.
     pub fn into_raw(mut self) -> ffi::ArrowSchema {
-        std::mem::replace(&mut self.raw, ffi::ArrowSchema::empty())
+        core::mem::replace(&mut self.raw, ffi::ArrowSchema::empty())
     }
 }
 
@@ -117,7 +118,7 @@ impl ArrowArray {
 
     /// Hand the array to an Arrow consumer, which then owns releasing it.
     pub fn into_raw(mut self) -> ffi::ArrowArray {
-        std::mem::replace(&mut self.raw, ffi::ArrowArray::empty())
+        core::mem::replace(&mut self.raw, ffi::ArrowArray::empty())
     }
 
     /// Return the number of rows.
@@ -151,7 +152,7 @@ impl Drop for ArrowArray {
 #[drop_handle(ffi::duckdb_v2_arrow_exporter_destroy)]
 pub struct ArrowExporter<'ctx> {
     handle: ffi::duckdb_v2_arrow_exporter_handle,
-    _context: std::marker::PhantomData<&'ctx Context>,
+    _context: core::marker::PhantomData<&'ctx Context>,
 }
 
 impl<'ctx> ArrowExporter<'ctx> {
@@ -177,7 +178,7 @@ impl<'ctx> ArrowExporter<'ctx> {
         )
         .map(|handle| ArrowExporter {
             handle,
-            _context: std::marker::PhantomData,
+            _context: core::marker::PhantomData,
         })
     }
 
@@ -202,7 +203,7 @@ impl<'ctx> ArrowExporter<'ctx> {
         check_api_call!(
             ffi::duckdb_v2_arrow_exporter_append,
             self.handle,
-            std::ptr::null_mut(),
+            core::ptr::null_mut(),
             false,
             true
         )
@@ -231,7 +232,7 @@ impl<'ctx> ArrowExporter<'ctx> {
 #[drop_handle(ffi::duckdb_v2_arrow_importer_destroy)]
 pub struct ArrowImporter<'ctx> {
     handle: ffi::duckdb_v2_arrow_importer_handle,
-    _context: std::marker::PhantomData<&'ctx Context>,
+    _context: core::marker::PhantomData<&'ctx Context>,
 }
 
 impl<'ctx> ArrowImporter<'ctx> {
@@ -251,7 +252,7 @@ impl<'ctx> ArrowImporter<'ctx> {
         )
         .map(|handle| ArrowImporter {
             handle,
-            _context: std::marker::PhantomData,
+            _context: core::marker::PhantomData,
         })
     }
 
@@ -299,7 +300,7 @@ impl<'ctx> ArrowImporter<'ctx> {
         check_api_call!(
             ffi::duckdb_v2_arrow_importer_append,
             self.handle,
-            std::ptr::null_mut(),
+            core::ptr::null_mut(),
             false,
             true
         )

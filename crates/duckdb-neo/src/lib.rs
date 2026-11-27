@@ -3,6 +3,7 @@
 )]
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 #![warn(missing_debug_implementations)]
+#![cfg_attr(not(test), no_std)]
 //! Safe Rust bindings for [DuckDB's](https://duckdb.org/) C API V2.
 //!
 //! Use this crate to embed DuckDB in a Rust application, open databases, execute
@@ -33,6 +34,11 @@
 #[cfg(doctest)]
 #[doc = include_str!("../README.md")]
 struct ReadmeDoctests;
+
+extern crate alloc;
+// Test builds link std implicitly.
+#[cfg(all(feature = "std", not(test)))]
+extern crate std;
 
 // Lets the raw handle derives name `::duckdb_neo` inside this crate.
 extern crate self as duckdb_neo;
@@ -90,6 +96,8 @@ pub mod types;
 pub mod value;
 pub mod vector;
 
+use alloc::string::String;
+
 use crate::error::{check_api_call, check_api_call_string};
 use connection::Factory;
 pub use libduckdb_sys::v2 as ffi;
@@ -104,7 +112,8 @@ pub use types::{DuckDBType, FromValue, ToValue};
 
 #[doc(hidden)]
 pub mod __derive {
-    use std::ptr::NonNull;
+    use alloc::vec::Vec;
+    use core::ptr::NonNull;
 
     pub use crate::types::structs::derive_support::*;
     pub use crate::types::union::derive_support::*;
@@ -241,7 +250,7 @@ pub mod __derive {
 ///
 ///     let result: duckdb_neo::Result<()> = Err(duckdb_neo::Error::invalid_input("invalid"));
 ///     assert!(result.is_err());
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = core::result::Result<T, Error>;
 
 /// Render a name as SQL, quoting and escaping it only when required.
 pub fn render_identifier_quoted(text: &str) -> Result<String> {
