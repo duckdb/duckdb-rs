@@ -27,6 +27,6 @@
 # files (omitted options keep the values below), or with -b to only rebuild the
 # bundled files from this pin.
 
-DUCKDB_RELEASE_COMMIT=8d78114e90a53823803660bf821f6073ac87da8c
-DUCKDB_RELEASE_URL=https://install.duckdb.org/v2.0.1
-DUCKDB_RELEASE_VERSION=v2.0.1
+DUCKDB_RELEASE_COMMIT=16cfccddc4377df8215e59e2329a754139881988
+DUCKDB_RELEASE_URL=https://duckdb-staging.duckdb.org/16cfccddc4/v2.0.2-alpha58158/duckdb/duckdb/github_release
+DUCKDB_RELEASE_VERSION=v2.0.2-alpha58158
