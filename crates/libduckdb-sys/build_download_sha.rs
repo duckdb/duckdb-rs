@@ -2,12 +2,12 @@
 // Empty when the pinned build has no release, e.g. a staging build of main.
 
 /// The `DUCKDB_RELEASE_VERSION` the checksums below belong to.
-pub const LIBDUCKDB_SHA_VERSION: &str = "v2.0.1";
+pub const LIBDUCKDB_SHA_VERSION: &str = "v2.0.2-alpha58158";
 
-pub const LIBDUCKDB_OSX_SHA: &str = "9a4be5a2a31ad5bb8c92bf37f18d59b9c10a79b392d7848cabd6eb2e05837449";
-pub const LIBDUCKDB_LINUX_AMD64_SHA: &str = "e25502612fed533a243b61f23a2a574daad030e7e88906222a5f0ab30d06769e";
-pub const LIBDUCKDB_LINUX_ARM64_SHA: &str = "811e8b4d0226f5e531f583aadc798070ffb33b350e3823be563a2ebeb2c68593";
-pub const LIBDUCKDB_WINDOWS_AMD64_SHA: &str = "d51f23831423b82418ee1d5bae324484f9fbe4a2c2424fa5b6be3392453c62ce";
-pub const LIBDUCKDB_WINDOWS_ARM64_SHA: &str = "8b5a2b23f78f96bcf8b22204629f02f6b49e08383717338c6b5f951874d1f09e";
-pub const LIBDUCKDB_LINUX_MUSL_AMD64_SHA: &str = "8c6309a332e9839e00eb766ea90e671b1e46b186a94f4aae69d3593ea16709a6";
-pub const LIBDUCKDB_LINUX_MUSL_ARM64_SHA: &str = "229e78f13ba9ca71c75a537dc950b5908b492b18d0fdc1b894d308b28ea3cc75";
+pub const LIBDUCKDB_OSX_SHA: &str = "";
+pub const LIBDUCKDB_LINUX_AMD64_SHA: &str = "";
+pub const LIBDUCKDB_LINUX_ARM64_SHA: &str = "";
+pub const LIBDUCKDB_WINDOWS_AMD64_SHA: &str = "";
+pub const LIBDUCKDB_WINDOWS_ARM64_SHA: &str = "";
+pub const LIBDUCKDB_LINUX_MUSL_AMD64_SHA: &str = "";
+pub const LIBDUCKDB_LINUX_MUSL_ARM64_SHA: &str = "";
